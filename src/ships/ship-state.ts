@@ -46,7 +46,7 @@ export class ShipState {
   }
 
   // Process one physics frame of input, returns commands for the physics layer
-  update(input: ShipInput, currentSpeed: number): PhysicsCommand[] {
+  update(input: ShipInput, currentSpeed: number, allowBeyondMaxSpeed: boolean = false): PhysicsCommand[] {
     const commands: PhysicsCommand[] = [];
 
     // Energy regeneration
@@ -80,7 +80,7 @@ export class ShipState {
     }
 
     // Speed cap
-    if (currentSpeed > this.stats.maxSpeed) {
+    if (!allowBeyondMaxSpeed && currentSpeed > this.stats.maxSpeed) {
       commands.push({ type: 'capSpeed', maxSpeed: this.stats.maxSpeed });
     }
 
