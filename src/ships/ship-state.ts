@@ -2,7 +2,6 @@
 // Physics (forces, velocity, collision) is handled by matter-rs
 
 import type { ShipStats } from './ship-stats.js';
-import { LEFT, RIGHT, THRUST, WEAPON, SPECIAL, SHIP_AT_MAX_SPEED } from '../constants.js';
 
 export interface ShipInput {
   left: boolean;

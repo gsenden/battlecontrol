@@ -26,10 +26,9 @@ export const SHIP_AT_MAX_SPEED = 1 << 7;
 export const SHIP_BEYOND_MAX_SPEED = 1 << 6;
 export const SHIP_IN_GRAVITY_WELL = 1 << 8;
 
-// Battle space (world units for matter-rs)
-// We use a 800x600 world for the web version, scaled from SC2's proportions
-export const BATTLE_WIDTH = 800;
-export const BATTLE_HEIGHT = 600;
+// Battle space: fixed world size, ~4x a standard 1920x1080 browser viewport
+export const BATTLE_WIDTH = 7680;
+export const BATTLE_HEIGHT = 4320;
 
 // Physics frame rate (SC2 runs at 24fps)
 export const PHYSICS_FPS = 24;
