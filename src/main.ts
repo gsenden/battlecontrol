@@ -12,6 +12,13 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
+  physics: {
+    default: 'matter',
+    matter: {
+      gravity: { x: 0, y: 0 },
+      debug: false,
+    },
+  },
 };
 
 new Phaser.Game(config);

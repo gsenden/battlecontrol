@@ -10,17 +10,17 @@ Port van het Super Melee gevechtsysteem uit Star Control 2 naar een web game.
 
 ## Stap 0: Reference data uit originele SC2 code
 
-- [ ] Klein C test-harness dat SC2 physics functies aanroept voor bekende scenarios
-- [ ] Output als JSON: positie/velocity na N frames thrust, turn sequences, energy drain, etc.
-- [ ] `testdata/` map met reference JSON bestanden
-- [ ] Vitest helper die reference data inlaadt en vergelijkt
+- [x] Klein C test-harness dat SC2 physics functies aanroept voor bekende scenarios
+- [x] Output als JSON: positie/velocity na N frames thrust, turn sequences, energy drain, etc.
+- [x] `testdata/` map met reference JSON bestanden
+- [x] Vitest helper die reference data inlaadt en vergelijkt
 
 **Scenarios:**
-- [ ] Ship thrust: N frames → verwachte velocity/positie
-- [ ] Turning: N keer links/rechts met turnWait → verwachte facing
-- [ ] Energy: regen timing, weapon/special drain
-- [ ] Gravity well: positie schip nabij planeet → kracht per frame
-- [ ] Max speed cap: thrust voorbij max → velocity afgekapt
+- [x] Ship thrust: N frames → verwachte velocity/positie
+- [x] Turning: N keer links/rechts met turnWait → verwachte facing
+- [x] Energy: regen timing, weapon/special drain
+- [x] Gravity well: positie schip nabij planeet → kracht per frame
+- [x] Max speed cap: thrust voorbij max → velocity afgekapt
 - [ ] Cooldowns: weapon/special/thrust timing
 
 **Verificatie:** `npm test` vergelijkt onze output met reference data
@@ -30,8 +30,8 @@ Port van het Super Melee gevechtsysteem uit Star Control 2 naar een web game.
 ## Stap 1: Project setup + leeg speelveld
 
 - [x] Vite + TypeScript + Vitest + Phaser 3
-- [ ] Phaser config met Matter.js physics plugin
-- [ ] BattleScene: zwart speelveld
+- [x] Phaser config met Matter.js physics plugin
+- [x] BattleScene: zwart speelveld
 - [ ] Statische planeet in het midden (cirkel body, static)
 
 **Verificatie:** `npm run dev` toont zwart veld met planeet
@@ -40,21 +40,21 @@ Port van het Super Melee gevechtsysteem uit Star Control 2 naar een web game.
 
 ## Stap 2: 1 schip met beweging
 
-- [ ] ShipStats interface + Human Cruiser constanten
-- [ ] ShipState class: cooldowns, energy, facing
+- [x] ShipStats interface + Human Cruiser constanten
+- [x] ShipState class: cooldowns, energy, facing
 - [ ] Ship als Matter.js polygon body (driehoek placeholder)
-- [ ] Keyboard input: pijltjes voor turn/thrust
-- [ ] Thrust: `applyForce()` in kijkrichting met thrustWait
-- [ ] Turning: discrete hoekstappen met turnWait
-- [ ] Max speed cap
-- [ ] Thruster flame visueel effect bij thrust
+- [x] Keyboard input: pijltjes voor turn/thrust
+- [x] Thrust: `applyForce()` in kijkrichting met thrustWait
+- [x] Turning: discrete hoekstappen met turnWait
+- [x] Max speed cap
+- [x] Thruster flame visueel effect bij thrust
 
 **Tests:**
-- [ ] ShipState cooldowns (turn, thrust, weapon, special)
-- [ ] Energy regen timing
-- [ ] Thrust richting na turn
-- [ ] Speed cap
-- [ ] Vergelijking met reference data (stap 0)
+- [x] ShipState cooldowns (turn, thrust, weapon, special)
+- [x] Energy regen timing
+- [x] Thrust richting na turn
+- [x] Speed cap
+- [x] Vergelijking met reference data (stap 0)
 
 **Verificatie:** schip vliegt rond, voelt als SC2
 

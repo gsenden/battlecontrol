@@ -22,6 +22,7 @@ describe('ShipState', () => {
       expect(ship.thrustCounter).toBe(0);
       expect(ship.weaponCounter).toBe(0);
       expect(ship.specialCounter).toBe(0);
+      expect(ship.energyCounter).toBe(0);
     });
   });
 
@@ -56,6 +57,7 @@ describe('ShipState', () => {
       // After cooldown expires, turn again
       ship.update({ ...NO_INPUT, right: true }, 0);
       expect(ship.facing).toBeCloseTo(afterFirstTurn + HUMAN_CRUISER.turnRate);
+      expect(ship.turnCounter).toBe(HUMAN_CRUISER.turnWait);
     });
 
     it('does not turn without input', () => {
@@ -67,22 +69,22 @@ describe('ShipState', () => {
   });
 
   describe('thrust', () => {
-    it('generates applyForce command when thrusting', () => {
+    it('generates addVelocity command when thrusting', () => {
       const ship = createShip();
       const commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      const forceCmd = commands.find(c => c.type === 'applyForce');
-      expect(forceCmd).toBeDefined();
-      expect(forceCmd!.fx).toBeDefined();
-      expect(forceCmd!.fy).toBeDefined();
+      const thrustCmd = commands.find(c => c.type === 'addVelocity');
+      expect(thrustCmd).toBeDefined();
+      expect(thrustCmd!.dvx).toBeDefined();
+      expect(thrustCmd!.dvy).toBeDefined();
     });
 
-    it('applies force in facing direction', () => {
+    it('adds velocity in facing direction', () => {
       const ship = createShip();
-      // Default facing is -PI/2 (up), so force should be mostly in -y
+      // Default facing is -PI/2 (up), so velocity delta should be mostly in -y
       const commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      const forceCmd = commands.find(c => c.type === 'applyForce')!;
-      expect(forceCmd.fy!).toBeLessThan(0); // upward
-      expect(Math.abs(forceCmd.fx!)).toBeLessThan(0.0001); // negligible x
+      const thrustCmd = commands.find(c => c.type === 'addVelocity')!;
+      expect(thrustCmd.dvy!).toBeLessThan(0); // upward
+      expect(Math.abs(thrustCmd.dvx!)).toBeLessThan(0.0001); // negligible x
     });
 
     it('respects thrustWait cooldown', () => {
@@ -90,17 +92,18 @@ describe('ShipState', () => {
 
       // First thrust (frame 0): fires, counter set to 4
       let commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      expect(commands.find(c => c.type === 'applyForce')).toBeDefined();
+      expect(commands.find(c => c.type === 'addVelocity')).toBeDefined();
+      expect(ship.thrustCounter).toBe(HUMAN_CRUISER.thrustWait);
 
       // Frames 1-4: in cooldown (counter 4->3->2->1->0)
       for (let i = 0; i < HUMAN_CRUISER.thrustWait; i++) {
         commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-        expect(commands.find(c => c.type === 'applyForce')).toBeUndefined();
+        expect(commands.find(c => c.type === 'addVelocity')).toBeUndefined();
       }
 
       // Frame 5: counter reached 0 last frame, now fires again
       commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      expect(commands.find(c => c.type === 'applyForce')).toBeDefined();
+      expect(commands.find(c => c.type === 'addVelocity')).toBeDefined();
     });
 
     it('thrust direction changes after turning', () => {
@@ -113,9 +116,9 @@ describe('ShipState', () => {
 
       // Thrust in new direction
       const commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      const forceCmd = commands.find(c => c.type === 'applyForce')!;
-      // After turning right from -PI/2, force should have positive x component
-      expect(forceCmd.fx!).toBeGreaterThan(0);
+      const thrustCmd = commands.find(c => c.type === 'addVelocity')!;
+      // After turning right from -PI/2, velocity delta should have positive x component
+      expect(thrustCmd.dvx!).toBeGreaterThan(0);
     });
   });
 
@@ -189,14 +192,24 @@ describe('ShipState', () => {
     it('weapon respects weaponWait cooldown', () => {
       const ship = createShip();
       ship.update({ ...NO_INPUT, weapon: true }, 0);
-      // energy: 18 - 9 = 9. energyCounter=0 since it was max before.
-      // But regen ran first this frame (energy was max, so no regen).
-      // After weapon fire: energy=9, weaponCounter=10
+      expect(ship.weaponCounter).toBe(HUMAN_CRUISER.weaponWait);
 
       // Next frame: energy regen fires (counter=0, energy<max) -> energy=10
       // Weapon still in cooldown (counter=10->9), doesn't fire
       ship.update({ ...NO_INPUT, weapon: true }, 0);
       expect(ship.energy).toBe(10); // 9 + 1 regen, no weapon fire
+    });
+
+    it('special respects specialWait cooldown', () => {
+      const ship = createShip();
+      ship.update({ ...NO_INPUT, special: true }, 0);
+      expect(ship.specialCounter).toBe(HUMAN_CRUISER.specialWait);
+
+      const energyAfterFirstUse = ship.energy;
+      ship.energyCounter = 1;
+      ship.update({ ...NO_INPUT, special: true }, 0);
+      expect(ship.energy).toBe(energyAfterFirstUse);
+      expect(ship.specialCounter).toBe(HUMAN_CRUISER.specialWait - 1);
     });
   });
 

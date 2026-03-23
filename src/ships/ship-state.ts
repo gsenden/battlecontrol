@@ -1,5 +1,5 @@
 // Ship game state - manages cooldowns, energy, and translates input into physics actions
-// Physics (forces, velocity, collision) is handled by matter-rs
+// The scene/entity layer applies those commands to the active physics engine.
 
 import type { ShipStats } from './ship-stats.js';
 
@@ -12,11 +12,9 @@ export interface ShipInput {
 }
 
 export interface PhysicsCommand {
-  type: 'applyForce' | 'setVelocity' | 'capSpeed';
-  fx?: number;
-  fy?: number;
-  vx?: number;
-  vy?: number;
+  type: 'addVelocity' | 'capSpeed';
+  dvx?: number;
+  dvy?: number;
   maxSpeed?: number;
 }
 
@@ -47,7 +45,7 @@ export class ShipState {
     this.facing = startAngle;
   }
 
-  // Process one physics frame of input, returns commands for matter-rs
+  // Process one physics frame of input, returns commands for the physics layer
   update(input: ShipInput, currentSpeed: number): PhysicsCommand[] {
     const commands: PhysicsCommand[] = [];
 
@@ -71,13 +69,13 @@ export class ShipState {
       this.turnCounter = this.stats.turnWait;
     }
 
-    // Thrust
+    // Thrust — directly adds velocity increment like SC2
     if (this.thrustCounter > 0) {
       this.thrustCounter--;
     } else if (input.thrust) {
-      const fx = Math.cos(this.facing) * this.stats.thrustForce;
-      const fy = Math.sin(this.facing) * this.stats.thrustForce;
-      commands.push({ type: 'applyForce', fx, fy });
+      const dvx = Math.cos(this.facing) * this.stats.thrustIncrement;
+      const dvy = Math.sin(this.facing) * this.stats.thrustIncrement;
+      commands.push({ type: 'addVelocity', dvx, dvy });
       this.thrustCounter = this.stats.thrustWait;
     }
 

@@ -5,11 +5,11 @@ export interface ShipStats {
   name: string;
   cost: number;
 
-  // Physics properties (applied to matter-rs body)
-  mass: number;           // Body mass for matter-rs
-  thrustForce: number;    // Force magnitude when thrusting
-  maxSpeed: number;       // Speed cap (enforced in game logic)
-  turnRate: number;       // Radians per turn step
+  // Physics properties
+  mass: number;             // Body mass
+  thrustIncrement: number;  // Velocity added per thrust (direct, like SC2)
+  maxSpeed: number;         // Speed cap
+  turnRate: number;         // Radians per turn step
 
   // Cooldown timers (in physics frames at 24fps)
   turnWait: number;       // Frames between turns
@@ -39,8 +39,8 @@ export const HUMAN_CRUISER: ShipStats = {
   cost: 11,
 
   mass: 6,
-  thrustForce: 0.004,      // Tuned for matter-rs (SC2: thrust_increment=3, max_thrust=24)
-  maxSpeed: 4.0,           // Tuned for matter-rs (SC2: max_thrust=24 display units)
+  thrustIncrement: 0.5,    // Velocity added per thrust step (SC2: 3 display units → 96 internal)
+  maxSpeed: 4.0,           // Max velocity magnitude (SC2: 24 display units → 768 internal)
   turnRate: Math.PI / 8,   // 22.5 degrees per step (1/16 of circle)
 
   turnWait: 1,
