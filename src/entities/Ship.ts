@@ -61,7 +61,7 @@ export class Ship {
 
   /** Called at physics rate (24fps) — processes game logic */
   physicsUpdate(input: ShipInput, allowBeyondMaxSpeed: boolean = false) {
-    const commands = this.state.update(input, this.getSpeed(), allowBeyondMaxSpeed);
+    const commands = this.state.update(input, this.body.velocity, allowBeyondMaxSpeed);
     let didThrust = false;
 
     for (const cmd of commands) {
@@ -76,29 +76,15 @@ export class Ship {
           });
           break;
         }
-        case 'capSpeed': {
-          const vel = this.body.velocity;
-          const currentSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
-          if (currentSpeed > cmd.maxSpeed!) {
-            const scale = cmd.maxSpeed! / currentSpeed;
-            this.scene.matter.body.setVelocity(this.body, {
-              x: vel.x * scale,
-              y: vel.y * scale,
-            });
-          }
+        case 'setVelocity': {
+          didThrust = true;
+          this.scene.matter.body.setVelocity(this.body, {
+            x: cmd.vx!,
+            y: cmd.vy!,
+          });
           break;
         }
       }
-    }
-
-    if (didThrust && !allowBeyondMaxSpeed && this.getSpeed() > this.state.stats.maxSpeed) {
-      const vel = this.body.velocity;
-      const currentSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
-      const scale = this.state.stats.maxSpeed / currentSpeed;
-      this.scene.matter.body.setVelocity(this.body, {
-        x: vel.x * scale,
-        y: vel.y * scale,
-      });
     }
 
     // Spawn ion particle only when a real thrust impulse was applied

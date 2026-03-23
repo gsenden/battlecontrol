@@ -11,12 +11,21 @@ export interface ShipInput {
   special: boolean;
 }
 
+export interface VelocityVector {
+  x: number;
+  y: number;
+}
+
 export interface PhysicsCommand {
-  type: 'addVelocity' | 'capSpeed';
+  type: 'addVelocity' | 'setVelocity';
   dvx?: number;
   dvy?: number;
-  maxSpeed?: number;
+  vx?: number;
+  vy?: number;
 }
+
+const TRAVEL_ALIGNMENT_EPSILON = 0.0001;
+const GRAVITY_WELL_SPEED_MULTIPLIER = 1.75;
 
 export class ShipState {
   readonly stats: ShipStats;
@@ -46,8 +55,9 @@ export class ShipState {
   }
 
   // Process one physics frame of input, returns commands for the physics layer
-  update(input: ShipInput, currentSpeed: number, allowBeyondMaxSpeed: boolean = false): PhysicsCommand[] {
+  update(input: ShipInput, currentVelocity: VelocityVector, allowBeyondMaxSpeed: boolean = false): PhysicsCommand[] {
     const commands: PhysicsCommand[] = [];
+    const currentSpeed = Math.hypot(currentVelocity.x, currentVelocity.y);
 
     // Energy regeneration
     if (this.energyCounter > 0) {
@@ -75,13 +85,9 @@ export class ShipState {
     } else if (input.thrust) {
       const dvx = Math.cos(this.facing) * this.stats.thrustIncrement;
       const dvy = Math.sin(this.facing) * this.stats.thrustIncrement;
-      commands.push({ type: 'addVelocity', dvx, dvy });
+      const nextVelocity = this.getThrustVelocity(currentVelocity, dvx, dvy, currentSpeed, allowBeyondMaxSpeed);
+      commands.push({ type: 'setVelocity', vx: nextVelocity.x, vy: nextVelocity.y });
       this.thrustCounter = this.stats.thrustWait;
-    }
-
-    // Speed cap
-    if (!allowBeyondMaxSpeed && currentSpeed > this.stats.maxSpeed) {
-      commands.push({ type: 'capSpeed', maxSpeed: this.stats.maxSpeed });
     }
 
     // Weapon
@@ -108,5 +114,70 @@ export class ShipState {
   takeDamage(amount: number): boolean {
     this.crew = Math.max(0, this.crew - amount);
     return this.crew <= 0;
+  }
+
+  private getThrustVelocity(
+    currentVelocity: VelocityVector,
+    dvx: number,
+    dvy: number,
+    currentSpeed: number,
+    allowBeyondMaxSpeed: boolean,
+  ): VelocityVector {
+    const normalMaxSpeed = this.stats.maxSpeed;
+    const gravityWellMaxSpeed = normalMaxSpeed * GRAVITY_WELL_SPEED_MULTIPLIER;
+    const travelAligned = currentSpeed <= TRAVEL_ALIGNMENT_EPSILON || this.isTravelAligned(currentVelocity);
+
+    if (!allowBeyondMaxSpeed && travelAligned && currentSpeed > normalMaxSpeed) {
+      return currentVelocity;
+    }
+
+    const desiredVelocity = {
+      x: currentVelocity.x + dvx,
+      y: currentVelocity.y + dvy,
+    };
+    const desiredSpeed = Math.hypot(desiredVelocity.x, desiredVelocity.y);
+
+    if (desiredSpeed <= normalMaxSpeed) {
+      return desiredVelocity;
+    }
+
+    if (!travelAligned && currentSpeed >= normalMaxSpeed) {
+      const travelAngle = Math.atan2(currentVelocity.y, currentVelocity.x);
+      const rotatedVelocity = {
+        x: currentVelocity.x + (dvx * 0.5) - (Math.cos(travelAngle) * this.stats.thrustIncrement),
+        y: currentVelocity.y + (dvy * 0.5) - (Math.sin(travelAngle) * this.stats.thrustIncrement),
+      };
+      const rotatedSpeed = Math.hypot(rotatedVelocity.x, rotatedVelocity.y);
+
+      if (rotatedSpeed <= gravityWellMaxSpeed || rotatedSpeed < currentSpeed) {
+        return rotatedVelocity;
+      }
+    }
+
+    if (((allowBeyondMaxSpeed && desiredSpeed <= gravityWellMaxSpeed) || desiredSpeed < currentSpeed)) {
+      return desiredVelocity;
+    }
+
+    if (travelAligned) {
+      const limitedSpeed = Math.min(
+        allowBeyondMaxSpeed ? gravityWellMaxSpeed : normalMaxSpeed,
+        desiredSpeed,
+      );
+      return {
+        x: Math.cos(this.facing) * limitedSpeed,
+        y: Math.sin(this.facing) * limitedSpeed,
+      };
+    }
+
+    return currentVelocity;
+  }
+
+  private isTravelAligned(currentVelocity: VelocityVector): boolean {
+    const travelAngle = Math.atan2(currentVelocity.y, currentVelocity.x);
+    const facingDelta = Math.atan2(
+      Math.sin(this.facing - travelAngle),
+      Math.cos(this.facing - travelAngle),
+    );
+    return Math.abs(facingDelta) <= TRAVEL_ALIGNMENT_EPSILON;
   }
 }

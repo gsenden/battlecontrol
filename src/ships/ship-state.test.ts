@@ -3,6 +3,7 @@ import { ShipState } from './ship-state.js';
 import { HUMAN_CRUISER } from './ship-stats.js';
 
 const NO_INPUT = { left: false, right: false, thrust: false, weapon: false, special: false };
+const ZERO_VELOCITY = { x: 0, y: 0 };
 
 function createShip() {
   return new ShipState(HUMAN_CRUISER, 0);
@@ -30,14 +31,14 @@ describe('ShipState', () => {
     it('turns left by turnRate', () => {
       const ship = createShip();
       const startAngle = ship.facing;
-      ship.update({ ...NO_INPUT, left: true }, 0);
+      ship.update({ ...NO_INPUT, left: true }, ZERO_VELOCITY);
       expect(ship.facing).toBeCloseTo(startAngle - HUMAN_CRUISER.turnRate);
     });
 
     it('turns right by turnRate', () => {
       const ship = createShip();
       const startAngle = ship.facing;
-      ship.update({ ...NO_INPUT, right: true }, 0);
+      ship.update({ ...NO_INPUT, right: true }, ZERO_VELOCITY);
       expect(ship.facing).toBeCloseTo(startAngle + HUMAN_CRUISER.turnRate);
     });
 
@@ -46,16 +47,16 @@ describe('ShipState', () => {
       const startAngle = ship.facing;
 
       // First turn happens immediately
-      ship.update({ ...NO_INPUT, right: true }, 0);
+      ship.update({ ...NO_INPUT, right: true }, ZERO_VELOCITY);
       const afterFirstTurn = ship.facing;
       expect(afterFirstTurn).not.toBeCloseTo(startAngle);
 
       // Next frame: still in cooldown (turnWait=1), no turn
-      ship.update({ ...NO_INPUT, right: true }, 0);
+      ship.update({ ...NO_INPUT, right: true }, ZERO_VELOCITY);
       expect(ship.facing).toBeCloseTo(afterFirstTurn);
 
       // After cooldown expires, turn again
-      ship.update({ ...NO_INPUT, right: true }, 0);
+      ship.update({ ...NO_INPUT, right: true }, ZERO_VELOCITY);
       expect(ship.facing).toBeCloseTo(afterFirstTurn + HUMAN_CRUISER.turnRate);
       expect(ship.turnCounter).toBe(HUMAN_CRUISER.turnWait);
     });
@@ -63,7 +64,7 @@ describe('ShipState', () => {
     it('does not turn without input', () => {
       const ship = createShip();
       const startAngle = ship.facing;
-      ship.update(NO_INPUT, 0);
+      ship.update(NO_INPUT, ZERO_VELOCITY);
       expect(ship.facing).toBe(startAngle);
     });
   });
@@ -71,70 +72,92 @@ describe('ShipState', () => {
   describe('thrust', () => {
     it('generates addVelocity command when thrusting', () => {
       const ship = createShip();
-      const commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      const thrustCmd = commands.find(c => c.type === 'addVelocity');
+      const commands = ship.update({ ...NO_INPUT, thrust: true }, ZERO_VELOCITY);
+      const thrustCmd = commands.find(c => c.type === 'setVelocity');
       expect(thrustCmd).toBeDefined();
-      expect(thrustCmd!.dvx).toBeDefined();
-      expect(thrustCmd!.dvy).toBeDefined();
+      expect(thrustCmd!.vx).toBeDefined();
+      expect(thrustCmd!.vy).toBeDefined();
     });
 
     it('adds velocity in facing direction', () => {
       const ship = createShip();
       // Default facing is -PI/2 (up), so velocity delta should be mostly in -y
-      const commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      const thrustCmd = commands.find(c => c.type === 'addVelocity')!;
-      expect(thrustCmd.dvy!).toBeLessThan(0); // upward
-      expect(Math.abs(thrustCmd.dvx!)).toBeLessThan(0.0001); // negligible x
+      const commands = ship.update({ ...NO_INPUT, thrust: true }, ZERO_VELOCITY);
+      const thrustCmd = commands.find(c => c.type === 'setVelocity')!;
+      expect(thrustCmd.vy!).toBeLessThan(0); // upward
+      expect(Math.abs(thrustCmd.vx!)).toBeLessThan(0.0001); // negligible x
     });
 
     it('respects thrustWait cooldown', () => {
       const ship = createShip();
 
       // First thrust (frame 0): fires, counter set to 4
-      let commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      expect(commands.find(c => c.type === 'addVelocity')).toBeDefined();
+      let commands = ship.update({ ...NO_INPUT, thrust: true }, ZERO_VELOCITY);
+      expect(commands.find(c => c.type === 'setVelocity')).toBeDefined();
       expect(ship.thrustCounter).toBe(HUMAN_CRUISER.thrustWait);
 
       // Frames 1-4: in cooldown (counter 4->3->2->1->0)
       for (let i = 0; i < HUMAN_CRUISER.thrustWait; i++) {
-        commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-        expect(commands.find(c => c.type === 'addVelocity')).toBeUndefined();
+        commands = ship.update({ ...NO_INPUT, thrust: true }, ZERO_VELOCITY);
+        expect(commands.find(c => c.type === 'setVelocity')).toBeUndefined();
       }
 
       // Frame 5: counter reached 0 last frame, now fires again
-      commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      expect(commands.find(c => c.type === 'addVelocity')).toBeDefined();
+      commands = ship.update({ ...NO_INPUT, thrust: true }, ZERO_VELOCITY);
+      expect(commands.find(c => c.type === 'setVelocity')).toBeDefined();
     });
 
     it('thrust direction changes after turning', () => {
       const ship = createShip();
 
       // Turn right
-      ship.update({ ...NO_INPUT, right: true }, 0);
+      ship.update({ ...NO_INPUT, right: true }, ZERO_VELOCITY);
       // Wait for turn cooldown
-      ship.update(NO_INPUT, 0);
+      ship.update(NO_INPUT, ZERO_VELOCITY);
 
       // Thrust in new direction
-      const commands = ship.update({ ...NO_INPUT, thrust: true }, 0);
-      const thrustCmd = commands.find(c => c.type === 'addVelocity')!;
+      const commands = ship.update({ ...NO_INPUT, thrust: true }, ZERO_VELOCITY);
+      const thrustCmd = commands.find(c => c.type === 'setVelocity')!;
       // After turning right from -PI/2, velocity delta should have positive x component
-      expect(thrustCmd.dvx!).toBeGreaterThan(0);
+      expect(thrustCmd.vx!).toBeGreaterThan(0);
+    });
+
+    it('rotates travel vector instead of only capping speed in a gravity well', () => {
+      const ship = createShip();
+      ship.facing = 0;
+
+      const commands = ship.update(
+        { ...NO_INPUT, thrust: true },
+        { x: 0, y: -HUMAN_CRUISER.maxSpeed },
+        true,
+      );
+      const thrustCmd = commands.find(c => c.type === 'setVelocity')!;
+
+      expect(thrustCmd.vx!).toBeGreaterThan(0);
+      expect(thrustCmd.vy!).toBeGreaterThan(-HUMAN_CRUISER.maxSpeed);
+    });
+
+    it('preserves gravity-whip speed when thrust stays aligned after leaving the well', () => {
+      const ship = createShip();
+      ship.facing = 0;
+
+      const commands = ship.update(
+        { ...NO_INPUT, thrust: true },
+        { x: HUMAN_CRUISER.maxSpeed + 1, y: 0 },
+        false,
+      );
+      const thrustCmd = commands.find(c => c.type === 'setVelocity')!;
+
+      expect(thrustCmd.vx!).toBeCloseTo(HUMAN_CRUISER.maxSpeed + 1);
+      expect(thrustCmd.vy!).toBeCloseTo(0);
     });
   });
 
-  describe('speed cap', () => {
-    it('generates capSpeed when over maxSpeed', () => {
+  describe('speed handling', () => {
+    it('does not passively clamp gravity-whip speed when not thrusting', () => {
       const ship = createShip();
-      const commands = ship.update(NO_INPUT, HUMAN_CRUISER.maxSpeed + 1);
-      const capCmd = commands.find(c => c.type === 'capSpeed');
-      expect(capCmd).toBeDefined();
-      expect(capCmd!.maxSpeed).toBe(HUMAN_CRUISER.maxSpeed);
-    });
-
-    it('does not cap speed when under maxSpeed', () => {
-      const ship = createShip();
-      const commands = ship.update(NO_INPUT, HUMAN_CRUISER.maxSpeed - 1);
-      expect(commands.find(c => c.type === 'capSpeed')).toBeUndefined();
+      const commands = ship.update(NO_INPUT, { x: HUMAN_CRUISER.maxSpeed + 1, y: 0 });
+      expect(commands).toHaveLength(0);
     });
   });
 
@@ -145,29 +168,29 @@ describe('ShipState', () => {
       ship.energy = 10;
 
       // Counter starts at 0, so first update regens immediately
-      ship.update(NO_INPUT, 0);
+      ship.update(NO_INPUT, ZERO_VELOCITY);
       expect(ship.energy).toBe(11);
 
       // Now counter is set to energyWait (8). Must wait 8 frames.
       for (let i = 0; i < HUMAN_CRUISER.energyWait; i++) {
-        ship.update(NO_INPUT, 0);
+        ship.update(NO_INPUT, ZERO_VELOCITY);
       }
       expect(ship.energy).toBe(11); // still waiting (counter just hit 0)
 
       // Next frame: counter is 0, regens again
-      ship.update(NO_INPUT, 0);
+      ship.update(NO_INPUT, ZERO_VELOCITY);
       expect(ship.energy).toBe(12);
     });
 
     it('does not regenerate above maxEnergy', () => {
       const ship = createShip();
-      ship.update(NO_INPUT, 0);
+      ship.update(NO_INPUT, ZERO_VELOCITY);
       expect(ship.energy).toBe(HUMAN_CRUISER.maxEnergy);
     });
 
     it('weapon costs energy', () => {
       const ship = createShip();
-      ship.update({ ...NO_INPUT, weapon: true }, 0);
+      ship.update({ ...NO_INPUT, weapon: true }, ZERO_VELOCITY);
       expect(ship.energy).toBe(HUMAN_CRUISER.maxEnergy - HUMAN_CRUISER.weaponEnergyCost);
     });
 
@@ -179,35 +202,35 @@ describe('ShipState', () => {
       // To truly test "not enough energy", set energyCounter so regen doesn't fire.
       ship.energyCounter = 5;
       const startEnergy = ship.energy;
-      ship.update({ ...NO_INPUT, weapon: true }, 0);
+      ship.update({ ...NO_INPUT, weapon: true }, ZERO_VELOCITY);
       expect(ship.energy).toBe(startEnergy); // unchanged, weapon didn't fire
     });
 
     it('special costs energy', () => {
       const ship = createShip();
-      ship.update({ ...NO_INPUT, special: true }, 0);
+      ship.update({ ...NO_INPUT, special: true }, ZERO_VELOCITY);
       expect(ship.energy).toBe(HUMAN_CRUISER.maxEnergy - HUMAN_CRUISER.specialEnergyCost);
     });
 
     it('weapon respects weaponWait cooldown', () => {
       const ship = createShip();
-      ship.update({ ...NO_INPUT, weapon: true }, 0);
+      ship.update({ ...NO_INPUT, weapon: true }, ZERO_VELOCITY);
       expect(ship.weaponCounter).toBe(HUMAN_CRUISER.weaponWait);
 
       // Next frame: energy regen fires (counter=0, energy<max) -> energy=10
       // Weapon still in cooldown (counter=10->9), doesn't fire
-      ship.update({ ...NO_INPUT, weapon: true }, 0);
+      ship.update({ ...NO_INPUT, weapon: true }, ZERO_VELOCITY);
       expect(ship.energy).toBe(10); // 9 + 1 regen, no weapon fire
     });
 
     it('special respects specialWait cooldown', () => {
       const ship = createShip();
-      ship.update({ ...NO_INPUT, special: true }, 0);
+      ship.update({ ...NO_INPUT, special: true }, ZERO_VELOCITY);
       expect(ship.specialCounter).toBe(HUMAN_CRUISER.specialWait);
 
       const energyAfterFirstUse = ship.energy;
       ship.energyCounter = 1;
-      ship.update({ ...NO_INPUT, special: true }, 0);
+      ship.update({ ...NO_INPUT, special: true }, ZERO_VELOCITY);
       expect(ship.energy).toBe(energyAfterFirstUse);
       expect(ship.specialCounter).toBe(HUMAN_CRUISER.specialWait - 1);
     });

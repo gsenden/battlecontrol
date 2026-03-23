@@ -39,7 +39,7 @@ export const HUMAN_CRUISER: ShipStats = {
   cost: 11,
 
   mass: 6,
-  thrustIncrement: 0.5,    // Velocity added per thrust step (SC2: 3 display units → 96 internal)
+  thrustIncrement: 0.6,    // Slightly boosted for the current world scale and gravity tuning
   maxSpeed: 4.0,           // Max velocity magnitude (SC2: 24 display units → 768 internal)
   turnRate: Math.PI / 8,   // 22.5 degrees per step (1/16 of circle)
 

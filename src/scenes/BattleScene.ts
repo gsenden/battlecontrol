@@ -31,8 +31,8 @@ const MED_SCROLL_FACTOR = 0.125;
 const SML_SCROLL_FACTOR = 0.0625;
 
 // SC2 gravity well: fixed-radius well with a constant velocity pull each tick.
-const GRAVITY_THRESHOLD = 255;
-const GRAVITY_PULL = 0.18;
+const GRAVITY_THRESHOLD = 420;
+const GRAVITY_PULL = 0.12;
 const DEFAULT_CAMERA_ZOOM = 0.72;
 const MIN_CAMERA_ZOOM = 0.52;
 const MAX_CAMERA_ZOOM = 0.9;
@@ -201,10 +201,21 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createStarLayer(textures: string[], count: number, scrollFactor: number) {
-    for (let i = 0; i < count; i++) {
+    // Parallax layers move less than the gameplay world, so they need extra bleed
+    // outside the arena or the camera can reveal empty edges.
+    const viewportWidth = this.scale.width / MIN_CAMERA_ZOOM;
+    const viewportHeight = this.scale.height / MIN_CAMERA_ZOOM;
+    const padX = ((1 - scrollFactor) * (BATTLE_WIDTH + viewportWidth)) / 2;
+    const padY = ((1 - scrollFactor) * (BATTLE_HEIGHT + viewportHeight)) / 2;
+    const spawnWidth = BATTLE_WIDTH + (2 * padX);
+    const spawnHeight = BATTLE_HEIGHT + (2 * padY);
+    const densityScale = (spawnWidth * spawnHeight) / (BATTLE_WIDTH * BATTLE_HEIGHT);
+    const spawnCount = Math.ceil(count * densityScale);
+
+    for (let i = 0; i < spawnCount; i++) {
       const texture = textures[Math.floor(Math.random() * textures.length)];
-      const x = Math.random() * BATTLE_WIDTH;
-      const y = Math.random() * BATTLE_HEIGHT;
+      const x = (-padX) + (Math.random() * spawnWidth);
+      const y = (-padY) + (Math.random() * spawnHeight);
       const star = this.add.image(x, y, texture);
       star.setScrollFactor(scrollFactor);
     }
