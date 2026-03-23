@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
+import { BATTLE_HEIGHT, BATTLE_WIDTH } from '../constants.js';
 import { ShipState } from '../ships/ship-state.js';
 import type { ShipStats } from '../ships/ship-stats.js';
 import type { ShipInput } from '../ships/ship-state.js';
 import { NUM_FACINGS } from '../constants.js';
+import { wrapPoint } from '../utils/wrap.js';
 
 // SC2 ion trail color cycle: 12 steps from bright orange → dark red → gone
 // Converted from MAKE_RGB15 (5-bit per channel) to 8-bit hex
@@ -30,6 +32,7 @@ export class Ship {
   readonly state: ShipState;
   readonly body: MatterJS.BodyType;
   private sprite: Phaser.GameObjects.Image;
+  private ghostSprites: Phaser.GameObjects.Image[] = [];
   private scene: Phaser.Scene;
   private ionTrail: IonParticle[] = [];
 
@@ -48,12 +51,17 @@ export class Ship {
     scene.matter.body.setInertia(this.body, Infinity);
 
     // Ship sprite — frame 0 = facing up
-    this.sprite = scene.add.image(x, y, 'human-cruiser-0');
+    this.sprite = scene.add.image(x, y, 'human-cruiser-big-000');
+    for (let i = 0; i < 8; i++) {
+      const ghost = scene.add.image(x, y, 'human-cruiser-big-000');
+      ghost.setVisible(false);
+      this.ghostSprites.push(ghost);
+    }
   }
 
   /** Called at physics rate (24fps) — processes game logic */
-  physicsUpdate(input: ShipInput) {
-    const commands = this.state.update(input, this.getSpeed());
+  physicsUpdate(input: ShipInput, allowBeyondMaxSpeed: boolean = false) {
+    const commands = this.state.update(input, this.getSpeed(), allowBeyondMaxSpeed);
     let didThrust = false;
 
     for (const cmd of commands) {
@@ -83,7 +91,7 @@ export class Ship {
       }
     }
 
-    if (this.getSpeed() > this.state.stats.maxSpeed) {
+    if (didThrust && !allowBeyondMaxSpeed && this.getSpeed() > this.state.stats.maxSpeed) {
       const vel = this.body.velocity;
       const currentSpeed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
       const scale = this.state.stats.maxSpeed / currentSpeed;
@@ -102,11 +110,76 @@ export class Ship {
     this.updateIonTrail();
   }
 
+  addVelocity(dvx: number, dvy: number) {
+    const vel = this.body.velocity;
+    this.scene.matter.body.setVelocity(this.body, {
+      x: vel.x + dvx,
+      y: vel.y + dvy,
+    });
+  }
+
+  setTint(color: number) {
+    this.sprite.setTint(color);
+    for (const ghost of this.ghostSprites) {
+      ghost.setTint(color);
+    }
+  }
+
   /** Called every render frame — updates visuals only */
-  renderUpdate() {
-    this.sprite.setPosition(this.body.position.x, this.body.position.y);
+  renderUpdate(scale: number = 1) {
     const frameIndex = this.facingToFrame();
-    this.sprite.setTexture(`human-cruiser-${frameIndex}`);
+    const texture = `human-cruiser-big-${String(frameIndex).padStart(3, '0')}`;
+    const x = this.body.position.x;
+    const y = this.body.position.y;
+
+    this.sprite.setPosition(x, y);
+    this.sprite.setTexture(texture);
+    this.sprite.setScale(scale);
+    const margin = Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.5;
+
+    const xOffsets = [0];
+    const yOffsets = [0];
+
+    if (x < margin) {
+      xOffsets.push(BATTLE_WIDTH);
+    }
+    if (x > BATTLE_WIDTH - margin) {
+      xOffsets.push(-BATTLE_WIDTH);
+    }
+    if (y < margin) {
+      yOffsets.push(BATTLE_HEIGHT);
+    }
+    if (y > BATTLE_HEIGHT - margin) {
+      yOffsets.push(-BATTLE_HEIGHT);
+    }
+
+    let ghostIndex = 0;
+    for (const xOffset of xOffsets) {
+      for (const yOffset of yOffsets) {
+        if (xOffset === 0 && yOffset === 0) {
+          continue;
+        }
+
+        const ghost = this.ghostSprites[ghostIndex++];
+        ghost.setTexture(texture);
+        ghost.setPosition(x + xOffset, y + yOffset);
+        ghost.setScale(scale);
+        ghost.setVisible(true);
+      }
+    }
+
+    for (; ghostIndex < this.ghostSprites.length; ghostIndex++) {
+      this.ghostSprites[ghostIndex].setVisible(false);
+    }
+  }
+
+  wrapPosition() {
+    const wrapped = wrapPoint(this.body.position.x, this.body.position.y, BATTLE_WIDTH, BATTLE_HEIGHT);
+    if (wrapped.x === this.body.position.x && wrapped.y === this.body.position.y) {
+      return;
+    }
+
+    this.scene.matter.body.setPosition(this.body, wrapped);
   }
 
   private spawnIonParticle() {

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BATTLE_WIDTH, BATTLE_HEIGHT, PHYSICS_DELTA } from '../constants.js';
 import { Ship } from '../entities/Ship.js';
 import { HUMAN_CRUISER } from '../ships/ship-stats.js';
+import { shortestWrappedDelta } from '../utils/wrap.js';
 
 import starBig from '../assets/stars/stars-000.png';
 import starMed from '../assets/stars/stars-001.png';
@@ -15,9 +16,11 @@ import starMiscMed1 from '../assets/stars/stars-misc-med-001.png';
 import starMiscSml0 from '../assets/stars/stars-misc-sml-000.png';
 import starMiscSml1 from '../assets/stars/stars-misc-sml-001.png';
 
-const shipModules = import.meta.glob('../assets/ships/human/cruiser-big-*.png', { eager: true, import: 'default' }) as Record<string, string>;
+const shipModules = import.meta.glob('../assets/ships/human/cruiser-*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const planetModules = import.meta.glob('../assets/planets/*.png', { eager: true, import: 'default' }) as Record<string, string>;
-const planetUrls = Object.values(planetModules);
+const planetBases = Object.keys(planetModules)
+  .filter((path) => path.endsWith('-big-000.png'))
+  .map((path) => path.split('/').pop()!.replace('-big-000.png', ''));
 
 const BIG_STAR_COUNT = 200;
 const MED_STAR_COUNT = 400;
@@ -27,17 +30,33 @@ const BIG_SCROLL_FACTOR = 0.25;
 const MED_SCROLL_FACTOR = 0.125;
 const SML_SCROLL_FACTOR = 0.0625;
 
-// Gravity well constants (tuned from SC2 reference data)
-const GRAVITY_THRESHOLD = 400;  // Distance in world units where gravity kicks in
-const GRAVITY_FORCE = 0.0003;   // Force magnitude per frame
+// SC2 gravity well: fixed-radius well with a constant velocity pull each tick.
+const GRAVITY_THRESHOLD = 255;
+const GRAVITY_PULL = 0.18;
+const DEFAULT_CAMERA_ZOOM = 0.72;
+const MIN_CAMERA_ZOOM = 0.52;
+const MAX_CAMERA_ZOOM = 0.9;
+const ZOOM_LERP = 0.035;
+const ZOOM_MAX_RADIUS = 500;
+const ZOOM_START_RADIUS = 1100;
+const PLANET_RENDER_SCALE = 1.15;
+const SHIP_NEAR_SCALE = 1.05;
+const SHIP_FAR_SCALE = 0.68;
+const PLANET_NEAR_SCALE = 1.15;
+const PLANET_FAR_SCALE = 0.72;
 
 export class BattleScene extends Phaser.Scene {
-  private ship!: Ship;
+  private playerShip!: Ship;
+  private targetShip!: Ship;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private cameraTarget!: Phaser.GameObjects.Container;
+  private planet!: Phaser.GameObjects.Image;
+  private planetBase!: string;
   private planetX = BATTLE_WIDTH / 2;
   private planetY = BATTLE_HEIGHT / 2;
   private physicsAccumulator = 0;
+  private shipRenderScale = SHIP_FAR_SCALE;
+  private planetRenderScale = PLANET_FAR_SCALE;
 
   constructor() {
     super('BattleScene');
@@ -57,15 +76,17 @@ export class BattleScene extends Phaser.Scene {
     this.load.image('star-misc-sml-0', starMiscSml0);
     this.load.image('star-misc-sml-1', starMiscSml1);
 
-    // Ship frames (16 rotations)
+    // Ship frames (3 zoom tiers x 16 rotations)
     const shipEntries = Object.entries(shipModules).sort(([a], [b]) => a.localeCompare(b));
-    shipEntries.forEach(([, url], i) => {
-      this.load.image(`human-cruiser-${i}`, url);
+    shipEntries.forEach(([path, url]) => {
+      const file = path.split('/').pop()!.replace('.png', '');
+      this.load.image(`human-${file}`, url);
     });
 
     // Planets
-    planetUrls.forEach((url, i) => {
-      this.load.image(`planet-${i}`, url);
+    Object.entries(planetModules).forEach(([path, url]) => {
+      const file = path.split('/').pop()!.replace('.png', '');
+      this.load.image(`planet-${file}`, url);
     });
   }
 
@@ -85,8 +106,8 @@ export class BattleScene extends Phaser.Scene {
     );
 
     // Planet in center
-    const planetIndex = Math.floor(Math.random() * planetUrls.length);
-    this.add.image(this.planetX, this.planetY, `planet-${planetIndex}`);
+    this.planetBase = planetBases[Math.floor(Math.random() * planetBases.length)];
+    this.planet = this.add.image(this.planetX, this.planetY, `planet-${this.planetBase}-big-000`);
 
     // Ion trail particle texture (small orange circle, generated)
     const gfx = this.add.graphics();
@@ -96,11 +117,14 @@ export class BattleScene extends Phaser.Scene {
     gfx.destroy();
 
     // Ship — spawn offset from center so it's not on the planet
-    this.ship = new Ship(this, this.planetX + 300, this.planetY, HUMAN_CRUISER);
+    this.playerShip = new Ship(this, this.planetX + 300, this.planetY, HUMAN_CRUISER);
+    this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, HUMAN_CRUISER);
+    this.targetShip.setTint(0xff8866);
 
     // Camera follows an invisible container that tracks the ship position
-    this.cameraTarget = this.add.container(this.ship.x, this.ship.y);
+    this.cameraTarget = this.add.container(this.playerShip.x, this.playerShip.y);
     this.cameras.main.setBounds(0, 0, BATTLE_WIDTH, BATTLE_HEIGHT);
+    this.cameras.main.setZoom(DEFAULT_CAMERA_ZOOM);
     this.cameras.main.startFollow(this.cameraTarget);
 
     // Input
@@ -119,26 +143,61 @@ export class BattleScene extends Phaser.Scene {
     // Fixed timestep physics at 24fps
     this.physicsAccumulator += delta;
     while (this.physicsAccumulator >= PHYSICS_DELTA) {
-      this.applyGravity();
-      this.ship.physicsUpdate(input);
+      const playerInGravityWell = this.applyGravity(this.playerShip);
+      this.playerShip.physicsUpdate(input, playerInGravityWell);
+      this.playerShip.wrapPosition();
       this.physicsAccumulator -= PHYSICS_DELTA;
     }
 
     // Visual update every render frame
-    this.ship.renderUpdate();
-    this.cameraTarget.setPosition(this.ship.x, this.ship.y);
+    this.updateCamera();
+    this.updatePlanetRender();
+    this.playerShip.renderUpdate(this.shipRenderScale);
+    this.targetShip.renderUpdate(this.shipRenderScale);
   }
 
-  private applyGravity() {
-    const dx = this.planetX - this.ship.x;
-    const dy = this.planetY - this.ship.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+  private applyGravity(ship: Ship): boolean {
+    const dx = shortestWrappedDelta(ship.x, this.planetX, BATTLE_WIDTH);
+    const dy = shortestWrappedDelta(ship.y, this.planetY, BATTLE_HEIGHT);
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
 
-    if (dist < GRAVITY_THRESHOLD && dist > 0) {
-      const fx = (dx / dist) * GRAVITY_FORCE;
-      const fy = (dy / dist) * GRAVITY_FORCE;
-      this.matter.body.applyForce(this.ship.body, this.ship.body.position, { x: fx, y: fy });
+    if (absDx <= GRAVITY_THRESHOLD && absDy <= GRAVITY_THRESHOLD) {
+      const distSquared = (absDx * absDx) + (absDy * absDy);
+      if (distSquared <= GRAVITY_THRESHOLD * GRAVITY_THRESHOLD && distSquared > 0) {
+        const dist = Math.sqrt(distSquared);
+        ship.addVelocity((dx / dist) * GRAVITY_PULL, (dy / dist) * GRAVITY_PULL);
+        return true;
+      }
     }
+
+    return false;
+  }
+
+  private updateCamera() {
+    const dx = this.targetShip.x - this.playerShip.x;
+    const dy = this.targetShip.y - this.playerShip.y;
+    const distance = Math.sqrt((dx * dx) + (dy * dy));
+
+    this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
+
+    const distanceT = Phaser.Math.Clamp(
+      (distance - ZOOM_MAX_RADIUS) / (ZOOM_START_RADIUS - ZOOM_MAX_RADIUS),
+      0,
+      1,
+    );
+    const easedT = distanceT * distanceT * (3 - (2 * distanceT));
+    const targetZoom = Phaser.Math.Linear(MAX_CAMERA_ZOOM, MIN_CAMERA_ZOOM, easedT);
+    this.shipRenderScale = Phaser.Math.Linear(SHIP_NEAR_SCALE, SHIP_FAR_SCALE, easedT);
+    this.planetRenderScale = Phaser.Math.Linear(PLANET_NEAR_SCALE, PLANET_FAR_SCALE, easedT);
+    this.cameras.main.setZoom(
+      Phaser.Math.Linear(this.cameras.main.zoom, targetZoom, ZOOM_LERP),
+    );
+  }
+
+  private updatePlanetRender() {
+    this.planet.setTexture(`planet-${this.planetBase}-big-000`);
+    this.planet.setScale(PLANET_RENDER_SCALE * this.planetRenderScale);
   }
 
   private createStarLayer(textures: string[], count: number, scrollFactor: number) {
