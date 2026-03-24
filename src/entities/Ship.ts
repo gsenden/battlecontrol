@@ -35,10 +35,12 @@ export class Ship {
   private ghostSprites: Phaser.GameObjects.Image[] = [];
   private scene: Phaser.Scene;
   private ionTrail: IonParticle[] = [];
+  private readonly spritePrefix: string;
 
   constructor(scene: Phaser.Scene, x: number, y: number, stats: ShipStats) {
     this.scene = scene;
     this.state = new ShipState(stats, 0);
+    this.spritePrefix = stats.spritePrefix;
 
     // Create Matter.js circle body (simple hitbox for now)
     this.body = scene.matter.add.circle(x, y, stats.size, {
@@ -51,9 +53,10 @@ export class Ship {
     scene.matter.body.setInertia(this.body, Infinity);
 
     // Ship sprite — frame 0 = facing up
-    this.sprite = scene.add.image(x, y, 'human-cruiser-big-000');
+    const defaultTexture = `${this.spritePrefix}-big-000`;
+    this.sprite = scene.add.image(x, y, defaultTexture);
     for (let i = 0; i < 8; i++) {
-      const ghost = scene.add.image(x, y, 'human-cruiser-big-000');
+      const ghost = scene.add.image(x, y, defaultTexture);
       ghost.setVisible(false);
       this.ghostSprites.push(ghost);
     }
@@ -114,7 +117,7 @@ export class Ship {
   /** Called every render frame — updates visuals only */
   renderUpdate(scale: number = 1) {
     const frameIndex = this.facingToFrame();
-    const texture = `human-cruiser-big-${String(frameIndex).padStart(3, '0')}`;
+    const texture = `${this.spritePrefix}-big-${String(frameIndex).padStart(3, '0')}`;
     const x = this.body.position.x;
     const y = this.body.position.y;
 

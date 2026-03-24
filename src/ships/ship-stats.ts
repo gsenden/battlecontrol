@@ -2,7 +2,9 @@
 // These control game logic (cooldowns, energy, costs) while matter-rs handles physics
 
 export interface ShipStats {
-  name: string;
+  raceName: string;       // "Earthling" — shown in HUD
+  shipClass: string;      // "Cruiser"
+  captainNames: string[]; // Pool of captain names from race_strings
   cost: number;
 
   // Physics properties
@@ -28,14 +30,22 @@ export interface ShipStats {
   maxCrew: number;        // Crew = health points
 
   // Visual
+  spritePrefix: string;   // Texture key prefix (e.g. 'human-cruiser')
   color: number;          // Ship color (hex)
   size: number;           // Ship radius for polygon body
 }
 
 // Human Cruiser - balanced ship, good for testing
 // Original SC2 values from src/uqm/ships/human/human.c
+// Captain names from content/base/ships/human/cruiser.txt
 export const HUMAN_CRUISER: ShipStats = {
-  name: 'Earthling Cruiser',
+  raceName: 'Earthling',
+  shipClass: 'Cruiser',
+  captainNames: [
+    'Decker', 'Trent', 'Adama', 'Spiff', 'Graeme',
+    'Kirk', 'Pike', 'Halleck', 'Tuf', 'Pirx',
+    'Wu', 'VanRijn', 'Ender', 'Buck', 'Solo', 'Belt',
+  ],
   cost: 11,
 
   mass: 6,
@@ -56,6 +66,7 @@ export const HUMAN_CRUISER: ShipStats = {
 
   maxCrew: 18,
 
+  spritePrefix: 'human-cruiser',
   color: 0x4488ff,
   size: 16,
 };

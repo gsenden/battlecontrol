@@ -3,6 +3,8 @@ import { BATTLE_WIDTH, BATTLE_HEIGHT, PHYSICS_DELTA } from '../constants.js';
 import { Ship } from '../entities/Ship.js';
 import { HUMAN_CRUISER } from '../ships/ship-stats.js';
 import { shortestWrappedDelta } from '../utils/wrap.js';
+import { BattleHUD } from '../ui/BattleHUD.js';
+import cruiserIcon from '../assets/ships/human/cruiser-icon.png';
 
 import starBig from '../assets/stars/stars-000.png';
 import starMed from '../assets/stars/stars-001.png';
@@ -17,6 +19,10 @@ import starMiscSml0 from '../assets/stars/stars-misc-sml-000.png';
 import starMiscSml1 from '../assets/stars/stars-misc-sml-001.png';
 
 const shipModules = import.meta.glob('../assets/ships/human/cruiser-*.png', { eager: true, import: 'default' }) as Record<string, string>;
+const captainModules = import.meta.glob('../assets/ships/human/captain/cruiser-cap-*.png', { eager: true, import: 'default' }) as Record<string, string>;
+const captainFrameUrls = Object.entries(captainModules)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([, url]) => url);
 const planetModules = import.meta.glob('../assets/planets/*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const planetBases = Object.keys(planetModules)
   .filter((path) => path.endsWith('-big-000.png'))
@@ -57,6 +63,7 @@ export class BattleScene extends Phaser.Scene {
   private physicsAccumulator = 0;
   private shipRenderScale = SHIP_FAR_SCALE;
   private planetRenderScale = PLANET_FAR_SCALE;
+  private hud!: BattleHUD;
 
   constructor() {
     super('BattleScene');
@@ -117,7 +124,7 @@ export class BattleScene extends Phaser.Scene {
     gfx.destroy();
 
     // Ship — spawn offset from center so it's not on the planet
-    this.playerShip = new Ship(this, this.planetX + 300, this.planetY, HUMAN_CRUISER);
+    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, HUMAN_CRUISER);
     this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, HUMAN_CRUISER);
     this.targetShip.setTint(0xff8866);
 
@@ -126,6 +133,16 @@ export class BattleScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, BATTLE_WIDTH, BATTLE_HEIGHT);
     this.cameras.main.setZoom(DEFAULT_CAMERA_ZOOM);
     this.cameras.main.startFollow(this.cameraTarget);
+
+    // HUD
+    this.hud = new BattleHUD();
+    this.hud.setShip({
+      state: this.playerShip.state,
+      stats: HUMAN_CRUISER,
+      portraitUrl: cruiserIcon,
+      captainFrameUrls: captainFrameUrls,
+      captainName: HUMAN_CRUISER.captainNames[Math.floor(Math.random() * HUMAN_CRUISER.captainNames.length)],
+    });
 
     // Input
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -154,6 +171,7 @@ export class BattleScene extends Phaser.Scene {
     this.updatePlanetRender();
     this.playerShip.renderUpdate(this.shipRenderScale);
     this.targetShip.renderUpdate(this.shipRenderScale);
+    this.hud.update(input);
   }
 
   private applyGravity(ship: Ship): boolean {
