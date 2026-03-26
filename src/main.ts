@@ -1,10 +1,16 @@
 import Phaser from 'phaser';
 import { BattleScene } from './scenes/BattleScene.js';
 
+const gameElement = document.getElementById('game');
+
+if (!gameElement) {
+  throw new Error('Missing #game mount point');
+}
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: window.innerWidth,
-  height: window.innerHeight,
+  width: gameElement.clientWidth,
+  height: gameElement.clientHeight,
   parent: 'game',
   backgroundColor: '#000000',
   scene: [BattleScene],

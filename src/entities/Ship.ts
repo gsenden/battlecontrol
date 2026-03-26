@@ -204,6 +204,20 @@ export class Ship {
     return Math.sqrt(vel.x * vel.x + vel.y * vel.y);
   }
 
+  destroy() {
+    for (const particle of this.ionTrail) {
+      particle.sprite.destroy();
+    }
+    this.ionTrail = [];
+
+    this.sprite.destroy();
+    for (const ghost of this.ghostSprites) {
+      ghost.destroy();
+    }
+
+    this.scene.matter.world.remove(this.body);
+  }
+
   private facingToFrame(): number {
     let angle = this.state.facing + Math.PI / 2;
     angle = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);

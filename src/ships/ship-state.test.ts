@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ShipState } from './ship-state.js';
-import { HUMAN_CRUISER } from './ship-stats.js';
+import { HUMAN_CRUISER } from './human/human-cruiser-stats.js';
 
 const NO_INPUT = { left: false, right: false, thrust: false, weapon: false, special: false };
 const ZERO_VELOCITY = { x: 0, y: 0 };

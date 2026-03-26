@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { BATTLE_WIDTH, BATTLE_HEIGHT, PHYSICS_DELTA } from '../constants.js';
 import { Ship } from '../entities/Ship.js';
-import { HUMAN_CRUISER } from '../ships/ship-stats.js';
+import { HUMAN_CRUISER } from '../ships/human/human-cruiser-stats.js';
+import { SHIP_PRESETS } from '../ships/ship-presets.js';
 import { shortestWrappedDelta } from '../utils/wrap.js';
 import { BattleHUD } from '../ui/BattleHUD.js';
-import cruiserIcon from '../assets/ships/human/cruiser-icon.png';
+import type { HUDShipInfo } from '../ui/BattleHUD.js';
 
 import starBig from '../assets/stars/stars-000.png';
 import starMed from '../assets/stars/stars-001.png';
@@ -18,11 +19,7 @@ import starMiscMed1 from '../assets/stars/stars-misc-med-001.png';
 import starMiscSml0 from '../assets/stars/stars-misc-sml-000.png';
 import starMiscSml1 from '../assets/stars/stars-misc-sml-001.png';
 
-const shipModules = import.meta.glob('../assets/ships/human/cruiser-*.png', { eager: true, import: 'default' }) as Record<string, string>;
-const captainModules = import.meta.glob('../assets/ships/human/captain/cruiser-cap-*.png', { eager: true, import: 'default' }) as Record<string, string>;
-const captainFrameUrls = Object.entries(captainModules)
-  .sort(([a], [b]) => a.localeCompare(b))
-  .map(([, url]) => url);
+const shipModules = import.meta.glob('../assets/ships/*/*-big-*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const planetModules = import.meta.glob('../assets/planets/*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const planetBases = Object.keys(planetModules)
   .filter((path) => path.endsWith('-big-000.png'))
@@ -55,6 +52,9 @@ export class BattleScene extends Phaser.Scene {
   private playerShip!: Ship;
   private targetShip!: Ship;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private plusKey!: Phaser.Input.Keyboard.Key;
+  private shiftKey!: Phaser.Input.Keyboard.Key;
+  private numpadAddKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
   private planetBase!: string;
@@ -64,6 +64,7 @@ export class BattleScene extends Phaser.Scene {
   private shipRenderScale = SHIP_FAR_SCALE;
   private planetRenderScale = PLANET_FAR_SCALE;
   private hud!: BattleHUD;
+  private selectedShipIndex = 0;
 
   constructor() {
     super('BattleScene');
@@ -87,7 +88,8 @@ export class BattleScene extends Phaser.Scene {
     const shipEntries = Object.entries(shipModules).sort(([a], [b]) => a.localeCompare(b));
     shipEntries.forEach(([path, url]) => {
       const file = path.split('/').pop()!.replace('.png', '');
-      this.load.image(`human-${file}`, url);
+      const folder = path.split('/').at(-2)!;
+      this.load.image(`${folder}-${file}`, url);
     });
 
     // Planets
@@ -124,7 +126,7 @@ export class BattleScene extends Phaser.Scene {
     gfx.destroy();
 
     // Ship — spawn offset from center so it's not on the planet
-    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, HUMAN_CRUISER);
+    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, SHIP_PRESETS[this.selectedShipIndex].stats);
     this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, HUMAN_CRUISER);
     this.targetShip.setTint(0xff8866);
 
@@ -136,16 +138,13 @@ export class BattleScene extends Phaser.Scene {
 
     // HUD
     this.hud = new BattleHUD();
-    this.hud.setShip({
-      state: this.playerShip.state,
-      stats: HUMAN_CRUISER,
-      portraitUrl: cruiserIcon,
-      captainFrameUrls: captainFrameUrls,
-      captainName: HUMAN_CRUISER.captainNames[Math.floor(Math.random() * HUMAN_CRUISER.captainNames.length)],
-    });
+    this.syncHudWithSelectedShip();
 
     // Input
     this.cursors = this.input.keyboard!.createCursorKeys();
+    this.plusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
+    this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+    this.numpadAddKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_ADD);
   }
 
   update(_time: number, delta: number) {
@@ -156,6 +155,13 @@ export class BattleScene extends Phaser.Scene {
       weapon: false,
       special: false,
     };
+
+    if (
+      Phaser.Input.Keyboard.JustDown(this.numpadAddKey)
+      || (Phaser.Input.Keyboard.JustDown(this.plusKey) && this.shiftKey.isDown)
+    ) {
+      this.cyclePlayerShip();
+    }
 
     // Fixed timestep physics at 24fps
     this.physicsAccumulator += delta;
@@ -216,6 +222,31 @@ export class BattleScene extends Phaser.Scene {
   private updatePlanetRender() {
     this.planet.setTexture(`planet-${this.planetBase}-big-000`);
     this.planet.setScale(PLANET_RENDER_SCALE * this.planetRenderScale);
+  }
+
+  private cyclePlayerShip() {
+    this.selectedShipIndex = (this.selectedShipIndex + 1) % SHIP_PRESETS.length;
+    const currentX = this.playerShip.x;
+    const currentY = this.playerShip.y;
+    const currentVelocity = { ...this.playerShip.body.velocity };
+
+    this.playerShip.destroy();
+    this.playerShip = new Ship(this, currentX, currentY, SHIP_PRESETS[this.selectedShipIndex].stats);
+    this.matter.body.setVelocity(this.playerShip.body, currentVelocity);
+    this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
+    this.syncHudWithSelectedShip();
+  }
+
+  private syncHudWithSelectedShip() {
+    const preset = SHIP_PRESETS[this.selectedShipIndex];
+    this.hud.setShip({
+      state: this.playerShip.state,
+      stats: preset.stats,
+      portraitUrl: preset.portraitUrl,
+      captainFrameUrls: preset.captainFrameUrls,
+      captainLayout: preset.captainLayout,
+      captainName: preset.stats.captainNames[Math.floor(Math.random() * preset.stats.captainNames.length)],
+    } satisfies HUDShipInfo);
   }
 
   private createStarLayer(textures: string[], count: number, scrollFactor: number) {

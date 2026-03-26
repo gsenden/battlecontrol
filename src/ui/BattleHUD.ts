@@ -4,12 +4,14 @@ import { HudState } from './hud-state.svelte.js';
 import type { ShipState } from '../ships/ship-state.js';
 import type { ShipStats } from '../ships/ship-stats.js';
 import type { ShipInput } from '../ships/ship-state.js';
+import type { CaptainHudLayout } from './hud-state.svelte.js';
 
 export interface HUDShipInfo {
   state: ShipState;
   stats: ShipStats;
   portraitUrl: string;
   captainFrameUrls: string[];
+  captainLayout: CaptainHudLayout;
   captainName: string;
 }
 
@@ -20,10 +22,15 @@ export class BattleHUD {
   private ship: HUDShipInfo | null = null;
 
   constructor() {
+    const hudRoot = document.getElementById('hud');
+    if (!hudRoot) {
+      throw new Error('Missing #hud mount point');
+    }
+
     this.container = document.createElement('div');
     this.container.id = 'battle-hud';
-    this.container.className = 'fixed top-0 right-0 z-100 pointer-events-none';
-    document.body.appendChild(this.container);
+    this.container.className = 'h-full w-full pointer-events-none';
+    hudRoot.appendChild(this.container);
 
     this.component = mount(BattleHUDComponent, {
       target: this.container,
@@ -40,7 +47,7 @@ export class BattleHUD {
     this.hudState.shipName = info.stats.raceName.toUpperCase();
     this.hudState.captainName = info.captainName;
     this.hudState.portraitUrl = info.portraitUrl;
-    this.hudState.captainFrameUrls = info.captainFrameUrls;
+    this.hudState.configureCaptain(info.captainFrameUrls, info.captainLayout);
 
     // Preload captain frames
     for (const url of info.captainFrameUrls) {

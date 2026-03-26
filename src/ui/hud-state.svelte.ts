@@ -1,11 +1,24 @@
 import type { ShipInput } from '../ships/ship-state.js';
 
-const ANIM = {
-  turnLeft:  { start: 1, count: 5 },
-  thrust:    { start: 6, count: 3 },
-  weapon:    { start: 9, count: 3 },
-  special:   { start: 12, count: 3 },
-} as const;
+export interface CaptainAnimationLayer {
+  start: number;
+  count: number;
+  style: string;
+}
+
+export interface CaptainHudLayout {
+  turnLeft: CaptainAnimationLayer;
+  thrust: CaptainAnimationLayer;
+  weapon: CaptainAnimationLayer;
+  special: CaptainAnimationLayer;
+}
+
+const DEFAULT_LAYOUT: CaptainHudLayout = {
+  turnLeft: { start: 1, count: 3, style: '' },
+  thrust: { start: 4, count: 2, style: '' },
+  weapon: { start: 6, count: 2, style: '' },
+  special: { start: 8, count: 2, style: '' },
+};
 
 function stepOffset(offset: number, active: boolean, max: number): number {
   if (active && offset < max) return offset + 1;
@@ -22,30 +35,82 @@ export class HudState {
   captainName = $state('');
   portraitUrl = $state('');
   captainFrameUrls = $state<string[]>([]);
-  captainFrame = $state(0);
+  captainBackgroundUrl = $state('');
+  captainTurnUrl = $state('');
+  captainThrustUrl = $state('');
+  captainWeaponUrl = $state('');
+  captainSpecialUrl = $state('');
+  captainTurnStyle = $state('');
+  captainThrustStyle = $state('');
+  captainWeaponStyle = $state('');
+  captainSpecialStyle = $state('');
 
+  private leftTurnOffset = 0;
+  private rightTurnOffset = 0;
   private thrustOffset = 0;
   private weaponOffset = 0;
   private specialOffset = 0;
-  private turnOffset = 0;
+  private captainLayout: CaptainHudLayout = DEFAULT_LAYOUT;
+
+  configureCaptain(urls: string[], layout: CaptainHudLayout) {
+    this.captainFrameUrls = urls;
+    this.captainLayout = layout;
+    this.captainTurnStyle = layout.turnLeft.style;
+    this.captainThrustStyle = layout.thrust.style;
+    this.captainWeaponStyle = layout.weapon.style;
+    this.captainSpecialStyle = layout.special.style;
+    this.leftTurnOffset = 0;
+    this.rightTurnOffset = 0;
+    this.thrustOffset = 0;
+    this.weaponOffset = 0;
+    this.specialOffset = 0;
+    this.syncCaptainLayers();
+  }
 
   updateInput(input: ShipInput) {
-    this.thrustOffset = stepOffset(this.thrustOffset, input.thrust, ANIM.thrust.count);
-    this.weaponOffset = stepOffset(this.weaponOffset, input.weapon, ANIM.weapon.count);
-    this.specialOffset = stepOffset(this.specialOffset, input.special, ANIM.special.count);
-    this.turnOffset = stepOffset(this.turnOffset, input.left || input.right, ANIM.turnLeft.count);
-
-    let frame = 0;
-    if (this.specialOffset > 0) {
-      frame = ANIM.special.start + this.specialOffset - 1;
-    } else if (this.weaponOffset > 0) {
-      frame = ANIM.weapon.start + this.weaponOffset - 1;
-    } else if (this.thrustOffset > 0) {
-      frame = ANIM.thrust.start + this.thrustOffset - 1;
-    } else if (this.turnOffset > 0) {
-      frame = ANIM.turnLeft.start + this.turnOffset - 1;
+    if (input.left && !input.right) {
+      this.rightTurnOffset = 0;
+      this.leftTurnOffset = stepOffset(this.leftTurnOffset, true, this.captainLayout.turnLeft.count);
+    } else if (input.right) {
+      this.leftTurnOffset = 0;
+      this.rightTurnOffset = stepOffset(this.rightTurnOffset, true, this.captainLayout.turnLeft.count);
+    } else {
+      this.leftTurnOffset = stepOffset(this.leftTurnOffset, false, this.captainLayout.turnLeft.count);
+      this.rightTurnOffset = stepOffset(this.rightTurnOffset, false, this.captainLayout.turnLeft.count);
     }
 
-    this.captainFrame = frame;
+    this.thrustOffset = stepOffset(this.thrustOffset, input.thrust, this.captainLayout.thrust.count);
+    this.weaponOffset = stepOffset(this.weaponOffset, input.weapon, this.captainLayout.weapon.count);
+    this.specialOffset = stepOffset(this.specialOffset, input.special, this.captainLayout.special.count);
+    this.syncCaptainLayers();
+  }
+
+  private syncCaptainLayers() {
+    this.captainBackgroundUrl = this.captainFrameUrls[0] ?? '';
+    this.captainTurnUrl = this.getTurnUrl();
+    this.captainThrustUrl = this.getFrameUrl(this.captainLayout.thrust.start, this.thrustOffset);
+    this.captainWeaponUrl = this.getFrameUrl(this.captainLayout.weapon.start, this.weaponOffset);
+    this.captainSpecialUrl = this.getFrameUrl(this.captainLayout.special.start, this.specialOffset);
+  }
+
+  private getTurnUrl() {
+    if (this.leftTurnOffset > 0) {
+      return this.getFrameUrl(this.captainLayout.turnLeft.start, this.leftTurnOffset);
+    }
+
+    if (this.rightTurnOffset > 0) {
+      const index = this.captainLayout.turnLeft.start + this.captainLayout.turnLeft.count - this.rightTurnOffset;
+      return this.captainFrameUrls[index] ?? '';
+    }
+
+    return '';
+  }
+
+  private getFrameUrl(start: number, offset: number) {
+    if (offset <= 0) {
+      return '';
+    }
+
+    return this.captainFrameUrls[start + offset - 1] ?? '';
   }
 }
