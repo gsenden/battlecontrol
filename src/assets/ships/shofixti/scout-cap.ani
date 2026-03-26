@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 scout-cap-000.png -2 1 0 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
 scout-cap-001.png -2 1 -14 -83
 scout-cap-002.png -2 1 -14 -83
 scout-cap-002.png -2 1 -14 -83
 scout-cap-002.png -2 1 -14 -83
 scout-cap-003.png -2 1 -14 -83
+
+# Thrust overlay.
 scout-cap-004.png -2 1 -74 -110
 scout-cap-004.png -2 1 -74 -110
 scout-cap-005.png -2 1 -74 -110
+
+# Primary weapon overlay.
 scout-cap-006.png -2 1 -177 -82
 scout-cap-006.png -2 1 -177 -82
 scout-cap-007.png -2 1 -177 -82
+
+# Special overlay.
 scout-cap-008.png -2 1 -90 -35
 scout-cap-009.png -2 1 -90 -35
 scout-cap-009.png -2 1 -90 -35

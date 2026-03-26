@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 skiff-cap-000.png -1 1 0 0
-skiff-cap-001.png -1 1 -61 -81
-skiff-cap-002.png -1 1 -61 -81
-skiff-cap-002.png -1 1 -61 -81
-skiff-cap-002.png -1 1 -61 -81
-skiff-cap-003.png -1 1 -61 -81
-skiff-cap-004.png -1 1 -111 -27
-skiff-cap-004.png -1 1 -111 -27
-skiff-cap-005.png -1 1 -111 -27
+
+# Turn left/right. Right turn reuses the same frames mirrored.
+skiff-cap-001.png -1 1 -58 -81
+skiff-cap-002.png -1 1 -58 -81
+skiff-cap-002.png -1 1 -58 -81
+skiff-cap-002.png -1 1 -58 -81
+skiff-cap-003.png -1 1 -58 -81
+
+# Thrust overlay.
+skiff-cap-004.png -1 1 -109 -27
+skiff-cap-004.png -1 1 -109 -27
+skiff-cap-005.png -1 1 -109 -27
+
+# Primary weapon overlay.
 skiff-cap-006.png -1 1 -33 -41
 skiff-cap-006.png -1 1 -33 -41
 skiff-cap-007.png -1 1 -33 -41
+
+# Special overlay.
 skiff-cap-008.png -1 1 -75 0
 skiff-cap-008.png -1 1 -75 0
 skiff-cap-009.png -1 1 -75 0

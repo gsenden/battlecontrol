@@ -7,49 +7,66 @@ interface CaptainSection {
   readonly y: number;
 }
 
-function toStyle(x: number, y: number) {
-  return `left: ${Math.abs(x)}px; top: ${Math.abs(y)}px;`;
+export interface CaptainAniFrame {
+  readonly file: string;
+  readonly x: number;
+  readonly y: number;
 }
 
-function parseSections(lines: string[]): CaptainSection[] {
+function toStyle(x: number, y: number) {
+  return `left: ${-x}px; top: ${-y}px;`;
+}
+
+function parseAniLines(aniContents: string): CaptainAniFrame[] {
+  return aniContents
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith('//'))
+    .map((line) => {
+      const [file, , , xRaw, yRaw] = line.split(/\s+/);
+      return {
+        file,
+        x: Number(xRaw),
+        y: Number(yRaw),
+      };
+    });
+}
+
+function parseSections(frames: CaptainAniFrame[]): CaptainSection[] {
   const sections: CaptainSection[] = [];
   let currentX: number | null = null;
   let currentY: number | null = null;
   let currentStart = 1;
-  let currentFrames = new Set<string>();
-  let uniqueFrameIndex = 1;
+  let currentCount = 0;
+  let frameIndex = 1;
 
-  for (const line of lines.slice(1)) {
-    const [file, , , xRaw, yRaw] = line.trim().split(/\s+/);
-    const x = Number(xRaw);
-    const y = Number(yRaw);
+  for (const frame of frames.slice(1)) {
+    const { x, y } = frame;
 
     if (currentX === null || currentY === null || currentX !== x || currentY !== y) {
       if (currentX !== null && currentY !== null) {
         sections.push({
           start: currentStart,
-          count: currentFrames.size,
+          count: currentCount,
           x: currentX,
           y: currentY,
         });
-        currentStart = uniqueFrameIndex;
+        currentStart = frameIndex;
       }
 
       currentX = x;
       currentY = y;
-      currentFrames = new Set<string>();
+      currentCount = 0;
     }
 
-    if (!currentFrames.has(file)) {
-      currentFrames.add(file);
-      uniqueFrameIndex += 1;
-    }
+    currentCount += 1;
+    frameIndex += 1;
   }
 
   if (currentX !== null && currentY !== null) {
     sections.push({
       start: currentStart,
-      count: currentFrames.size,
+      count: currentCount,
       x: currentX,
       y: currentY,
     });
@@ -59,11 +76,8 @@ function parseSections(lines: string[]): CaptainSection[] {
 }
 
 export function parseCaptainLayout(aniContents: string): CaptainHudLayout {
-  const lines = aniContents
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const sections = parseSections(lines);
+  const frames = parseAniLines(aniContents);
+  const sections = parseSections(frames);
   const [turnLeft, thrust, weapon, special] = sections;
 
   if (!turnLeft || !thrust || !weapon || !special) {
@@ -76,4 +90,12 @@ export function parseCaptainLayout(aniContents: string): CaptainHudLayout {
     weapon: { start: weapon.start, count: weapon.count, style: toStyle(weapon.x, weapon.y) },
     special: { start: special.start, count: special.count, style: toStyle(special.x, special.y) },
   };
+}
+
+export function parseCaptainFrameFiles(aniContents: string): string[] {
+  return parseAniLines(aniContents).map((frame) => frame.file);
+}
+
+export function parseCaptainFrameStyles(aniContents: string): string[] {
+  return parseAniLines(aniContents).map((frame) => toStyle(frame.x, frame.y));
 }

@@ -1,15 +1,34 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 probe-cap-000.png -2 1 0 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
 probe-cap-001.png -2 1 0 0
 probe-cap-002.png -2 1 0 0
 probe-cap-002.png -2 1 0 0
 probe-cap-002.png -2 1 0 0
+
+# Thrust overlay.
 probe-cap-003.png -2 1 -181 0
+
+# Primary weapon overlay.
 probe-cap-004.png -2 1 -52 -54
 probe-cap-004.png -2 1 -52 -54
 probe-cap-005.png -2 1 -52 -54
+
+# Special overlay.
 probe-cap-006.png -2 1 -38 -16
 probe-cap-006.png -2 1 -38 -16
 probe-cap-007.png -2 1 -38 -16
+
+# Extra sectie 5.
 probe-cap-008.png -2 1 0 -33
 probe-cap-008.png -2 1 0 -33
 probe-cap-009.png -2 1 0 -33

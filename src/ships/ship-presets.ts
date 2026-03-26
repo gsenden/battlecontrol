@@ -1,5 +1,5 @@
 import type { CaptainHudLayout } from '../ui/hud-state.svelte.js';
-import { parseCaptainLayout } from '../ui/captain-layout.js';
+import { parseCaptainFrameFiles, parseCaptainFrameStyles, parseCaptainLayout } from '../ui/captain-layout.js';
 import type { ShipStats } from './ship-stats.js';
 import { ANDROSYNTH_GUARDIAN } from './androsynth/androsynth-guardian-stats.js';
 import { ARILOU_SKIFF } from './arilou/arilou-skiff-stats.js';
@@ -35,12 +35,14 @@ interface ShipPresetSource {
   stats: ShipStats;
   folder: string;
   base: string;
+  captainFrameStyleOverrides?: Record<string, string>;
 }
 
 export interface ShipPreset {
   stats: ShipStats;
   portraitUrl: string;
   captainFrameUrls: string[];
+  captainFrameStyles: string[];
   captainLayout: CaptainHudLayout;
 }
 
@@ -59,15 +61,32 @@ function requireSingleModule(modules: Record<string, string>, pattern: string) {
   return matches[0][1];
 }
 
-function buildShipPreset({ stats, folder, base }: ShipPresetSource): ShipPreset {
-  const captainFrameUrls = readMatchingEntries(CAPTAIN_FRAME_MODULES, `/${folder}/${base}-cap-`).map(([, url]) => url);
+function buildShipPreset({ stats, folder, base, captainFrameStyleOverrides = {} }: ShipPresetSource): ShipPreset {
   const portraitUrl = requireSingleModule(PORTRAIT_MODULES, `/${folder}/${base}-icons-001.png`);
   const captainAni = requireSingleModule(CAPTAIN_ANI_MODULES, `/${folder}/${base}-cap.ani`);
+  const captainFrameEntries = parseCaptainFrameFiles(captainAni);
+  const frameUrlsByFile = new Map(readMatchingEntries(CAPTAIN_FRAME_MODULES, `/${folder}/${base}-cap-`).map(([path, url]) => [
+    path.split('/').pop()!,
+    url,
+  ]));
+  const captainFrameUrls = captainFrameEntries.map((file) => {
+    const url = frameUrlsByFile.get(file);
+    if (!url) {
+      throw new Error(`Missing captain frame "${file}" for ${folder}/${base}.`);
+    }
+
+    return url;
+  });
+  const captainFrameStyles = parseCaptainFrameStyles(captainAni).map((style, index) => {
+    const file = captainFrameEntries[index];
+    return captainFrameStyleOverrides[file] ?? style;
+  });
 
   return {
     stats,
     portraitUrl,
     captainFrameUrls,
+    captainFrameStyles,
     captainLayout: parseCaptainLayout(captainAni),
   };
 }

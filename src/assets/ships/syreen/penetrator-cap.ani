@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 penetrator-cap-000.png -2 1 0 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
 penetrator-cap-001.png -2 1 -125 -56
 penetrator-cap-002.png -2 1 -125 -56
 penetrator-cap-002.png -2 1 -125 -56
 penetrator-cap-002.png -2 1 -125 -56
 penetrator-cap-003.png -2 1 -125 -56
+
+# Thrust overlay.
 penetrator-cap-004.png -2 1 -97 0
 penetrator-cap-004.png -2 1 -97 0
 penetrator-cap-005.png -2 1 -97 0
+
+# Primary weapon overlay.
 penetrator-cap-006.png -2 1 0 0
 penetrator-cap-006.png -2 1 0 0
 penetrator-cap-007.png -2 1 0 0
+
+# Special overlay.
 penetrator-cap-008.png -2 1 -108 0
 penetrator-cap-008.png -2 1 -108 0
 penetrator-cap-009.png -2 1 -108 0

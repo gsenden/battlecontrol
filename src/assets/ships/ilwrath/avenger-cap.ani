@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <transparent-color> <colormap-index> <hotspot-x> <hotspot-y>
+# Column 1: source image for this frame.
+# Column 2: transparency handling for the image.
+# Column 3: palette/colormap selection for paletted images.
+# Column 4: hotspot x. The frame is drawn at draw_x - hotspot_x.
+# Column 5: hotspot y. The frame is drawn at draw_y - hotspot_y.
+#
+# Background.
 avenger-cap-000.png 7 1 0 0
+
+# Turn animation frames.
 avenger-cap-001.png -1 1 0 0
-avenger-cap-002.png -1 1 0 0
-avenger-cap-002.png -1 1 0 0
-avenger-cap-002.png -1 1 0 0
-avenger-cap-003.png -1 1 -128 0
+avenger-cap-002.png -1 1 0OK -2
+avenger-cap-002.png -1 1 0 -2
+avenger-cap-002.png -1 1 0 -2
+avenger-cap-003.png -1 1 0 0
+
+# Thrust overlay.
 avenger-cap-004.png -1 1 -87 -68
 avenger-cap-004.png -1 1 -87 -68
 avenger-cap-005.png -1 1 -87 -68
+
+# Primary weapon overlay.
 avenger-cap-006.png -1 1 -95 -4
 avenger-cap-006.png -1 1 -95 -4
 avenger-cap-007.png -1 1 -95 -4
+
+# Special overlay.
 avenger-cap-008.png -1 1 -93 -18
 avenger-cap-008.png -1 1 -93 -18
 avenger-cap-009.png -1 1 -93 -18

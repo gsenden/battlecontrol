@@ -1,15 +1,36 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 blade-cap-000.png -2 1 0 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
 blade-cap-001.png -2 1 0 -77
+
+# Thrust overlay.
 blade-cap-002.png -2 1 0 -68
 blade-cap-002.png -2 1 0 -68
 blade-cap-002.png -2 1 0 -68
+
+# Primary weapon overlay.
 blade-cap-003.png -2 1 -147 -68
+
+# Special overlay.
 blade-cap-004.png -2 1 0 0
 blade-cap-004.png -2 1 0 0
 blade-cap-005.png -2 1 0 0
+
+# Extra sectie 5.
 blade-cap-006.png -2 1 -78 0
 blade-cap-006.png -2 1 -78 0
 blade-cap-007.png -2 1 -78 0
+
+# Extra sectie 6.
 blade-cap-008.png -2 1 -138 0
 blade-cap-008.png -2 1 -138 0
 blade-cap-009.png -2 1 -138 0

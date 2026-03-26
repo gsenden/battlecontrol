@@ -47,6 +47,7 @@ const SHIP_NEAR_SCALE = 1.05;
 const SHIP_FAR_SCALE = 0.68;
 const PLANET_NEAR_SCALE = 1.15;
 const PLANET_FAR_SCALE = 0.72;
+const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ship';
 
 export class BattleScene extends Phaser.Scene {
   private playerShip!: Ship;
@@ -100,6 +101,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create() {
+    this.selectedShipIndex = this.loadSelectedShipIndex();
+
     // Stars
     this.createStarLayer(
       ['star-big', 'star-misc-big-0', 'star-misc-big-1'],
@@ -234,6 +237,7 @@ export class BattleScene extends Phaser.Scene {
     this.playerShip = new Ship(this, currentX, currentY, SHIP_PRESETS[this.selectedShipIndex].stats);
     this.matter.body.setVelocity(this.playerShip.body, currentVelocity);
     this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
+    this.saveSelectedShip();
     this.syncHudWithSelectedShip();
   }
 
@@ -244,6 +248,7 @@ export class BattleScene extends Phaser.Scene {
       stats: preset.stats,
       portraitUrl: preset.portraitUrl,
       captainFrameUrls: preset.captainFrameUrls,
+      captainFrameStyles: preset.captainFrameStyles,
       captainLayout: preset.captainLayout,
       captainName: preset.stats.captainNames[Math.floor(Math.random() * preset.stats.captainNames.length)],
     } satisfies HUDShipInfo);
@@ -267,6 +272,31 @@ export class BattleScene extends Phaser.Scene {
       const y = (-padY) + (Math.random() * spawnHeight);
       const star = this.add.image(x, y, texture);
       star.setScrollFactor(scrollFactor);
+    }
+  }
+
+  private loadSelectedShipIndex() {
+    try {
+      const storedSpritePrefix = window.localStorage.getItem(SELECTED_SHIP_STORAGE_KEY);
+      if (!storedSpritePrefix) {
+        return 0;
+      }
+
+      const index = SHIP_PRESETS.findIndex((preset) => preset.stats.spritePrefix === storedSpritePrefix);
+      return index >= 0 ? index : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private saveSelectedShip() {
+    try {
+      window.localStorage.setItem(
+        SELECTED_SHIP_STORAGE_KEY,
+        SHIP_PRESETS[this.selectedShipIndex].stats.spritePrefix,
+      );
+    } catch {
+      // Ignore storage failures and keep the current in-memory selection.
     }
   }
 }

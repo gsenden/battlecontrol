@@ -1,15 +1,36 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 fury-cap-000.png -2 1 0 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
 fury-cap-001.png -2 1 0 -91
+
+# Thrust overlay.
 fury-cap-002.png -2 1 0 -89
 fury-cap-002.png -2 1 0 -89
 fury-cap-002.png -2 1 0 -89
+
+# Primary weapon overlay.
 fury-cap-003.png -2 1 -146 -89
+
+# Special overlay.
 fury-cap-004.png -2 1 -15 -13
 fury-cap-004.png -2 1 -15 -13
 fury-cap-005.png -2 1 -15 -13
+
+# Extra sectie 5.
 fury-cap-006.png -2 1 -126 0
 fury-cap-006.png -2 1 -126 0
 fury-cap-007.png -2 1 -126 0
+
+# Extra sectie 6.
 fury-cap-008.png -2 1 -38 -59
 fury-cap-008.png -2 1 -38 -59
 fury-cap-009.png -2 1 -38 -59

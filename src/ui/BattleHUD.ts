@@ -11,6 +11,7 @@ export interface HUDShipInfo {
   stats: ShipStats;
   portraitUrl: string;
   captainFrameUrls: string[];
+  captainFrameStyles: string[];
   captainLayout: CaptainHudLayout;
   captainName: string;
 }
@@ -47,7 +48,7 @@ export class BattleHUD {
     this.hudState.shipName = info.stats.raceName.toUpperCase();
     this.hudState.captainName = info.captainName;
     this.hudState.portraitUrl = info.portraitUrl;
-    this.hudState.configureCaptain(info.captainFrameUrls, info.captainLayout);
+    this.hudState.configureCaptain(info.captainFrameUrls, info.captainLayout, info.captainFrameStyles);
 
     // Preload captain frames
     for (const url of info.captainFrameUrls) {

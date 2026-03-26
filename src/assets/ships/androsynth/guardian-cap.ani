@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 guardian-cap-000.png -2 1 0 0
-guardian-cap-001.png -2 1 -66 -31
-guardian-cap-002.png -2 1 -66 -31
-guardian-cap-002.png -2 1 -66 -31
-guardian-cap-002.png -2 1 -66 -31
-guardian-cap-003.png -2 1 -66 -31
+
+# Turn left/right. Right turn reuses the same frames mirrored.
+guardian-cap-001.png -2 1 -64 -31
+guardian-cap-002.png -2 1 -64 -31
+guardian-cap-002.png -2 1 -64 -31
+guardian-cap-002.png -2 1 -64 -31
+guardian-cap-003.png -2 1 -64 -31
+
+# Thrust overlay.
 guardian-cap-004.png -2 1 -4 0
 guardian-cap-004.png -2 1 -4 0
 guardian-cap-005.png -2 1 -4 0
+
+# Primary weapon overlay.
 guardian-cap-006.png -2 1 -119 -20
 guardian-cap-006.png -2 1 -119 -20
 guardian-cap-007.png -2 1 -119 -20
+
+# Special overlay.
 guardian-cap-008.png -2 1 -169 0
 guardian-cap-008.png -2 1 -169 0
 guardian-cap-009.png -2 1 -169 0

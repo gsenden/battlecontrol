@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 avatar-cap-000.png -2 1 0 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
 avatar-cap-001.png -2 1 0 0
 avatar-cap-002.png -2 1 0 0
 avatar-cap-002.png -2 1 0 0
 avatar-cap-002.png -2 1 0 0
 avatar-cap-003.png -2 1 0 0
+
+# Thrust overlay.
 avatar-cap-004.png -2 1 -78 0
 avatar-cap-005.png -2 1 -78 0
 avatar-cap-006.png -2 1 -78 0
+
+# Primary weapon overlay.
 avatar-cap-007.png -2 1 -56 0
 avatar-cap-008.png -2 1 -56 0
 avatar-cap-009.png -2 1 -56 0
+
+# Special overlay.
 avatar-cap-010.png -2 1 -158 0
 avatar-cap-010.png -2 1 -158 0
 avatar-cap-011.png -2 1 -158 0

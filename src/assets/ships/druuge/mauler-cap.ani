@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 mauler-cap-000.png -1 1 0 0
-mauler-cap-001.png -1 1 -108 -52
-mauler-cap-002.png -1 1 -108 -52
-mauler-cap-002.png -1 1 -108 -52
-mauler-cap-002.png -1 1 -108 -52
-mauler-cap-003.png -1 1 -108 -52
-mauler-cap-004.png 1 1 -164 -16
-mauler-cap-004.png 1 1 -164 -16
-mauler-cap-005.png 1 1 -164 -16
+
+# Turn left/right. Right turn reuses the same frames mirrored.
+mauler-cap-001.png -1 1 -104 -52
+mauler-cap-002.png -1 1 -104 -52
+mauler-cap-002.png -1 1 -104 -52
+mauler-cap-002.png -1 1 -104 -52
+mauler-cap-003.png -1 1 -104 -52
+
+# Thrust overlay.
+mauler-cap-004.png 1 1 -159 -16
+mauler-cap-004.png 1 1 -159 -16
+mauler-cap-005.png 1 1 -159 -16
+
+# Primary weapon overlay.
 mauler-cap-006.png -1 1 -134 -18
 mauler-cap-006.png -1 1 -134 -18
 mauler-cap-007.png -1 1 -134 -18
+
+# Special overlay.
 mauler-cap-008.png 1 1 -9 -10
 mauler-cap-008.png 1 1 -9 -10
 mauler-cap-009.png 1 1 -9 -10

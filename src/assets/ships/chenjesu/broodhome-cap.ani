@@ -1,15 +1,32 @@
+# Captain overlay ANI
+# Columns: <png-file> <x-scale> <y-scale> <x-offset> <y-offset>
+# Column 1: source image for this frame.
+# Column 2: source x scale/anchor from the asset pipeline; leave as-is.
+# Column 3: source y scale/anchor from the asset pipeline; leave as-is.
+# Column 4: x offset. More negative = further left.
+# Column 5: y offset. More negative = further up.
+#
+# Background.
 broodhome-cap-000.png -1 1 0 0
-broodhome-cap-001.png 1 1 -80 0
-broodhome-cap-002.png 1 1 -80 0
-broodhome-cap-002.png -1 1 -80 0
-broodhome-cap-002.png 1 1 -80 0
-broodhome-cap-003.png 1 1 -80 0
-broodhome-cap-004.png 1 1 -55 0
-broodhome-cap-004.png 1 1 -55 0
-broodhome-cap-005.png 1 1 -55 0
+
+# Turn left/right. Right turn reuses the same frames mirrored.
+broodhome-cap-002.png 1 1  -76 0
+broodhome-cap-001.png 1 1  -76 0
+broodhome-cap-002.png -1 1 -76 0
+broodhome-cap-002.png 1 1  -76 0
+broodhome-cap-003.png 1 1  -76 0
+
+# Thrust overlay.
+broodhome-cap-004.png 1 1 -51 0
+broodhome-cap-004.png 1 1 -51 0
+broodhome-cap-005.png 1 1 -51 0
+
+# Primary weapon overlay.
 broodhome-cap-006.png 1 1 -77 -50
 broodhome-cap-006.png 1 1 -77 -50
 broodhome-cap-007.png 1 1 -77 -50
+
+# Special overlay.
 broodhome-cap-008.png -1 1 0 -24
 broodhome-cap-008.png -1 1 0 -24
 broodhome-cap-009.png -1 1 0 -24

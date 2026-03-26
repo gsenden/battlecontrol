@@ -33,9 +33,9 @@
   <div class="relative w-[220px] h-[120px] bg-black border-[#838383] border-b-[#424242] border-r-[#424242]] border-3 overflow-hidden">
     <img class="absolute left-0 top-0 w-[220px] h-[120px] [image-rendering:pixelated]" src={state.captainBackgroundUrl} alt="Captain" />
 
-    {#if state.captainTurnUrl}
-      <img class="absolute [image-rendering:pixelated]" style={state.captainTurnStyle} src={state.captainTurnUrl} alt="" />
-    {/if}
+    {#each state.captainTurnLayers as turnLayer}
+      <img class="absolute [image-rendering:pixelated]" style={turnLayer.style} src={turnLayer.url} alt="" />
+    {/each}
 
     {#if state.captainThrustUrl}
       <img class="absolute [image-rendering:pixelated]" style={state.captainThrustStyle} src={state.captainThrustUrl} alt="" />
