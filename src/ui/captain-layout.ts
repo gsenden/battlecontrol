@@ -1,12 +1,5 @@
 import type { CaptainHudLayout } from './hud-state.svelte.js';
 
-interface CaptainSection {
-  readonly start: number;
-  readonly count: number;
-  readonly x: number;
-  readonly y: number;
-}
-
 export interface CaptainAniFrame {
   readonly file: string;
   readonly x: number;
@@ -32,63 +25,18 @@ function parseAniLines(aniContents: string): CaptainAniFrame[] {
     });
 }
 
-function parseSections(frames: CaptainAniFrame[]): CaptainSection[] {
-  const sections: CaptainSection[] = [];
-  let currentX: number | null = null;
-  let currentY: number | null = null;
-  let currentStart = 1;
-  let currentCount = 0;
-  let frameIndex = 1;
-
-  for (const frame of frames.slice(1)) {
-    const { x, y } = frame;
-
-    if (currentX === null || currentY === null || currentX !== x || currentY !== y) {
-      if (currentX !== null && currentY !== null) {
-        sections.push({
-          start: currentStart,
-          count: currentCount,
-          x: currentX,
-          y: currentY,
-        });
-        currentStart = frameIndex;
-      }
-
-      currentX = x;
-      currentY = y;
-      currentCount = 0;
-    }
-
-    currentCount += 1;
-    frameIndex += 1;
-  }
-
-  if (currentX !== null && currentY !== null) {
-    sections.push({
-      start: currentStart,
-      count: currentCount,
-      x: currentX,
-      y: currentY,
-    });
-  }
-
-  return sections;
-}
-
 export function parseCaptainLayout(aniContents: string): CaptainHudLayout {
   const frames = parseAniLines(aniContents);
-  const sections = parseSections(frames);
-  const [turnLeft, thrust, weapon, special] = sections;
 
-  if (!turnLeft || !thrust || !weapon || !special) {
-    throw new Error('Captain ani does not contain the expected four control sections.');
+  if (frames.length < 15) {
+    throw new Error(`Captain ani has ${frames.length} frames, expected at least 15.`);
   }
 
   return {
-    turnLeft: { start: turnLeft.start, count: turnLeft.count, style: toStyle(turnLeft.x, turnLeft.y) },
-    thrust: { start: thrust.start, count: thrust.count, style: toStyle(thrust.x, thrust.y) },
-    weapon: { start: weapon.start, count: weapon.count, style: toStyle(weapon.x, weapon.y) },
-    special: { start: special.start, count: special.count, style: toStyle(special.x, special.y) },
+    turnLeft: { start: 1, count: 5, style: '' },
+    thrust: { start: 6, count: 3, style: '' },
+    weapon: { start: 9, count: 3, style: '' },
+    special: { start: 12, count: frames.length - 12, style: '' },
   };
 }
 

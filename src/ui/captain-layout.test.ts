@@ -67,10 +67,10 @@ cruiser-cap-009.png -2 1 -85 -4
 `);
 
     expect(layout).toEqual({
-      turnLeft: { start: 1, count: 5, style: 'left: 122px; top: 0px;' },
-      thrust: { start: 6, count: 3, style: 'left: 151px; top: 0px;' },
-      weapon: { start: 9, count: 3, style: 'left: 0px; top: 0px;' },
-      special: { start: 12, count: 3, style: 'left: 85px; top: 4px;' },
+      turnLeft: { start: 1, count: 5, style: '' },
+      thrust: { start: 6, count: 3, style: '' },
+      weapon: { start: 9, count: 3, style: '' },
+      special: { start: 12, count: 3, style: '' },
     });
   });
 });

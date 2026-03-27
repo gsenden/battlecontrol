@@ -10,16 +10,16 @@
 avenger-cap-000.png 7 1 0 0
 
 # Turn animation frames.
-avenger-cap-001.png -1 1 0 0
-avenger-cap-002.png -1 1 0OK -2
-avenger-cap-002.png -1 1 0 -2
-avenger-cap-002.png -1 1 0 -2
-avenger-cap-003.png -1 1 0 0
+avenger-cap-001.png -1 1 2 2
+avenger-cap-002.png -1 1 0 0
+avenger-cap-002.png -1 1 0 0
+avenger-cap-002.png -1 1 0 0
+avenger-cap-003.png -1 1 -124 3
 
 # Thrust overlay.
-avenger-cap-004.png -1 1 -87 -68
-avenger-cap-004.png -1 1 -87 -68
-avenger-cap-005.png -1 1 -87 -68
+avenger-cap-004.png -1 1 -84 -66
+avenger-cap-004.png -1 1 -84 -66
+avenger-cap-005.png -1 1 -84 -66
 
 # Primary weapon overlay.
 avenger-cap-006.png -1 1 -95 -4

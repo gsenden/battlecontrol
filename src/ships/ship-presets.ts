@@ -119,4 +119,6 @@ const SHIP_PRESET_SOURCES: ShipPresetSource[] = [
   { stats: ZOQFOTPIK_STINGER, folder: 'zoqfotpik', base: 'stinger' },
 ];
 
-export const SHIP_PRESETS = SHIP_PRESET_SOURCES.map(buildShipPreset);
+export const SHIP_PRESETS = SHIP_PRESET_SOURCES
+    .sort((a, b) => a.folder.localeCompare(b.folder))
+    .map(buildShipPreset);

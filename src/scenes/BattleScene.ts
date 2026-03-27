@@ -54,8 +54,10 @@ export class BattleScene extends Phaser.Scene {
   private targetShip!: Ship;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private plusKey!: Phaser.Input.Keyboard.Key;
+  private minusKey!: Phaser.Input.Keyboard.Key;
   private shiftKey!: Phaser.Input.Keyboard.Key;
   private numpadAddKey!: Phaser.Input.Keyboard.Key;
+  private numpadSubtractKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
   private planetBase!: string;
@@ -146,8 +148,11 @@ export class BattleScene extends Phaser.Scene {
     // Input
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.plusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
+    this.minusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.MINUS);
     this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     this.numpadAddKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_ADD);
+    this.numpadSubtractKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_SUBTRACT);
+    this.input.mouse?.disableContextMenu();
   }
 
   update(_time: number, delta: number) {
@@ -158,12 +163,25 @@ export class BattleScene extends Phaser.Scene {
       weapon: false,
       special: false,
     };
+    const pointer = this.input.activePointer;
+    const hudInput = {
+      ...input,
+      weapon: pointer.leftButtonDown(),
+      special: pointer.rightButtonDown(),
+    };
 
     if (
       Phaser.Input.Keyboard.JustDown(this.numpadAddKey)
       || (Phaser.Input.Keyboard.JustDown(this.plusKey) && this.shiftKey.isDown)
     ) {
-      this.cyclePlayerShip();
+      this.cyclePlayerShip(1);
+    }
+
+    if (
+      Phaser.Input.Keyboard.JustDown(this.numpadSubtractKey)
+      || Phaser.Input.Keyboard.JustDown(this.minusKey)
+    ) {
+      this.cyclePlayerShip(-1);
     }
 
     // Fixed timestep physics at 24fps
@@ -180,7 +198,7 @@ export class BattleScene extends Phaser.Scene {
     this.updatePlanetRender();
     this.playerShip.renderUpdate(this.shipRenderScale);
     this.targetShip.renderUpdate(this.shipRenderScale);
-    this.hud.update(input);
+    this.hud.update(hudInput);
   }
 
   private applyGravity(ship: Ship): boolean {
@@ -227,8 +245,8 @@ export class BattleScene extends Phaser.Scene {
     this.planet.setScale(PLANET_RENDER_SCALE * this.planetRenderScale);
   }
 
-  private cyclePlayerShip() {
-    this.selectedShipIndex = (this.selectedShipIndex + 1) % SHIP_PRESETS.length;
+  private cyclePlayerShip(direction: 1 | -1) {
+    this.selectedShipIndex = (this.selectedShipIndex + direction + SHIP_PRESETS.length) % SHIP_PRESETS.length;
     const currentX = this.playerShip.x;
     const currentY = this.playerShip.y;
     const currentVelocity = { ...this.playerShip.body.velocity };
