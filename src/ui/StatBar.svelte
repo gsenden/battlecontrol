@@ -2,26 +2,36 @@
 
   type BarType = 'crew' | 'batt';
 
-  let { type, current, max }: { type: BarType; current: number; max: number } = $props();
+  let {
+    type,
+    current,
+    max,
+    barMax = max,
+  }: {
+    type: BarType;
+    current: number;
+    max: number;
+    barMax?: number;
+  } = $props();
 
   const colors = $derived.by(() => {
     if (type === 'crew') {
-      return { filled: '#008F00', empty: 'black' };
+      return { filled: '#008F00', empty: '#0b250b' };
     }
-    return { filled: '#7A0000', empty: 'black' };
+    return { filled: '#7A0000', empty: '#240808' };
   });
 
   // Build rows of 2 blocks, bottom-up (row 0 = top, last row = bottom)
   // SC2 fills from bottom: block 0 is bottom-right, block 1 is bottom-left, etc.
   let rows = $derived.by(() => {
-    const numRows = Math.ceil(max / 2);
+    const numRows = Math.ceil(barMax / 2);
     const result: { left: boolean; right: boolean }[] = [];
     for (let row = 0; row < numRows; row++) {
       const rightIndex = row * 2;       // even = right column
       const leftIndex = row * 2 + 1;    // odd = left column
       result.push({
-        right: rightIndex < max && (max - rightIndex) <= current,
-        left: leftIndex < max && (max - leftIndex) <= current,
+        right: rightIndex < barMax && (barMax - rightIndex) <= current,
+        left: leftIndex < barMax && (barMax - leftIndex) <= current,
       });
     }
     return result;

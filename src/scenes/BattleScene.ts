@@ -6,6 +6,13 @@ import { SHIP_PRESETS } from '../ships/ship-presets.js';
 import { shortestWrappedDelta } from '../utils/wrap.js';
 import { BattleHUD } from '../ui/BattleHUD.js';
 import type { HUDShipInfo } from '../ui/BattleHUD.js';
+import {
+  getCrewBarMax,
+  getOtherShipPortraitHeight,
+  getShipRenderScale,
+  type OtherShipHudState,
+} from '../ui/hud-state.svelte.js';
+import type { ShipPreset } from '../ships/ship-presets.js';
 
 import starBig from '../assets/stars/stars-000.png';
 import starMed from '../assets/stars/stars-001.png';
@@ -48,6 +55,9 @@ const SHIP_FAR_SCALE = 0.68;
 const PLANET_NEAR_SCALE = 1.15;
 const PLANET_FAR_SCALE = 0.72;
 const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ship';
+const FLEET_LAYOUT_KEY = Phaser.Input.Keyboard.KeyCodes.T;
+const CHMMR_PREFIX = 'chmmr-avatar';
+const SYREEN_PREFIX = 'syreen-penetrator';
 
 export class BattleScene extends Phaser.Scene {
   private playerShip!: Ship;
@@ -58,6 +68,7 @@ export class BattleScene extends Phaser.Scene {
   private shiftKey!: Phaser.Input.Keyboard.Key;
   private numpadAddKey!: Phaser.Input.Keyboard.Key;
   private numpadSubtractKey!: Phaser.Input.Keyboard.Key;
+  private fleetLayoutKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
   private planetBase!: string;
@@ -152,6 +163,7 @@ export class BattleScene extends Phaser.Scene {
     this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     this.numpadAddKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_ADD);
     this.numpadSubtractKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_SUBTRACT);
+    this.fleetLayoutKey = this.input.keyboard!.addKey(FLEET_LAYOUT_KEY);
     this.input.mouse?.disableContextMenu();
   }
 
@@ -182,6 +194,10 @@ export class BattleScene extends Phaser.Scene {
       || Phaser.Input.Keyboard.JustDown(this.minusKey)
     ) {
       this.cyclePlayerShip(-1);
+    }
+
+    if (Phaser.Input.Keyboard.JustDown(this.fleetLayoutKey)) {
+      this.toggleFleetLayout();
     }
 
     // Fixed timestep physics at 24fps
@@ -270,6 +286,94 @@ export class BattleScene extends Phaser.Scene {
       captainLayout: preset.captainLayout,
       captainName: preset.stats.captainNames[Math.floor(Math.random() * preset.stats.captainNames.length)],
     } satisfies HUDShipInfo);
+    this.syncFleetLayout();
+  }
+
+  private toggleFleetLayout() {
+    this.syncFleetLayout();
+  }
+
+  private syncFleetLayout() {
+    const [allies, opponents] = this.createRandomFleet(7, 8);
+    this.hud.setFleet(allies, opponents);
+  }
+
+  private createRandomFleet(allyCount: number, opponentCount: number): [OtherShipHudState[], OtherShipHudState[]] {
+    const playerShipPrefix = SHIP_PRESETS[this.selectedShipIndex].stats.spritePrefix;
+    const availablePresets = SHIP_PRESETS.filter((preset) => preset.stats.spritePrefix !== playerShipPrefix);
+    const availableByPrefix = new Map(availablePresets.map((preset) => [preset.stats.spritePrefix, preset]));
+    const usedPrefixes = new Set<string>();
+    const chmmrPreset = SHIP_PRESETS.find((preset) => preset.stats.spritePrefix === CHMMR_PREFIX);
+
+    return [
+      this.buildFleetSide(allyCount, availablePresets, availableByPrefix, usedPrefixes),
+      this.buildChmmrFleetSide(opponentCount, chmmrPreset),
+    ];
+  }
+
+  private buildFleetSide(
+    count: number,
+    availablePresets: ShipPreset[],
+    availableByPrefix: Map<string, ShipPreset>,
+    usedPrefixes: Set<string>,
+  ): OtherShipHudState[] {
+    const selected: ShipPreset[] = [];
+
+    for (const requiredPrefix of [CHMMR_PREFIX, SYREEN_PREFIX]) {
+      if (selected.length >= count) break;
+
+      const requiredPreset = availableByPrefix.get(requiredPrefix);
+      if (!requiredPreset) continue;
+
+      selected.push(requiredPreset);
+    }
+
+    const remaining = Phaser.Utils.Array.Shuffle(
+      availablePresets.filter((preset) => {
+        if (preset.stats.spritePrefix === CHMMR_PREFIX || preset.stats.spritePrefix === SYREEN_PREFIX) {
+          return !selected.some((selectedPreset) => selectedPreset.stats.spritePrefix === preset.stats.spritePrefix);
+        }
+
+        return !usedPrefixes.has(preset.stats.spritePrefix);
+      }),
+    );
+
+    for (const preset of remaining) {
+      if (selected.length >= count) break;
+      selected.push(preset);
+    }
+
+    for (const preset of selected) {
+      if (preset.stats.spritePrefix === CHMMR_PREFIX || preset.stats.spritePrefix === SYREEN_PREFIX) continue;
+      usedPrefixes.add(preset.stats.spritePrefix);
+    }
+
+    return selected.map((preset, index) => this.toOtherShipHudState(preset, `ally-${index}`));
+  }
+
+  private buildChmmrFleetSide(count: number, chmmrPreset: ShipPreset | undefined): OtherShipHudState[] {
+    if (!chmmrPreset) {
+      return [];
+    }
+
+    return Array.from({ length: count }, (_value, index) => this.toOtherShipHudState(chmmrPreset, `opponent-${index}`));
+  }
+
+  private toOtherShipHudState(preset: ShipPreset, id: string): OtherShipHudState {
+    return {
+      id,
+      portraitUrl: preset.portraitUrl,
+      portraitHeight: getOtherShipPortraitHeight(preset.stats.size),
+      renderScale: preset.stats.renderScale ?? getShipRenderScale(preset.stats.size),
+      captainName: Phaser.Utils.Array.GetRandom(preset.stats.captainNames),
+      shipName: preset.stats.raceName,
+      crew: preset.stats.maxCrew,
+      maxCrew: preset.stats.maxCrew,
+      crewBarMax: getCrewBarMax(preset.stats.spritePrefix, preset.stats.maxCrew),
+      energy: preset.stats.maxEnergy,
+      maxEnergy: preset.stats.maxEnergy,
+      energyBarMax: preset.stats.maxEnergy,
+    };
   }
 
   private createStarLayer(textures: string[], count: number, scrollFactor: number) {

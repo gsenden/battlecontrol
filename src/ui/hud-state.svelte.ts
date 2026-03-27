@@ -18,12 +18,56 @@ export interface CaptainHudLayout {
   special: CaptainAnimationLayer;
 }
 
+export interface OtherShipHudState {
+  id: string;
+  portraitUrl: string;
+  portraitHeight: number;
+  renderScale: number;
+  captainName: string;
+  shipName: string;
+  crew: number;
+  maxCrew: number;
+  crewBarMax: number;
+  energy: number;
+  maxEnergy: number;
+  energyBarMax: number;
+}
+
+const SYREEN_PREFIX = 'syreen-penetrator';
+const CHMMR_CREW_BAR_MAX = 42;
+const MAX_OTHER_SHIP_PORTRAIT_HEIGHT = 36;
+const BASE_SHIP_RENDER_SIZE = 16;
+
 const DEFAULT_LAYOUT: CaptainHudLayout = {
   turnLeft: { start: 1, count: 3, style: '' },
   thrust: { start: 4, count: 2, style: '' },
   weapon: { start: 6, count: 2, style: '' },
   special: { start: 8, count: 2, style: '' },
 };
+
+export function getFleetPanelKeys(teammateCount: number): string[] {
+  if (teammateCount === 0) {
+    return ['opponents'];
+  }
+
+  return ['teammates', 'opponents'];
+}
+
+export function getCrewBarMax(spritePrefix: string, maxCrew: number): number {
+  if (spritePrefix === SYREEN_PREFIX) {
+    return CHMMR_CREW_BAR_MAX;
+  }
+
+  return maxCrew;
+}
+
+export function getShipRenderScale(size: number): number {
+  return size / BASE_SHIP_RENDER_SIZE;
+}
+
+export function getOtherShipPortraitHeight(_size: number): number {
+  return MAX_OTHER_SHIP_PORTRAIT_HEIGHT;
+}
 
 export function stepCaptainOffset(offset: number, active: boolean): number {
   if (active && offset < 2) return offset + 1;
@@ -66,8 +110,12 @@ export function getCaptainAnimationFrameIndex(start: number, offset: number): nu
 export class HudState {
   crew = $state(0);
   maxCrew = $state(0);
+  crewBarMax = $state(0);
   energy = $state(0);
   maxEnergy = $state(0);
+  energyBarMax = $state(0);
+  allies = $state<OtherShipHudState[]>([]);
+  opponents = $state<OtherShipHudState[]>([]);
   shipName = $state('');
   captainName = $state('');
   portraitUrl = $state('');
@@ -104,6 +152,11 @@ export class HudState {
     this.weaponOffset = 0;
     this.specialOffset = 0;
     this.syncCaptainLayers();
+  }
+
+  setFleet(allies: OtherShipHudState[], opponents: OtherShipHudState[]) {
+    this.allies = allies;
+    this.opponents = opponents;
   }
 
   updateInput(input: ShipInput) {

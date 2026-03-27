@@ -33,4 +33,5 @@ export interface ShipStats {
   spritePrefix: string;   // Texture key prefix (e.g. 'human-cruiser')
   color: number;          // Ship color (hex)
   size: number;           // Ship radius for polygon body
+  renderScale?: number;   // Relative visual scale, normalized to Chmmr = 1
 }

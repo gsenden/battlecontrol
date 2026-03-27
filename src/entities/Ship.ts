@@ -5,6 +5,7 @@ import type { ShipStats } from '../ships/ship-stats.js';
 import type { ShipInput } from '../ships/ship-state.js';
 import { NUM_FACINGS } from '../constants.js';
 import { wrapPoint } from '../utils/wrap.js';
+import { getShipRenderScale } from '../ui/hud-state.svelte.js';
 
 // SC2 ion trail color cycle: 12 steps from bright orange → dark red → gone
 // Converted from MAKE_RGB15 (5-bit per channel) to 8-bit hex
@@ -36,11 +37,13 @@ export class Ship {
   private scene: Phaser.Scene;
   private ionTrail: IonParticle[] = [];
   private readonly spritePrefix: string;
+  private readonly renderScaleMultiplier: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, stats: ShipStats) {
     this.scene = scene;
     this.state = new ShipState(stats, 0);
     this.spritePrefix = stats.spritePrefix;
+    this.renderScaleMultiplier = stats.renderScale ?? getShipRenderScale(stats.size);
 
     // Create Matter.js circle body (simple hitbox for now)
     this.body = scene.matter.add.circle(x, y, stats.size, {
@@ -123,7 +126,7 @@ export class Ship {
 
     this.sprite.setPosition(x, y);
     this.sprite.setTexture(texture);
-    this.sprite.setScale(scale);
+    this.sprite.setScale(scale * this.renderScaleMultiplier);
     const margin = Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.5;
 
     const xOffsets = [0];
@@ -152,7 +155,7 @@ export class Ship {
         const ghost = this.ghostSprites[ghostIndex++];
         ghost.setTexture(texture);
         ghost.setPosition(x + xOffset, y + yOffset);
-        ghost.setScale(scale);
+        ghost.setScale(scale * this.renderScaleMultiplier);
         ghost.setVisible(true);
       }
     }

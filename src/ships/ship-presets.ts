@@ -1,4 +1,5 @@
 import type { CaptainHudLayout } from '../ui/hud-state.svelte.js';
+import { getShipRenderScale } from '../ui/hud-state.svelte.js';
 import { parseCaptainFrameFiles, parseCaptainFrameStyles, parseCaptainLayout } from '../ui/captain-layout.js';
 import type { ShipStats } from './ship-stats.js';
 import { ANDROSYNTH_GUARDIAN } from './androsynth/androsynth-guardian-stats.js';
@@ -62,6 +63,10 @@ function requireSingleModule(modules: Record<string, string>, pattern: string) {
 }
 
 function buildShipPreset({ stats, folder, base, captainFrameStyleOverrides = {} }: ShipPresetSource): ShipPreset {
+  const enrichedStats: ShipStats = {
+    ...stats,
+    renderScale: getShipRenderScale(stats.size),
+  };
   const portraitUrl = requireSingleModule(PORTRAIT_MODULES, `/${folder}/${base}-icons-001.png`);
   const captainAni = requireSingleModule(CAPTAIN_ANI_MODULES, `/${folder}/${base}-cap.ani`);
   const captainFrameEntries = parseCaptainFrameFiles(captainAni);
@@ -83,7 +88,7 @@ function buildShipPreset({ stats, folder, base, captainFrameStyleOverrides = {} 
   });
 
   return {
-    stats,
+    stats: enrichedStats,
     portraitUrl,
     captainFrameUrls,
     captainFrameStyles,

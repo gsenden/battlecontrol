@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getFleetPanelKeys,
   getCaptainAnimationFrameIndex,
   getCaptainTurnFrameIndexes,
   stepCaptainOffset,
 } from './hud-state.svelte.js';
 
 describe('hud-state captain helpers', () => {
+  it('uses only the opponents panel when there are no teammates', () => {
+    expect(getFleetPanelKeys(0)).toEqual(['opponents']);
+  });
+
   it('uses the original captain turn frame stack for left turns', () => {
     expect(getCaptainTurnFrameIndexes(1, 1, 0)).toEqual([4, 3, 2]);
     expect(getCaptainTurnFrameIndexes(1, 2, 0)).toEqual([4, 3, 2, 1]);
