@@ -303,11 +303,10 @@ export class BattleScene extends Phaser.Scene {
     const availablePresets = SHIP_PRESETS.filter((preset) => preset.stats.spritePrefix !== playerShipPrefix);
     const availableByPrefix = new Map(availablePresets.map((preset) => [preset.stats.spritePrefix, preset]));
     const usedPrefixes = new Set<string>();
-    const chmmrPreset = SHIP_PRESETS.find((preset) => preset.stats.spritePrefix === CHMMR_PREFIX);
 
     return [
       this.buildFleetSide(allyCount, availablePresets, availableByPrefix, usedPrefixes),
-      this.buildChmmrFleetSide(opponentCount, chmmrPreset),
+      this.buildFleetSide(opponentCount, availablePresets, availableByPrefix, usedPrefixes),
     ];
   }
 
@@ -349,14 +348,6 @@ export class BattleScene extends Phaser.Scene {
     }
 
     return selected.map((preset, index) => this.toOtherShipHudState(preset, `ally-${index}`));
-  }
-
-  private buildChmmrFleetSide(count: number, chmmrPreset: ShipPreset | undefined): OtherShipHudState[] {
-    if (!chmmrPreset) {
-      return [];
-    }
-
-    return Array.from({ length: count }, (_value, index) => this.toOtherShipHudState(chmmrPreset, `opponent-${index}`));
   }
 
   private toOtherShipHudState(preset: ShipPreset, id: string): OtherShipHudState {
