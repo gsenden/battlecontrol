@@ -30,8 +30,8 @@
 
   <div class="text-black text-[22px] font-[StarCon] font-bold text-center">{state.captainName}</div>
 
-  <div class="relative w-[220px] h-[122px] bg-black border-[#838383] border-b-[#424242] border-r-[#424242]] border-3 overflow-hidden">
-    <img class="absolute left-0 top-0 w-[215px] h-[117px] [image-rendering:pixelated]" src={state.captainBackgroundUrl} alt="Captain" />
+  <div class="relative w-[220px] h-[120px] bg-black border-[#838383] border-b-[#424242] border-r-[#424242]] border-3 overflow-hidden">
+    <img class="absolute left-0 top-0 w-[220px] h-[120px] [image-rendering:pixelated]" src={state.captainBackgroundUrl} alt="Captain" />
 
     {#each state.captainTurnLayers as turnLayer}
       <img class="absolute [image-rendering:pixelated]" style={turnLayer.style} src={turnLayer.url} alt="" />
