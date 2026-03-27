@@ -10,23 +10,23 @@
 avatar-cap-000.png -2 1 0 0
 
 # Turn left/right. Right turn reuses the same frames mirrored.
-avatar-cap-001.png -2 1 0 0
-avatar-cap-002.png -2 1 0 0
-avatar-cap-002.png -2 1 0 0
-avatar-cap-002.png -2 1 0 0
-avatar-cap-003.png -2 1 0 0
+avatar-cap-001.png -2 1 1 0
+avatar-cap-002.png -2 1 1 0
+avatar-cap-002.png -2 1 1 0
+avatar-cap-002.png -2 1 1 0
+avatar-cap-003.png -2 1 1 0
 
 # Thrust overlay.
-avatar-cap-004.png -2 1 -78 0
-avatar-cap-005.png -2 1 -78 0
-avatar-cap-006.png -2 1 -78 0
+avatar-cap-004.png -2 1 -75 0
+avatar-cap-005.png -2 1 -75 0
+avatar-cap-006.png -2 1 -75 0
 
 # Primary weapon overlay.
-avatar-cap-007.png -2 1 -56 0
-avatar-cap-008.png -2 1 -56 0
-avatar-cap-009.png -2 1 -56 0
+avatar-cap-007.png -2 1 -54 0
+avatar-cap-008.png -2 1 -54 0
+avatar-cap-009.png -2 1 -54 0
 
 # Special overlay.
-avatar-cap-010.png -2 1 -158 0
-avatar-cap-010.png -2 1 -158 0
-avatar-cap-011.png -2 1 -158 0
+avatar-cap-010.png -2 1 -153 0
+avatar-cap-010.png -2 1 -153 0
+avatar-cap-011.png -2 1 -153 0
