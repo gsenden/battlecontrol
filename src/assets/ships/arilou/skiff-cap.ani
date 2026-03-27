@@ -10,23 +10,23 @@
 skiff-cap-000.png -1 1 0 0
 
 # Turn left/right. Right turn reuses the same frames mirrored.
-skiff-cap-001.png -1 1 -58 -79
-skiff-cap-002.png -1 1 -58 -79
-skiff-cap-002.png -1 1 -58 -79
-skiff-cap-002.png -1 1 -58 -79
-skiff-cap-003.png -1 1 -58 -79
+skiff-cap-001.png -1 1 -61 -81
+skiff-cap-002.png -1 1 -61 -81
+skiff-cap-002.png -1 1 -61 -81
+skiff-cap-002.png -1 1 -61 -81
+skiff-cap-003.png -1 1 -61 -81
 
 # Thrust overlay.
-skiff-cap-004.png -1 1 -106 -25
-skiff-cap-004.png -1 1 -106 -25
-skiff-cap-005.png -1 1 -106 -25
+skiff-cap-004.png -1 1 -111 -27
+skiff-cap-004.png -1 1 -111 -27
+skiff-cap-005.png -1 1 -111 -27
 
 # Primary weapon overlay.
-skiff-cap-006.png -1 1 -30 -40
-skiff-cap-006.png -1 1 -30 -40
-skiff-cap-007.png -1 1 -30 -40
+skiff-cap-006.png -1 1 -33 -41
+skiff-cap-006.png -1 1 -33 -41
+skiff-cap-007.png -1 1 -33 -41
 
 # Special overlay.
-skiff-cap-008.png -1 1 -72 0
-skiff-cap-008.png -1 1 -72 0
-skiff-cap-009.png -1 1 -72 0
+skiff-cap-008.png -1 1 -75 0
+skiff-cap-008.png -1 1 -75 0
+skiff-cap-009.png -1 1 -75 0
