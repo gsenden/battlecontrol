@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
-import { BATTLE_WIDTH, BATTLE_HEIGHT, PHYSICS_DELTA } from '../constants.js';
+import { BATTLE_WIDTH, BATTLE_HEIGHT } from '../constants.js';
 import { Ship } from '../entities/Ship.js';
 import { buildShipPresets } from '../ships/ship-presets.js';
 import type { ShipPreset } from '../ships/ship-presets.js';
-import { shortestWrappedDelta } from '../utils/wrap.js';
 import { BattleHUD } from '../ui/BattleHUD.js';
 import type { HUDShipInfo } from '../ui/BattleHUD.js';
 import { getGameLogic } from '../game-logic.js';
@@ -14,6 +13,7 @@ import {
   getShipRenderScale,
   type OtherShipHudState,
 } from '../ui/hud-state.svelte.js';
+import type { BattleSnapshot, BattleWorkerResponse } from '../workers/battle-worker-types.js';
 
 import starBig from '../assets/stars/stars-000.png';
 import starMed from '../assets/stars/stars-001.png';
@@ -42,8 +42,6 @@ const MED_SCROLL_FACTOR = 0.125;
 const SML_SCROLL_FACTOR = 0.0625;
 
 // SC2 gravity well: fixed-radius well with a constant velocity pull each tick.
-const GRAVITY_THRESHOLD = 420;
-const GRAVITY_PULL = 0.12;
 const DEFAULT_CAMERA_ZOOM = 0.72;
 const MIN_CAMERA_ZOOM = 0.52;
 const MAX_CAMERA_ZOOM = 0.9;
@@ -74,10 +72,10 @@ export class BattleScene extends Phaser.Scene {
   private fleetLayoutKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
+  private battleWorker!: Worker;
   private planetBase!: string;
   private planetX = BATTLE_WIDTH / 2;
   private planetY = BATTLE_HEIGHT / 2;
-  private physicsAccumulator = 0;
   private shipRenderScale = SHIP_FAR_SCALE;
   private planetRenderScale = PLANET_FAR_SCALE;
   private hud!: BattleHUD;
@@ -148,10 +146,34 @@ export class BattleScene extends Phaser.Scene {
 
     // Ship — spawn offset from center so it's not on the planet
     const selectedPreset = this.shipPresets[this.selectedShipIndex];
-    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, this.gameLogic, selectedPreset.stats.spritePrefix);
-    this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, this.gameLogic, 'human-cruiser');
+    const targetPreset = this.getPresetBySpritePrefix('human-cruiser');
+    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, selectedPreset.stats);
+    this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, targetPreset.stats);
     this.targetShip.setTint(0xff8866);
-    this.matter.world.on('collisionstart', this.handleCollisionStart, this);
+    this.battleWorker = new Worker(new URL('../workers/battle-worker.ts', import.meta.url), { type: 'module' });
+    this.battleWorker.onmessage = (event: MessageEvent<BattleWorkerResponse>) => {
+      if (event.data.type !== 'snapshot') {
+        return;
+      }
+
+      this.applySnapshot(event.data.snapshot);
+    };
+    this.battleWorker.postMessage({
+      type: 'initBattle',
+      playerShipType: selectedPreset.stats.spritePrefix,
+      targetShipType: targetPreset.stats.spritePrefix,
+      playerX: this.playerShip.x,
+      playerY: this.playerShip.y,
+      targetX: this.targetShip.x,
+      targetY: this.targetShip.y,
+      planetX: this.planetX,
+      planetY: this.planetY,
+      width: BATTLE_WIDTH,
+      height: BATTLE_HEIGHT,
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.battleWorker.terminate();
+    });
 
     // Camera follows an invisible container that tracks the ships position
     this.cameraTarget = this.add.container(this.playerShip.x, this.playerShip.y);
@@ -174,7 +196,7 @@ export class BattleScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
   }
 
-  update(_time: number, delta: number) {
+  update() {
     const input = {
       left: this.cursors.left.isDown,
       right: this.cursors.right.isDown,
@@ -207,14 +229,7 @@ export class BattleScene extends Phaser.Scene {
       this.toggleFleetLayout();
     }
 
-    // Fixed timestep physics at 24fps
-    this.physicsAccumulator += delta;
-    while (this.physicsAccumulator >= PHYSICS_DELTA) {
-      const playerInGravityWell = this.applyGravity(this.playerShip);
-      this.playerShip.physicsUpdate(input, playerInGravityWell);
-      this.playerShip.wrapPosition();
-      this.physicsAccumulator -= PHYSICS_DELTA;
-    }
+    this.battleWorker.postMessage({ type: 'setPlayerInput', input });
 
     // Visual update every render frame
     this.updateCamera();
@@ -222,36 +237,6 @@ export class BattleScene extends Phaser.Scene {
     this.playerShip.renderUpdate(this.shipRenderScale);
     this.targetShip.renderUpdate(this.shipRenderScale);
     this.hud.update(hudInput);
-  }
-
-  private applyGravity(ship: Ship): boolean {
-    const dx = shortestWrappedDelta(ship.x, this.planetX, BATTLE_WIDTH);
-    const dy = shortestWrappedDelta(ship.y, this.planetY, BATTLE_HEIGHT);
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-
-    if (absDx <= GRAVITY_THRESHOLD && absDy <= GRAVITY_THRESHOLD) {
-      const distSquared = (absDx * absDx) + (absDy * absDy);
-      if (distSquared <= GRAVITY_THRESHOLD * GRAVITY_THRESHOLD && distSquared > 0) {
-        const dist = Math.sqrt(distSquared);
-        ship.addVelocity((dx / dist) * GRAVITY_PULL, (dy / dist) * GRAVITY_PULL);
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private handleCollisionStart(event: Phaser.Physics.Matter.Events.CollisionStartEvent) {
-    for (const pair of event.pairs) {
-      const bodies = [pair.bodyA, pair.bodyB];
-      if (!bodies.includes(this.playerShip.body) || !bodies.includes(this.targetShip.body)) {
-        continue;
-      }
-
-      this.playerShip.applyCollisionCooldowns();
-      this.targetShip.applyCollisionCooldowns();
-    }
   }
 
   private updateCamera() {
@@ -284,15 +269,28 @@ export class BattleScene extends Phaser.Scene {
     this.selectedShipIndex = (this.selectedShipIndex + direction + this.shipPresets.length) % this.shipPresets.length;
     const currentX = this.playerShip.x;
     const currentY = this.playerShip.y;
-    const currentVelocity = { ...this.playerShip.body.velocity };
 
     this.playerShip.destroy();
     const preset = this.shipPresets[this.selectedShipIndex];
-    this.playerShip = new Ship(this, currentX, currentY, this.gameLogic, preset.stats.spritePrefix);
-    this.matter.body.setVelocity(this.playerShip.body, currentVelocity);
+    this.playerShip = new Ship(this, currentX, currentY, preset.stats);
+    this.battleWorker.postMessage({ type: 'switchPlayerShip', shipType: preset.stats.spritePrefix });
     this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
     this.saveSelectedShip();
     this.syncHudWithSelectedShip();
+  }
+
+  private applySnapshot(snapshot: BattleSnapshot) {
+    this.playerShip.applySnapshot(snapshot.player);
+    this.targetShip.applySnapshot(snapshot.target);
+  }
+
+  private getPresetBySpritePrefix(spritePrefix: string): ShipPreset {
+    const preset = this.shipPresets.find((candidate) => candidate.stats.spritePrefix === spritePrefix);
+    if (!preset) {
+      throw new Error(`Missing ship preset for ${spritePrefix}`);
+    }
+
+    return preset;
   }
 
   private syncHudWithSelectedShip() {

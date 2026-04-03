@@ -52,6 +52,34 @@ pub use vux_intruder::VuxIntruder;
 pub use yehat_terminator::YehatTerminator;
 pub use zoqfotpik_stinger::ZoqfotpikStinger;
 
+pub const ALL_SHIP_TYPES: [&str; 25] = [
+    "androsynth-guardian",
+    "arilou-skiff",
+    "chenjesu-broodhome",
+    "chmmr-avatar",
+    "druuge-mauler",
+    "human-cruiser",
+    "ilwrath-avenger",
+    "kohrah-marauder",
+    "melnorme-trader",
+    "mmrnmhrm-xform",
+    "mycon-podship",
+    "orz-nemesis",
+    "pkunk-fury",
+    "shofixti-scout",
+    "slylandro-probe",
+    "spathi-eluder",
+    "supox-blade",
+    "syreen-penetrator",
+    "thraddash-torch",
+    "umgah-drone",
+    "urquan-dreadnought",
+    "utwig-jugger",
+    "vux-intruder",
+    "yehat-terminator",
+    "zoqfotpik-stinger",
+];
+
 pub enum AnyShip {
     AndrosynthGuardian(AndrosynthGuardian),
     ArilouSkiff(ArilouSkiff),
@@ -146,6 +174,35 @@ macro_rules! dispatch_ref {
             AnyShip::ZoqfotpikStinger(ship) => ship.$method(),
         }
     };
+    ($self:expr, $method:ident($($arg:expr),+)) => {
+        match $self {
+            AnyShip::AndrosynthGuardian(ship) => ship.$method($($arg),+),
+            AnyShip::ArilouSkiff(ship) => ship.$method($($arg),+),
+            AnyShip::ChenjesuBroodhome(ship) => ship.$method($($arg),+),
+            AnyShip::ChmmrAvatar(ship) => ship.$method($($arg),+),
+            AnyShip::DruugeMauler(ship) => ship.$method($($arg),+),
+            AnyShip::HumanCruiser(ship) => ship.$method($($arg),+),
+            AnyShip::IlwrathAvenger(ship) => ship.$method($($arg),+),
+            AnyShip::KohrahMarauder(ship) => ship.$method($($arg),+),
+            AnyShip::MelnormeTrader(ship) => ship.$method($($arg),+),
+            AnyShip::MmrnmhrmXform(ship) => ship.$method($($arg),+),
+            AnyShip::MyconPodship(ship) => ship.$method($($arg),+),
+            AnyShip::OrzNemesis(ship) => ship.$method($($arg),+),
+            AnyShip::PkunkFury(ship) => ship.$method($($arg),+),
+            AnyShip::ShofixtiScout(ship) => ship.$method($($arg),+),
+            AnyShip::SlylandroProbe(ship) => ship.$method($($arg),+),
+            AnyShip::SpathiEluder(ship) => ship.$method($($arg),+),
+            AnyShip::SupoxBlade(ship) => ship.$method($($arg),+),
+            AnyShip::SyreenPenetrator(ship) => ship.$method($($arg),+),
+            AnyShip::ThraddashTorch(ship) => ship.$method($($arg),+),
+            AnyShip::UmgahDrone(ship) => ship.$method($($arg),+),
+            AnyShip::UrquanDreadnought(ship) => ship.$method($($arg),+),
+            AnyShip::UtwigJugger(ship) => ship.$method($($arg),+),
+            AnyShip::VuxIntruder(ship) => ship.$method($($arg),+),
+            AnyShip::YehatTerminator(ship) => ship.$method($($arg),+),
+            AnyShip::ZoqfotpikStinger(ship) => ship.$method($($arg),+),
+        }
+    };
 }
 
 macro_rules! dispatch_mut {
@@ -223,6 +280,10 @@ impl AnyShip {
         dispatch_mut!(self, apply_collision_cooldowns())
     }
 
+    pub fn gravity_command(&self, dx: f64, dy: f64) -> Option<crate::physics_command::PhysicsCommand> {
+        dispatch_ref!(self, gravity_command(dx, dy))
+    }
+
     pub fn take_damage(&mut self, amount: i32) -> bool {
         dispatch_mut!(self, take_damage(amount))
     }
@@ -251,4 +312,70 @@ impl AnyShip {
     pub fn weapon_energy_cost(&self) -> i32 { dispatch_ref!(self, weapon_energy_cost()) }
     pub fn special_energy_cost(&self) -> i32 { dispatch_ref!(self, special_energy_cost()) }
     pub fn max_crew(&self) -> i32 { dispatch_ref!(self, max_crew()) }
+}
+
+pub fn apply_collision_between(ships: &mut [AnyShip], ship_a_id: usize, ship_b_id: usize) {
+    if ship_a_id == ship_b_id || ship_a_id >= ships.len() || ship_b_id >= ships.len() {
+        return;
+    }
+
+    if ship_a_id < ship_b_id {
+        let (left, right) = ships.split_at_mut(ship_b_id);
+        left[ship_a_id].apply_collision_cooldowns();
+        right[0].apply_collision_cooldowns();
+    } else {
+        let (left, right) = ships.split_at_mut(ship_a_id);
+        right[0].apply_collision_cooldowns();
+        left[ship_b_id].apply_collision_cooldowns();
+    }
+}
+
+pub fn build_ship(ship_type: &str) -> Option<AnyShip> {
+    match ship_type {
+        "androsynth-guardian" => Some(AndrosynthGuardian::new().into()),
+        "arilou-skiff" => Some(ArilouSkiff::new().into()),
+        "chenjesu-broodhome" => Some(ChenjesuBroodhome::new().into()),
+        "chmmr-avatar" => Some(ChmmrAvatar::new().into()),
+        "druuge-mauler" => Some(DruugeMauler::new().into()),
+        "human-cruiser" => Some(HumanCruiser::new().into()),
+        "ilwrath-avenger" => Some(IlwrathAvenger::new().into()),
+        "kohrah-marauder" => Some(KohrahMarauder::new().into()),
+        "melnorme-trader" => Some(MelnormeTrader::new().into()),
+        "mmrnmhrm-xform" => Some(MmrnmhrmXform::new().into()),
+        "mycon-podship" => Some(MyconPodship::new().into()),
+        "orz-nemesis" => Some(OrzNemesis::new().into()),
+        "pkunk-fury" => Some(PkunkFury::new().into()),
+        "shofixti-scout" => Some(ShofixtiScout::new().into()),
+        "slylandro-probe" => Some(SlylandroProbe::new().into()),
+        "spathi-eluder" => Some(SpathiEluder::new().into()),
+        "supox-blade" => Some(SupoxBlade::new().into()),
+        "syreen-penetrator" => Some(SyreenPenetrator::new().into()),
+        "thraddash-torch" => Some(ThraddashTorch::new().into()),
+        "umgah-drone" => Some(UmgahDrone::new().into()),
+        "urquan-dreadnought" => Some(UrquanDreadnought::new().into()),
+        "utwig-jugger" => Some(UtwigJugger::new().into()),
+        "vux-intruder" => Some(VuxIntruder::new().into()),
+        "yehat-terminator" => Some(YehatTerminator::new().into()),
+        "zoqfotpik-stinger" => Some(ZoqfotpikStinger::new().into()),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_collision_between, AnyShip, HumanCruiser};
+    use crate::traits::ship_trait::Ship;
+
+    #[test]
+    fn apply_collision_between_sets_both_ship_cooldowns() {
+        let mut ships = vec![AnyShip::from(HumanCruiser::new()), AnyShip::from(HumanCruiser::new())];
+
+        apply_collision_between(&mut ships, 0, 1);
+
+        assert!(matches!(
+            (&ships[0], &ships[1]),
+            (AnyShip::HumanCruiser(a), AnyShip::HumanCruiser(b))
+                if (a.turn_counter(), a.thrust_counter(), b.turn_counter(), b.thrust_counter()) == (1, 3, 1, 3)
+        ));
+    }
 }

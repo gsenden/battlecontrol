@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub struct ShipInput {
     pub left: bool,
     pub right: bool,

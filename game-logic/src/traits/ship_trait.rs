@@ -6,6 +6,8 @@ const COLLISION_TURN_WAIT: i32 = 1;
 const COLLISION_THRUST_WAIT: i32 = 3;
 const GRAVITY_WELL_SPEED_MULTIPLIER: f64 = 1.75;
 const TRAVEL_ALIGNMENT_EPSILON: f64 = 0.0001;
+const GRAVITY_THRESHOLD: f64 = 420.0;
+const GRAVITY_PULL: f64 = 0.12;
 
 pub trait Ship {
     const RACE_NAME: &'static str;
@@ -215,6 +217,26 @@ pub trait Ship {
             self.increase_thrust_counter(COLLISION_THRUST_WAIT);
         }
     }
+
+    fn gravity_command(&self, dx: f64, dy: f64) -> Option<PhysicsCommand> {
+        let abs_dx = dx.abs();
+        let abs_dy = dy.abs();
+
+        if abs_dx > GRAVITY_THRESHOLD || abs_dy > GRAVITY_THRESHOLD {
+            return None;
+        }
+
+        let dist_squared = (abs_dx * abs_dx) + (abs_dy * abs_dy);
+        if dist_squared == 0.0 || dist_squared > (GRAVITY_THRESHOLD * GRAVITY_THRESHOLD) {
+            return None;
+        }
+
+        let dist = dist_squared.sqrt();
+        Some(PhysicsCommand::AddVelocity {
+            vx: (dx / dist) * GRAVITY_PULL,
+            vy: (dy / dist) * GRAVITY_PULL,
+        })
+    }
 }
 
 fn get_thrust_velocity(
@@ -364,6 +386,17 @@ mod tests {
             (ship.turn_counter(), ship.thrust_counter()),
             (scenario.turn_wait, scenario.thrust_wait)
         );
+    }
+
+    #[test]
+    fn gravity_command_pulls_toward_planet() {
+        let ship = HumanCruiser::new();
+        let command = ship.gravity_command(-400.0, 0.0);
+
+        assert!(matches!(
+            command,
+            Some(PhysicsCommand::AddVelocity { vx, vy }) if (vx + 0.12).abs() < f64::EPSILON && vy.abs() < f64::EPSILON
+        ));
     }
 
     #[test]

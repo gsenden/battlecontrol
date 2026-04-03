@@ -1,4 +1,4 @@
-import init, { GameLogic } from 'game-logic-wasm';
+import init, { GameLogic, MatterWorld } from 'game-logic-wasm';
 
 let instance: GameLogic;
 
@@ -10,4 +10,8 @@ export async function initGameLogic(): Promise<GameLogic> {
 
 export function getGameLogic(): GameLogic {
   return instance;
+}
+
+export function createMatterWorld(): MatterWorld {
+  return new MatterWorld();
 }
