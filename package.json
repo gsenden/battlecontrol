@@ -18,9 +18,11 @@
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "vite": "^8.0.1",
+    "vite-plugin-wasm": "^3.6.0",
     "vitest": "^4.1.1"
   },
   "dependencies": {
+    "game-logic-wasm": "file:pkg",
     "phaser": "^3.90.0"
   }
 }

@@ -35,3 +35,11 @@ export interface ShipStats {
   size: number;           // Ship radius for polygon body
   renderScale?: number;   // Relative visual scale, normalized to Chmmr = 1
 }
+
+export interface ShipInput {
+  left: boolean;
+  right: boolean;
+  thrust: boolean;
+  weapon: boolean;
+  special: boolean;
+}

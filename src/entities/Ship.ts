@@ -1,8 +1,7 @@
 import Phaser from 'phaser';
+import type { GameLogic } from 'game-logic-wasm';
 import { BATTLE_HEIGHT, BATTLE_WIDTH } from '../constants.js';
-import { ShipState } from '../ships/ship-state.js';
-import type { ShipStats } from '../ships/ship-stats.js';
-import type { ShipInput } from '../ships/ship-state.js';
+import type { ShipStats, ShipInput } from '../ships/ship-stats.js';
 import { NUM_FACINGS } from '../constants.js';
 import { wrapPoint } from '../utils/wrap.js';
 import { getShipRenderScale } from '../ui/hud-state.svelte.js';
@@ -30,8 +29,10 @@ interface IonParticle {
 }
 
 export class Ship {
-  readonly state: ShipState;
+  readonly shipId: number;
+  readonly stats: ShipStats;
   readonly body: MatterJS.BodyType;
+  private gameLogic: GameLogic;
   private sprite: Phaser.GameObjects.Image;
   private ghostSprites: Phaser.GameObjects.Image[] = [];
   private scene: Phaser.Scene;
@@ -39,15 +40,26 @@ export class Ship {
   private readonly spritePrefix: string;
   private readonly renderScaleMultiplier: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, stats: ShipStats) {
+  // Cached game state (synced after each physicsUpdate)
+  crew: number;
+  energy: number;
+  facing: number;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, gameLogic: GameLogic, shipType: string) {
     this.scene = scene;
-    this.state = new ShipState(stats, 0);
-    this.spritePrefix = stats.spritePrefix;
-    this.renderScaleMultiplier = stats.renderScale ?? getShipRenderScale(stats.size);
+    this.gameLogic = gameLogic;
+    this.shipId = gameLogic.createShip(shipType);
+    this.stats = gameLogic.getShipStats(this.shipId) as unknown as ShipStats;
+    this.spritePrefix = this.stats.spritePrefix;
+    this.renderScaleMultiplier = getShipRenderScale(this.stats.size);
+
+    this.crew = this.stats.maxCrew;
+    this.energy = this.stats.maxEnergy;
+    this.facing = -Math.PI / 2;
 
     // Create Matter.js circle body (simple hitbox for now)
-    this.body = scene.matter.add.circle(x, y, stats.size, {
-      mass: stats.mass,
+    this.body = scene.matter.add.circle(x, y, this.stats.size, {
+      mass: this.stats.mass,
       frictionAir: 0,
       friction: 0,
       frictionStatic: 0,
@@ -65,31 +77,21 @@ export class Ship {
     }
   }
 
-  /** Called at physics rate (24fps) — processes game logic */
+  /** Called at physics rate (24fps) — processes game logic via WASM */
   physicsUpdate(input: ShipInput, allowBeyondMaxSpeed: boolean = false) {
-    const commands = this.state.update(input, this.body.velocity, allowBeyondMaxSpeed);
+    const commands = this.gameLogic.updateShip(
+      this.shipId,
+      input.left, input.right, input.thrust, input.weapon, input.special,
+      this.body.velocity.x, this.body.velocity.y,
+      allowBeyondMaxSpeed,
+    ) as Array<{ type: string; vx: number; vy: number }>;
+
     let didThrust = false;
 
     for (const cmd of commands) {
-      switch (cmd.type) {
-        case 'addVelocity': {
-          didThrust = true;
-          // Directly add velocity increment — no force, no mass dependency
-          const vel = this.body.velocity;
-          this.scene.matter.body.setVelocity(this.body, {
-            x: vel.x + cmd.dvx!,
-            y: vel.y + cmd.dvy!,
-          });
-          break;
-        }
-        case 'setVelocity': {
-          didThrust = true;
-          this.scene.matter.body.setVelocity(this.body, {
-            x: cmd.vx!,
-            y: cmd.vy!,
-          });
-          break;
-        }
+      if (cmd.type === 'setVelocity') {
+        didThrust = true;
+        this.scene.matter.body.setVelocity(this.body, { x: cmd.vx, y: cmd.vy });
       }
     }
 
@@ -100,6 +102,23 @@ export class Ship {
 
     // Age existing ion particles
     this.updateIonTrail();
+
+    // Sync cached state from WASM
+    const state = this.gameLogic.getShipState(this.shipId) as unknown as { crew: number; energy: number; facing: number };
+    this.crew = state.crew;
+    this.energy = state.energy;
+    this.facing = state.facing;
+  }
+
+  applyCollisionCooldowns() {
+    this.gameLogic.applyCollisionCooldowns(this.shipId);
+  }
+
+  takeDamage(amount: number): boolean {
+    const dead = this.gameLogic.takeDamage(this.shipId, amount);
+    const state = this.gameLogic.getShipState(this.shipId) as unknown as { crew: number; energy: number; facing: number };
+    this.crew = state.crew;
+    return dead;
   }
 
   addVelocity(dvx: number, dvy: number) {
@@ -175,14 +194,14 @@ export class Ship {
   }
 
   private spawnIonParticle() {
-    const angle = this.state.facing + Math.PI; // opposite of facing
+    const angle = this.facing + Math.PI; // opposite of facing
     const dist = 72;
     const x = this.body.position.x + Math.cos(angle) * dist;
     const y = this.body.position.y + Math.sin(angle) * dist;
 
     const sprite = this.scene.add.image(x, y, 'ion-particle');
     sprite.setTint(ION_COLORS[0]);
-    sprite.setDepth(-1); // behind the ship
+    sprite.setDepth(-1); // behind the ships
 
     this.ionTrail.push({ sprite, colorIndex: 0 });
   }
@@ -222,7 +241,7 @@ export class Ship {
   }
 
   private facingToFrame(): number {
-    let angle = this.state.facing + Math.PI / 2;
+    let angle = this.facing + Math.PI / 2;
     angle = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     return Math.round(angle / (2 * Math.PI / NUM_FACINGS)) % NUM_FACINGS;
   }

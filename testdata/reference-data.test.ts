@@ -5,6 +5,48 @@ import referenceData from './reference.json';
 // and serve as documentation of the original game's behavior
 
 describe('SC2 Reference Data', () => {
+  describe('collision_head_on', () => {
+    const scenario = referenceData.collision_head_on;
+
+    it('reverses both ships in a head-on equal-mass collision', () => {
+      expect([
+        scenario.after.ship0.vx,
+        scenario.after.ship0.vy,
+        scenario.after.ship1.vx,
+        scenario.after.ship1.vy,
+      ]).toEqual([-127, 0, 127, 0]);
+    });
+  });
+
+  describe('collision_asymmetric_head_on', () => {
+    const scenario = referenceData.collision_asymmetric_head_on;
+
+    it('preserves the faster outgoing ships when the post-collision speed stays above the minimum', () => {
+      expect([
+        scenario.after.ship0.vx,
+        scenario.after.ship0.vy,
+        scenario.after.ship1.vx,
+        scenario.after.ship1.vy,
+      ]).toEqual([-127, 0, 192, 0]);
+    });
+  });
+
+  describe('collision_existing_cooldowns', () => {
+    const scenario = referenceData.collision_existing_cooldowns;
+
+    it('keeps higher existing collision cooldowns', () => {
+      expect([scenario.turnWait, scenario.thrustWait]).toEqual([2, 4]);
+    });
+  });
+
+  describe('collision_cooldowns', () => {
+    const scenario = referenceData.collision_cooldowns;
+
+    it('uses the original collision turn and thrust wait values', () => {
+      expect([scenario.turnWait, scenario.thrustWait]).toEqual([1, 3]);
+    });
+  });
+
   describe('thrust_straight', () => {
     const scenario = referenceData.thrust_straight;
 
@@ -138,19 +180,19 @@ describe('SC2 Reference Data', () => {
   describe('gravity_well', () => {
     const scenario = referenceData.gravity_well;
 
-    it('ship is pulled toward planet', () => {
+    it('ships is pulled toward planet', () => {
       // Ship starts at x=3400, planet at x=3000
-      // Gravity should pull ship left (negative vx)
+      // Gravity should pull ships left (negative vx)
       expect(scenario.frames[0].vx).toBeLessThan(0);
     });
 
-    it('ship accelerates under gravity', () => {
+    it('ships accelerates under gravity', () => {
       const v5 = Math.abs(scenario.frames[5].vx);
       const v15 = Math.abs(scenario.frames[15].vx);
       expect(v15).toBeGreaterThan(v5);
     });
 
-    it('ship passes planet and oscillates', () => {
+    it('ships passes planet and oscillates', () => {
       // Ship should pass x=3000 at some point
       const passedPlanet = scenario.frames.some(f => f.x < 3000);
       expect(passedPlanet).toBe(true);
@@ -160,7 +202,7 @@ describe('SC2 Reference Data', () => {
   describe('gravity_whip', () => {
     const scenario = referenceData.gravity_whip;
 
-    it('ship exceeds normal max speed in gravity well', () => {
+    it('ships exceeds normal max speed in gravity well', () => {
       // SHIP_BEYOND_MAX_SPEED = 64, SHIP_IN_GRAVITY_WELL = 256
       const beyondMax = scenario.frames.find(f => (f.statusFlags & 64) !== 0);
       expect(beyondMax).toBeDefined();

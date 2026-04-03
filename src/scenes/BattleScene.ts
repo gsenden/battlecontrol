@@ -1,18 +1,19 @@
 import Phaser from 'phaser';
 import { BATTLE_WIDTH, BATTLE_HEIGHT, PHYSICS_DELTA } from '../constants.js';
 import { Ship } from '../entities/Ship.js';
-import { HUMAN_CRUISER } from '../ships/human/human-cruiser-stats.js';
-import { SHIP_PRESETS } from '../ships/ship-presets.js';
+import { buildShipPresets } from '../ships/ship-presets.js';
+import type { ShipPreset } from '../ships/ship-presets.js';
 import { shortestWrappedDelta } from '../utils/wrap.js';
 import { BattleHUD } from '../ui/BattleHUD.js';
 import type { HUDShipInfo } from '../ui/BattleHUD.js';
+import { getGameLogic } from '../game-logic.js';
+import type { GameLogic } from 'game-logic-wasm';
 import {
   getCrewBarMax,
   getOtherShipPortraitHeight,
   getShipRenderScale,
   type OtherShipHudState,
 } from '../ui/hud-state.svelte.js';
-import type { ShipPreset } from '../ships/ship-presets.js';
 
 import starBig from '../assets/stars/stars-000.png';
 import starMed from '../assets/stars/stars-001.png';
@@ -54,12 +55,14 @@ const SHIP_NEAR_SCALE = 1.05;
 const SHIP_FAR_SCALE = 0.68;
 const PLANET_NEAR_SCALE = 1.15;
 const PLANET_FAR_SCALE = 0.72;
-const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ship';
+const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ships';
 const FLEET_LAYOUT_KEY = Phaser.Input.Keyboard.KeyCodes.T;
 const CHMMR_PREFIX = 'chmmr-avatar';
 const SYREEN_PREFIX = 'syreen-penetrator';
 
 export class BattleScene extends Phaser.Scene {
+  private gameLogic!: GameLogic;
+  private shipPresets!: ShipPreset[];
   private playerShip!: Ship;
   private targetShip!: Ship;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -114,6 +117,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create() {
+    this.gameLogic = getGameLogic();
+    this.shipPresets = buildShipPresets(this.gameLogic);
     this.selectedShipIndex = this.loadSelectedShipIndex();
 
     // Stars
@@ -142,11 +147,13 @@ export class BattleScene extends Phaser.Scene {
     gfx.destroy();
 
     // Ship — spawn offset from center so it's not on the planet
-    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, SHIP_PRESETS[this.selectedShipIndex].stats);
-    this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, HUMAN_CRUISER);
+    const selectedPreset = this.shipPresets[this.selectedShipIndex];
+    this.playerShip = new Ship(this, this.planetX + 800, this.planetY, this.gameLogic, selectedPreset.stats.spritePrefix);
+    this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, this.gameLogic, 'human-cruiser');
     this.targetShip.setTint(0xff8866);
+    this.matter.world.on('collisionstart', this.handleCollisionStart, this);
 
-    // Camera follows an invisible container that tracks the ship position
+    // Camera follows an invisible container that tracks the ships position
     this.cameraTarget = this.add.container(this.playerShip.x, this.playerShip.y);
     this.cameras.main.setBounds(0, 0, BATTLE_WIDTH, BATTLE_HEIGHT);
     this.cameras.main.setZoom(DEFAULT_CAMERA_ZOOM);
@@ -235,6 +242,18 @@ export class BattleScene extends Phaser.Scene {
     return false;
   }
 
+  private handleCollisionStart(event: Phaser.Physics.Matter.Events.CollisionStartEvent) {
+    for (const pair of event.pairs) {
+      const bodies = [pair.bodyA, pair.bodyB];
+      if (!bodies.includes(this.playerShip.body) || !bodies.includes(this.targetShip.body)) {
+        continue;
+      }
+
+      this.playerShip.applyCollisionCooldowns();
+      this.targetShip.applyCollisionCooldowns();
+    }
+  }
+
   private updateCamera() {
     const dx = this.targetShip.x - this.playerShip.x;
     const dy = this.targetShip.y - this.playerShip.y;
@@ -262,13 +281,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private cyclePlayerShip(direction: 1 | -1) {
-    this.selectedShipIndex = (this.selectedShipIndex + direction + SHIP_PRESETS.length) % SHIP_PRESETS.length;
+    this.selectedShipIndex = (this.selectedShipIndex + direction + this.shipPresets.length) % this.shipPresets.length;
     const currentX = this.playerShip.x;
     const currentY = this.playerShip.y;
     const currentVelocity = { ...this.playerShip.body.velocity };
 
     this.playerShip.destroy();
-    this.playerShip = new Ship(this, currentX, currentY, SHIP_PRESETS[this.selectedShipIndex].stats);
+    const preset = this.shipPresets[this.selectedShipIndex];
+    this.playerShip = new Ship(this, currentX, currentY, this.gameLogic, preset.stats.spritePrefix);
     this.matter.body.setVelocity(this.playerShip.body, currentVelocity);
     this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
     this.saveSelectedShip();
@@ -276,9 +296,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private syncHudWithSelectedShip() {
-    const preset = SHIP_PRESETS[this.selectedShipIndex];
+    const preset = this.shipPresets[this.selectedShipIndex];
     this.hud.setShip({
-      state: this.playerShip.state,
+      ship: this.playerShip,
       stats: preset.stats,
       portraitUrl: preset.portraitUrl,
       captainFrameUrls: preset.captainFrameUrls,
@@ -299,8 +319,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createRandomFleet(allyCount: number, opponentCount: number): [OtherShipHudState[], OtherShipHudState[]] {
-    const playerShipPrefix = SHIP_PRESETS[this.selectedShipIndex].stats.spritePrefix;
-    const availablePresets = SHIP_PRESETS.filter((preset) => preset.stats.spritePrefix !== playerShipPrefix);
+    const playerShipPrefix = this.shipPresets[this.selectedShipIndex].stats.spritePrefix;
+    const availablePresets = this.shipPresets.filter((preset) => preset.stats.spritePrefix !== playerShipPrefix);
     const availableByPrefix = new Map(availablePresets.map((preset) => [preset.stats.spritePrefix, preset]));
     const usedPrefixes = new Set<string>();
 
@@ -395,7 +415,7 @@ export class BattleScene extends Phaser.Scene {
         return 0;
       }
 
-      const index = SHIP_PRESETS.findIndex((preset) => preset.stats.spritePrefix === storedSpritePrefix);
+      const index = this.shipPresets.findIndex((preset) => preset.stats.spritePrefix === storedSpritePrefix);
       return index >= 0 ? index : 0;
     } catch {
       return 0;
@@ -406,7 +426,7 @@ export class BattleScene extends Phaser.Scene {
     try {
       window.localStorage.setItem(
         SELECTED_SHIP_STORAGE_KEY,
-        SHIP_PRESETS[this.selectedShipIndex].stats.spritePrefix,
+        this.shipPresets[this.selectedShipIndex].stats.spritePrefix,
       );
     } catch {
       // Ignore storage failures and keep the current in-memory selection.

@@ -1,4 +1,41 @@
 {
+  "collision_cooldowns": {
+    "description": "Ship collision applies the SC2 collision turn and thrust wait values",
+    "ship": "human_cruiser",
+    "turnWait": 1,
+    "thrustWait": 3
+  },
+  "collision_existing_cooldowns": {
+    "description": "Ship collision does not reduce existing cooldowns when they are already higher",
+    "ship": "human_cruiser",
+    "turnWait": 2,
+    "thrustWait": 4
+  },
+  "collision_head_on": {
+    "description": "Two equal-mass human ships collide head-on",
+    "before": {
+      "ship0": { "vx": 96, "vy": 0 },
+      "ship1": { "vx": -96, "vy": 0 }
+    },
+    "after": {
+      "ship0": { "vx": -127, "vy": 0, "turnWait": 1, "thrustWait": 3 },
+      "ship1": { "vx": 127, "vy": 0, "turnWait": 1, "thrustWait": 3 }
+    }
+  },
+  "collision_moving_into_stationary": {
+    "description": "One human ship collides head-on with a stationary equal-mass ship",
+    "after": {
+      "ship0": { "vx": -127, "vy": 0, "turnWait": 1, "thrustWait": 3 },
+      "ship1": { "vx": 127, "vy": 0, "turnWait": 1, "thrustWait": 3 }
+    }
+  },
+  "collision_asymmetric_head_on": {
+    "description": "Two equal-mass human ships collide head-on with different speeds",
+    "after": {
+      "ship0": { "vx": -127, "vy": 0, "turnWait": 1, "thrustWait": 3 },
+      "ship1": { "vx": 192, "vy": 0, "turnWait": 1, "thrustWait": 3 }
+    }
+  },
   "thrust_straight": {
     "description": "Human Cruiser facing right, thrust every frame for 60 frames",
     "ship": "human_cruiser",

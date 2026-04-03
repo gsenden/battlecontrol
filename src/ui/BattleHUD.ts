@@ -1,13 +1,11 @@
 import { mount, unmount } from 'svelte';
 import BattleHUDComponent from './BattleHUD.svelte';
 import { getCrewBarMax, HudState } from './hud-state.svelte.js';
-import type { ShipState } from '../ships/ship-state.js';
-import type { ShipStats } from '../ships/ship-stats.js';
-import type { ShipInput } from '../ships/ship-state.js';
+import type { ShipStats, ShipInput } from '../ships/ship-stats.js';
 import type { CaptainHudLayout, OtherShipHudState } from './hud-state.svelte.js';
 
 export interface HUDShipInfo {
-  state: ShipState;
+  ship: { crew: number; energy: number };
   stats: ShipStats;
   portraitUrl: string;
   captainFrameUrls: string[];
@@ -41,10 +39,10 @@ export class BattleHUD {
 
   setShip(info: HUDShipInfo) {
     this.ship = info;
-    this.hudState.crew = info.state.crew;
+    this.hudState.crew = info.ship.crew;
     this.hudState.maxCrew = info.stats.maxCrew;
     this.hudState.crewBarMax = getCrewBarMax(info.stats.spritePrefix, info.stats.maxCrew);
-    this.hudState.energy = info.state.energy;
+    this.hudState.energy = info.ship.energy;
     this.hudState.maxEnergy = info.stats.maxEnergy;
     this.hudState.energyBarMax = info.stats.maxEnergy;
     this.hudState.shipName = info.stats.raceName.toUpperCase();
@@ -62,8 +60,8 @@ export class BattleHUD {
   update(input: ShipInput) {
     if (!this.ship) return;
 
-    this.hudState.crew = this.ship.state.crew;
-    this.hudState.energy = this.ship.state.energy;
+    this.hudState.crew = this.ship.ship.crew;
+    this.hudState.energy = this.ship.ship.energy;
     this.hudState.updateInput(input);
   }
 

@@ -1,5 +1,5 @@
 // SC2 game logic constants
-// These define ship behavior rules, NOT physics math (matter-rs handles that)
+// These define ships behavior rules, NOT physics math (matter-rs handles that)
 
 // Ship facings: SC2 uses 16 discrete rotations
 export const NUM_FACINGS = 16;

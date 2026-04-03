@@ -3,6 +3,7 @@
 // Used by BattleControl tests to verify game logic matches the original
 
 #include "sc2_types.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -158,7 +159,197 @@ static void json_ship_state(SimShip *s, const char *indent) {
     fprintf(out, "%s\"energyCounter\": %d\n", indent, s->energy_counter);
 }
 
+static void sim_apply_collision_cooldowns(SimShip *s) {
+    if (s->turn_wait < 1)
+        s->turn_wait += 1;
+    if (s->thrust_wait < 3)
+        s->thrust_wait += 3;
+}
+
+static SIZE sim_square_root(long value) {
+    return (SIZE)sqrt((double)value);
+}
+
+static void sim_collide_ships(SimShip *ship0, SimShip *ship1) {
+    SIZE speed;
+    SIZE dx0, dy0, dx1, dy1, dx_rel, dy_rel;
+    SIZE travel_angle0, travel_angle1, impact_angle0, impact_angle1;
+    SIZE rel_travel_angle, directness;
+    SIZE mass0, mass1;
+    long scalar;
+
+    dx_rel = ship0->pos_x - ship1->pos_x;
+    dy_rel = ship0->pos_y - ship1->pos_y;
+    impact_angle0 = ARCTAN(dx_rel, dy_rel);
+    impact_angle1 = NORMALIZE_ANGLE(impact_angle0 + HALF_CIRCLE);
+
+    GetCurrentVelocityComponents(&ship0->velocity, &dx0, &dy0);
+    travel_angle0 = GetVelocityTravelAngle(&ship0->velocity);
+    GetCurrentVelocityComponents(&ship1->velocity, &dx1, &dy1);
+    travel_angle1 = GetVelocityTravelAngle(&ship1->velocity);
+    dx_rel = dx0 - dx1;
+    dy_rel = dy0 - dy1;
+    rel_travel_angle = ARCTAN(dx_rel, dy_rel);
+    speed = sim_square_root((long)dx_rel * dx_rel + (long)dy_rel * dy_rel);
+
+    directness = NORMALIZE_ANGLE(rel_travel_angle - impact_angle0);
+    if (directness <= QUADRANT || directness >= HALF_CIRCLE + QUADRANT) {
+        directness = HALF_CIRCLE;
+        impact_angle0 = travel_angle0 + HALF_CIRCLE;
+        impact_angle1 = travel_angle1 + HALF_CIRCLE;
+    }
+
+    mass0 = HUMAN_SHIP_MASS;
+    mass1 = HUMAN_SHIP_MASS;
+    scalar = (long)SINE(directness, speed << 1) * (mass0 * mass1);
+
+    sim_apply_collision_cooldowns(ship0);
+    sim_apply_collision_cooldowns(ship1);
+
+    speed = (SIZE)(scalar / ((long)mass0 * (mass0 + mass1)));
+    DeltaVelocityComponents(&ship0->velocity, COSINE(impact_angle0, speed), SINE(impact_angle0, speed));
+
+    GetCurrentVelocityComponents(&ship0->velocity, &dx0, &dy0);
+    if (dx0 < 0) dx0 = -dx0;
+    if (dy0 < 0) dy0 = -dy0;
+    if (VELOCITY_TO_WORLD(dx0 + dy0) < SCALED_ONE) {
+        SetVelocityComponents(
+            &ship0->velocity,
+            COSINE(impact_angle0, WORLD_TO_VELOCITY(SCALED_ONE) - 1),
+            SINE(impact_angle0, WORLD_TO_VELOCITY(SCALED_ONE) - 1)
+        );
+    }
+
+    speed = (SIZE)(scalar / ((long)mass1 * (mass0 + mass1)));
+    DeltaVelocityComponents(&ship1->velocity, COSINE(impact_angle1, speed), SINE(impact_angle1, speed));
+
+    GetCurrentVelocityComponents(&ship1->velocity, &dx1, &dy1);
+    if (dx1 < 0) dx1 = -dx1;
+    if (dy1 < 0) dy1 = -dy1;
+    if (VELOCITY_TO_WORLD(dx1 + dy1) < SCALED_ONE) {
+        SetVelocityComponents(
+            &ship1->velocity,
+            COSINE(impact_angle1, WORLD_TO_VELOCITY(SCALED_ONE) - 1),
+            SINE(impact_angle1, WORLD_TO_VELOCITY(SCALED_ONE) - 1)
+        );
+    }
+}
+
 // --- Scenarios ---
+
+// Scenario: pure thrust in one direction for N frames
+static void scenario_collision_cooldowns(void) {
+    SimShip ship;
+    sim_ship_init(&ship, 5000, 5000, 0);
+
+    fprintf(out, "  \"collision_cooldowns\": {\n");
+    fprintf(out, "    \"description\": \"Ship collision applies the SC2 collision turn and thrust wait values\",\n");
+    fprintf(out, "    \"ship\": \"human_cruiser\",\n");
+    sim_apply_collision_cooldowns(&ship);
+    fprintf(out, "    \"turnWait\": %d,\n", ship.turn_wait);
+    fprintf(out, "    \"thrustWait\": %d\n", ship.thrust_wait);
+    fprintf(out, "  }");
+}
+
+static void scenario_collision_existing_cooldowns(void) {
+    SimShip ship;
+    sim_ship_init(&ship, 5000, 5000, 0);
+    ship.turn_wait = 2;
+    ship.thrust_wait = 4;
+
+    fprintf(out, "  \"collision_existing_cooldowns\": {\n");
+    fprintf(out, "    \"description\": \"Ship collision does not reduce existing cooldowns when they are already higher\",\n");
+    fprintf(out, "    \"ship\": \"human_cruiser\",\n");
+    sim_apply_collision_cooldowns(&ship);
+    fprintf(out, "    \"turnWait\": %d,\n", ship.turn_wait);
+    fprintf(out, "    \"thrustWait\": %d\n", ship.thrust_wait);
+    fprintf(out, "  }");
+}
+
+static void scenario_collision_head_on(void) {
+    SimShip ship0;
+    SimShip ship1;
+    SIZE vx0_before, vy0_before, vx1_before, vy1_before;
+    SIZE vx0_after, vy0_after, vx1_after, vy1_after;
+
+    sim_ship_init(&ship0, 5000, 5000, 4);
+    sim_ship_init(&ship1, 5010, 5000, 12);
+    SetVelocityComponents(&ship0.velocity, 96, 0);
+    SetVelocityComponents(&ship1.velocity, -96, 0);
+    GetCurrentVelocityComponents(&ship0.velocity, &vx0_before, &vy0_before);
+    GetCurrentVelocityComponents(&ship1.velocity, &vx1_before, &vy1_before);
+
+    sim_collide_ships(&ship0, &ship1);
+
+    GetCurrentVelocityComponents(&ship0.velocity, &vx0_after, &vy0_after);
+    GetCurrentVelocityComponents(&ship1.velocity, &vx1_after, &vy1_after);
+
+    fprintf(out, "  \"collision_head_on\": {\n");
+    fprintf(out, "    \"description\": \"Two equal-mass human ships collide head-on\",\n");
+    fprintf(out, "    \"before\": {\n");
+    fprintf(out, "      \"ship0\": { \"vx\": %d, \"vy\": %d },\n", (int)vx0_before, (int)vy0_before);
+    fprintf(out, "      \"ship1\": { \"vx\": %d, \"vy\": %d }\n", (int)vx1_before, (int)vy1_before);
+    fprintf(out, "    },\n");
+    fprintf(out, "    \"after\": {\n");
+    fprintf(out, "      \"ship0\": { \"vx\": %d, \"vy\": %d, \"turnWait\": %d, \"thrustWait\": %d },\n",
+        (int)vx0_after, (int)vy0_after, ship0.turn_wait, ship0.thrust_wait);
+    fprintf(out, "      \"ship1\": { \"vx\": %d, \"vy\": %d, \"turnWait\": %d, \"thrustWait\": %d }\n",
+        (int)vx1_after, (int)vy1_after, ship1.turn_wait, ship1.thrust_wait);
+    fprintf(out, "    }\n");
+    fprintf(out, "  }");
+}
+
+static void scenario_collision_moving_into_stationary(void) {
+    SimShip ship0;
+    SimShip ship1;
+    SIZE vx0_after, vy0_after, vx1_after, vy1_after;
+
+    sim_ship_init(&ship0, 5000, 5000, 4);
+    sim_ship_init(&ship1, 5010, 5000, 12);
+    SetVelocityComponents(&ship0.velocity, 96, 0);
+    SetVelocityComponents(&ship1.velocity, 0, 0);
+
+    sim_collide_ships(&ship0, &ship1);
+
+    GetCurrentVelocityComponents(&ship0.velocity, &vx0_after, &vy0_after);
+    GetCurrentVelocityComponents(&ship1.velocity, &vx1_after, &vy1_after);
+
+    fprintf(out, "  \"collision_moving_into_stationary\": {\n");
+    fprintf(out, "    \"description\": \"One human ship collides head-on with a stationary equal-mass ship\",\n");
+    fprintf(out, "    \"after\": {\n");
+    fprintf(out, "      \"ship0\": { \"vx\": %d, \"vy\": %d, \"turnWait\": %d, \"thrustWait\": %d },\n",
+        (int)vx0_after, (int)vy0_after, ship0.turn_wait, ship0.thrust_wait);
+    fprintf(out, "      \"ship1\": { \"vx\": %d, \"vy\": %d, \"turnWait\": %d, \"thrustWait\": %d }\n",
+        (int)vx1_after, (int)vy1_after, ship1.turn_wait, ship1.thrust_wait);
+    fprintf(out, "    }\n");
+    fprintf(out, "  }");
+}
+
+static void scenario_collision_asymmetric_head_on(void) {
+    SimShip ship0;
+    SimShip ship1;
+    SIZE vx0_after, vy0_after, vx1_after, vy1_after;
+
+    sim_ship_init(&ship0, 5000, 5000, 4);
+    sim_ship_init(&ship1, 5010, 5000, 12);
+    SetVelocityComponents(&ship0.velocity, 192, 0);
+    SetVelocityComponents(&ship1.velocity, -96, 0);
+
+    sim_collide_ships(&ship0, &ship1);
+
+    GetCurrentVelocityComponents(&ship0.velocity, &vx0_after, &vy0_after);
+    GetCurrentVelocityComponents(&ship1.velocity, &vx1_after, &vy1_after);
+
+    fprintf(out, "  \"collision_asymmetric_head_on\": {\n");
+    fprintf(out, "    \"description\": \"Two equal-mass human ships collide head-on with different speeds\",\n");
+    fprintf(out, "    \"after\": {\n");
+    fprintf(out, "      \"ship0\": { \"vx\": %d, \"vy\": %d, \"turnWait\": %d, \"thrustWait\": %d },\n",
+        (int)vx0_after, (int)vy0_after, ship0.turn_wait, ship0.thrust_wait);
+    fprintf(out, "      \"ship1\": { \"vx\": %d, \"vy\": %d, \"turnWait\": %d, \"thrustWait\": %d }\n",
+        (int)vx1_after, (int)vy1_after, ship1.turn_wait, ship1.thrust_wait);
+    fprintf(out, "    }\n");
+    fprintf(out, "  }");
+}
 
 // Scenario: pure thrust in one direction for N frames
 static void scenario_thrust_straight(void) {
@@ -392,6 +583,21 @@ int main(int argc, char *argv[]) {
     }
 
     fprintf(out, "{\n");
+
+    scenario_collision_cooldowns();
+    fprintf(out, ",\n");
+
+    scenario_collision_existing_cooldowns();
+    fprintf(out, ",\n");
+
+    scenario_collision_head_on();
+    fprintf(out, ",\n");
+
+    scenario_collision_moving_into_stationary();
+    fprintf(out, ",\n");
+
+    scenario_collision_asymmetric_head_on();
+    fprintf(out, ",\n");
 
     scenario_thrust_straight();
     fprintf(out, ",\n");

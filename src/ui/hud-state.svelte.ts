@@ -1,4 +1,4 @@
-import type { ShipInput } from '../ships/ship-state.js';
+import type { ShipInput } from '../ships/ship-stats.js';
 
 export interface CaptainAnimationLayer {
   start: number;

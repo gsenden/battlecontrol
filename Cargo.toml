@@ -1,0 +1,3 @@
+[workspace]
+members = ["game-logic", "game-logic-wasm"]
+resolver = "2"
