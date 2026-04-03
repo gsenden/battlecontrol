@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { BattleScene } from './scenes/BattleScene.js';
 import { MatterScene } from './scenes/MatterScene.js';
-import { initGameLogic } from './game-logic.js';
+import { assertVersionSync, initGameLogic } from './game-logic.js';
+import { APP_VERSION } from './version.js';
 
 const gameElement = document.getElementById('game');
 
@@ -9,7 +10,17 @@ if (!gameElement) {
   throw new Error('Missing #game mount point');
 }
 
+function mountVersionBadge() {
+  const badge = document.createElement('div');
+  badge.id = 'version-badge';
+  badge.textContent = `v${APP_VERSION}`;
+  document.body.appendChild(badge);
+}
+
 initGameLogic().then(() => {
+  assertVersionSync();
+  mountVersionBadge();
+
   const initialScene = window.location.hash === '#matter' ? MatterScene : BattleScene;
   const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,

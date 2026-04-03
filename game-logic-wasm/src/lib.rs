@@ -6,6 +6,8 @@ use game_logic::wrap::shortest_wrapped_delta;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+const APP_VERSION: &str = include_str!("../../VERSION");
+
 #[wasm_bindgen]
 pub struct GameLogic {
     ships: Vec<AnyShip>,
@@ -19,6 +21,11 @@ pub struct MatterWorld {
 #[wasm_bindgen]
 pub struct Battle {
     battle: CoreBattle,
+}
+
+#[wasm_bindgen(js_name = "getVersion")]
+pub fn get_version() -> String {
+    APP_VERSION.trim().to_string()
 }
 
 #[derive(Serialize)]
