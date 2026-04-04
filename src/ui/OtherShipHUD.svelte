@@ -18,7 +18,7 @@
   <div class="flex w-[56px] min-h-[18px] items-center justify-center">
     {#if ship.dead}
       <div class="font-[StarCon] text-[14px] leading-none tracking-[0.08em] text-black">
-        DIED
+        R.I.P.
       </div>
     {:else}
       <div class="flex w-[56px] flex-col gap-0.5">

@@ -132,11 +132,28 @@ struct ExplosionSnapshotDto {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct LaserSnapshotDto {
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioEventSnapshotDto {
+    key: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct BattleSnapshotDto {
     player: BattleShipSnapshotDto,
     target: BattleShipSnapshotDto,
     projectiles: Vec<ProjectileSnapshotDto>,
     explosions: Vec<ExplosionSnapshotDto>,
+    lasers: Vec<LaserSnapshotDto>,
+    audio_events: Vec<AudioEventSnapshotDto>,
 }
 
 #[wasm_bindgen]
@@ -371,6 +388,11 @@ impl Battle {
         });
     }
 
+    #[wasm_bindgen(js_name = "triggerTargetWeapon")]
+    pub fn trigger_target_weapon(&mut self) {
+        self.battle.trigger_target_weapon();
+    }
+
     #[wasm_bindgen(js_name = "setPlayerWeaponTargetPoint")]
     pub fn set_player_weapon_target_point(&mut self, x: f64, y: f64) {
         self.battle.set_player_weapon_target_point(x, y);
@@ -526,6 +548,15 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             y: explosion.y,
             frame_index: explosion.frame_index,
             texture_prefix: explosion.texture_prefix.to_string(),
+        }).collect(),
+        lasers: snapshot.lasers.into_iter().map(|laser| LaserSnapshotDto {
+            start_x: laser.start_x,
+            start_y: laser.start_y,
+            end_x: laser.end_x,
+            end_y: laser.end_y,
+        }).collect(),
+        audio_events: snapshot.audio_events.into_iter().map(|event| AudioEventSnapshotDto {
+            key: event.key.to_string(),
         }).collect(),
     }
 }

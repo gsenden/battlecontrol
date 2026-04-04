@@ -26,6 +26,12 @@ import starMiscMed0 from '../assets/stars/stars-misc-med-000.png';
 import starMiscMed1 from '../assets/stars/stars-misc-med-001.png';
 import starMiscSml0 from '../assets/stars/stars-misc-sml-000.png';
 import starMiscSml1 from '../assets/stars/stars-misc-sml-001.png';
+import battleMusic from '../assets/audio/battle-music.ogg';
+import humanPrimarySound from '../assets/audio/human-primary.wav';
+import humanSpecialSound from '../assets/audio/human-special.ogg';
+import humanVictorySound from '../assets/audio/human-victory.ogg';
+import battleShipDiesSound from '../assets/audio/battle-shipdies.wav';
+import battleBoom45Sound from '../assets/audio/battle-boom-45.wav';
 import { velocityToSaturnFrame } from './projectile-frame.js';
 import { appendDebugLine, setDebugStatus } from '../debug-overlay.js';
 
@@ -59,6 +65,7 @@ const PLANET_FAR_SCALE = 0.72;
 const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ships';
 const FLEET_LAYOUT_KEY = Phaser.Input.Keyboard.KeyCodes.T;
 const ROTATE_ENEMY_KEY = 106;
+const FIRE_ENEMY_WEAPON_KEY = Phaser.Input.Keyboard.KeyCodes.ONE;
 const CHMMR_PREFIX = 'chmmr-avatar';
 const SYREEN_PREFIX = 'syreen-penetrator';
 
@@ -75,6 +82,7 @@ export class BattleScene extends Phaser.Scene {
   private numpadSubtractKey!: Phaser.Input.Keyboard.Key;
   private fleetLayoutKey!: Phaser.Input.Keyboard.Key;
   private rotateEnemyKey!: Phaser.Input.Keyboard.Key;
+  private fireEnemyWeaponKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
   private battleWorker!: Worker;
@@ -87,6 +95,15 @@ export class BattleScene extends Phaser.Scene {
   private selectedShipIndex = 0;
   private projectileSprites: Phaser.GameObjects.Image[] = [];
   private explosionSprites: Phaser.GameObjects.Image[] = [];
+  private laserSprites: Phaser.GameObjects.Line[] = [];
+  private battleMusic?: HTMLAudioElement;
+  private readonly startBattleMusic = () => {
+    if (!this.battleMusic || !this.battleMusic.paused) {
+      return;
+    }
+
+    void this.battleMusic.play().catch(() => {});
+  };
   private currentAllies: OtherShipHudState[] = [];
   private currentOpponents: OtherShipHudState[] = [];
   private targetCaptainName = '';
@@ -121,6 +138,12 @@ export class BattleScene extends Phaser.Scene {
       const file = path.split('/').pop()!.replace('.png', '');
       this.load.image(`battle-${file}`, url);
     });
+
+    this.load.audio('human-primary', humanPrimarySound);
+    this.load.audio('human-special', humanSpecialSound);
+    this.load.audio('human-victory', humanVictorySound);
+    this.load.audio('battle-shipdies', battleShipDiesSound);
+    this.load.audio('battle-boom-45', battleBoom45Sound);
 
     // Planets
     Object.entries(planetModules).forEach(([path, url]) => {
@@ -187,8 +210,18 @@ export class BattleScene extends Phaser.Scene {
       width: BATTLE_WIDTH,
       height: BATTLE_HEIGHT,
     });
+    this.battleMusic = new Audio(battleMusic);
+    this.battleMusic.loop = true;
+    this.battleMusic.volume = 0.45;
+    this.battleMusic.preload = 'auto';
+    window.addEventListener('battlecontrol:start-game', this.startBattleMusic);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.battleWorker.terminate();
+      window.removeEventListener('battlecontrol:start-game', this.startBattleMusic);
+      if (this.battleMusic) {
+        this.battleMusic.pause();
+        this.battleMusic.currentTime = 0;
+      }
     });
 
     // Camera follows an invisible container that tracks the ships position
@@ -210,6 +243,7 @@ export class BattleScene extends Phaser.Scene {
     this.numpadSubtractKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_SUBTRACT);
     this.fleetLayoutKey = this.input.keyboard!.addKey(FLEET_LAYOUT_KEY);
     this.rotateEnemyKey = this.input.keyboard!.addKey(ROTATE_ENEMY_KEY);
+    this.fireEnemyWeaponKey = this.input.keyboard!.addKey(FIRE_ENEMY_WEAPON_KEY);
     this.input.mouse?.disableContextMenu();
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       const x = Math.round(pointer.worldX);
@@ -224,6 +258,8 @@ export class BattleScene extends Phaser.Scene {
       }
       appendDebugLine(`${targetType} x=${x} y=${y}`);
     });
+
+    window.dispatchEvent(new Event('battlecontrol:scene-ready'));
   }
 
   update() {
@@ -259,6 +295,10 @@ export class BattleScene extends Phaser.Scene {
       this.toggleFleetLayout();
     }
 
+    if (Phaser.Input.Keyboard.JustDown(this.fireEnemyWeaponKey)) {
+      this.battleWorker.postMessage({ type: 'triggerTargetWeapon' });
+    }
+
     this.battleWorker.postMessage({ type: 'setPlayerInput', input: hudInput });
     this.battleWorker.postMessage({
       type: 'setTargetInput',
@@ -280,8 +320,15 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private updateCamera() {
-    const dx = this.targetShip.x - this.playerShip.x;
-    const dy = this.targetShip.y - this.playerShip.y;
+    if (this.targetShip.dead) {
+      this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
+      return;
+    }
+
+    const targetX = this.targetShip.x;
+    const targetY = this.targetShip.y;
+    const dx = targetX - this.playerShip.x;
+    const dy = targetY - this.playerShip.y;
     const distance = Math.sqrt((dx * dx) + (dy * dy));
 
     this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
@@ -324,12 +371,38 @@ export class BattleScene extends Phaser.Scene {
     this.targetShip.applySnapshot(snapshot.target);
     this.syncProjectiles(snapshot);
     this.syncExplosions(snapshot);
+    this.syncLasers(snapshot);
     this.syncTargetOpponent(snapshot);
+    this.playAudioEvents(snapshot);
     setDebugStatus(
       snapshot.projectiles[0]
         ? `rocket life=${snapshot.projectiles[0].life}`
         : '',
     );
+  }
+
+  private playAudioEvents(snapshot: BattleSnapshot) {
+    for (const event of snapshot.audioEvents) {
+      switch (event.key) {
+        case 'human-primary':
+          this.sound.play(event.key, { volume: 0.5 });
+          break;
+        case 'human-special':
+          this.sound.play(event.key, { volume: 0.6 });
+          break;
+        case 'human-victory':
+          this.sound.play(event.key, { volume: 0.65 });
+          break;
+        case 'battle-shipdies':
+          this.sound.play(event.key, { volume: 0.75 });
+          break;
+        case 'battle-boom-45':
+          this.sound.play(event.key, { volume: 0.55 });
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   private syncProjectiles(snapshot: BattleSnapshot) {
@@ -380,6 +453,25 @@ export class BattleScene extends Phaser.Scene {
         `${explosion.texturePrefix}-big-${String(explosion.frameIndex).padStart(3, '0')}`,
       );
       sprite.setScale(explosion.texturePrefix === 'battle-boom' ? 1 : 0.75);
+    });
+  }
+
+  private syncLasers(snapshot: BattleSnapshot) {
+    while (this.laserSprites.length < snapshot.lasers.length) {
+      const laser = this.add.line(0, 0, 0, 0, 0, 0, 0xffffff, 0.95);
+      laser.setLineWidth(3, 3);
+      laser.setDepth(12);
+      this.laserSprites.push(laser);
+    }
+
+    while (this.laserSprites.length > snapshot.lasers.length) {
+      this.laserSprites.pop()?.destroy();
+    }
+
+    snapshot.lasers.forEach((laser, index) => {
+      const line = this.laserSprites[index];
+      line.setTo(laser.startX, laser.startY, laser.endX, laser.endY);
+      line.setOrigin(0, 0);
     });
   }
 

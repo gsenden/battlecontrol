@@ -116,6 +116,7 @@ export class HudState {
   maxEnergy = $state(0);
   energyBarMax = $state(0);
   dead = $state(false);
+  deathAnimationFrame = $state(0);
   allies = $state<OtherShipHudState[]>([]);
   opponents = $state<OtherShipHudState[]>([]);
   shipName = $state('');
@@ -139,6 +140,7 @@ export class HudState {
   private weaponOffset = 0;
   private specialOffset = 0;
   private captainLayout: CaptainHudLayout = DEFAULT_LAYOUT;
+  private wasDead = false;
 
   configureCaptain(urls: string[], layout: CaptainHudLayout, frameStyles: string[] = []) {
     this.captainFrameUrls = urls;
@@ -162,6 +164,17 @@ export class HudState {
   }
 
   updateInput(input: ShipInput) {
+    if (this.dead && !this.wasDead) {
+      this.deathAnimationFrame = 0;
+    }
+    if (this.dead && this.deathAnimationFrame < 40) {
+      this.deathAnimationFrame += 1;
+    }
+    if (!this.dead) {
+      this.deathAnimationFrame = 0;
+    }
+    this.wasDead = this.dead;
+
     if (input.left && !input.right) {
       this.rightTurnOffset = 0;
       this.leftTurnOffset = stepCaptainOffset(this.leftTurnOffset, true);

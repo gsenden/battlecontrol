@@ -30,9 +30,18 @@
     <div class="border-[#838383] border-b-[#424242] border-r-[#424242] border-3 bg-black">
       <div class="relative w-[220px] h-[120px] overflow-hidden">
         {#if state.dead}
-          <div class="absolute inset-0 flex items-center justify-center bg-[#1a1a1a] text-[#c9c9c9] text-[44px] font-[StarCon] tracking-[0.15em]">
-            DIED
-          </div>
+          {#if state.deathAnimationFrame < 40}
+            <div class="absolute inset-0 bg-black"></div>
+            <div
+              class="absolute bg-[#7a0000]"
+              style={`left:${state.deathAnimationFrame * 4}px; top:${state.deathAnimationFrame * 2}px; width:${Math.max(220 - (state.deathAnimationFrame * 8), 8)}px; height:${Math.max(120 - (state.deathAnimationFrame * 4), 8)}px; opacity:${Math.min(0.95, 0.2 + (state.deathAnimationFrame * 0.03))};`}
+            ></div>
+            <div class="absolute inset-0 bg-[#fff0a0]" style={`opacity:${state.deathAnimationFrame < 5 ? 0.55 - (state.deathAnimationFrame * 0.08) : 0};`}></div>
+          {:else}
+            <div class="absolute inset-0 flex items-center justify-center bg-[#1a1a1a] text-[#c9c9c9] text-[44px] font-[StarCon] tracking-[0.15em]">
+              R.I.P.
+            </div>
+          {/if}
         {:else}
           <img class="absolute left-0 top-0 w-[220px] h-[120px] [image-rendering:pixelated]" src={state.captainBackgroundUrl} alt="Captain" />
 

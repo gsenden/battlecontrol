@@ -16,6 +16,7 @@ const HUMAN_NUKE_IMPACT_START_FRAME: i32 = 16;
 const HUMAN_NUKE_IMPACT_END_FRAME: i32 = 24;
 const SHIP_DEATH_EXPLOSION_START_FRAME: i32 = 0;
 const SHIP_DEATH_EXPLOSION_END_FRAME: i32 = 8;
+const HUMAN_POINT_DEFENSE_RANGE: f64 = 400.0;
 const PROJECTILE_FACINGS: f64 = 16.0;
 const SC2_SINE_TABLE: [i32; 64] = [
     -16384, -16305, -16069, -15679, -15137, -14449, -13623, -12665,
@@ -57,6 +58,7 @@ pub struct ProjectileSnapshot {
     speed: i32,
     raw_vx: i32,
     raw_vy: i32,
+    owner_is_player: bool,
     target: ProjectileTarget,
 }
 
@@ -68,18 +70,34 @@ pub struct ExplosionSnapshot {
     pub texture_prefix: &'static str,
 }
 
+#[derive(Clone, Copy)]
+pub struct LaserSnapshot {
+    pub start_x: f64,
+    pub start_y: f64,
+    pub end_x: f64,
+    pub end_y: f64,
+}
+
+#[derive(Clone, Copy)]
+pub struct AudioEventSnapshot {
+    pub key: &'static str,
+}
+
 pub struct BattleSnapshot {
     pub player: BattleShipSnapshot,
     pub target: BattleShipSnapshot,
     pub projectiles: Vec<ProjectileSnapshot>,
     pub explosions: Vec<ExplosionSnapshot>,
+    pub lasers: Vec<LaserSnapshot>,
+    pub audio_events: Vec<AudioEventSnapshot>,
 }
 
 #[derive(Clone, Copy)]
 enum ProjectileTarget {
     None,
     Point { x: f64, y: f64 },
-    Ship,
+    PlayerShip,
+    TargetShip,
 }
 
 struct ShipHitCircle {
@@ -99,11 +117,14 @@ pub struct Battle {
     ships: Vec<AnyShip>,
     projectiles: Vec<ProjectileSnapshot>,
     explosions: Vec<ExplosionSnapshot>,
+    lasers: Vec<LaserSnapshot>,
+    audio_events: Vec<AudioEventSnapshot>,
     matter_world: MatterWorld,
     player: BattleShipState,
     target: BattleShipState,
     player_input: ShipInput,
     target_input: ShipInput,
+    queued_target_weapon: bool,
     player_weapon_target: ProjectileTarget,
     planet_x: f64,
     planet_y: f64,
@@ -155,6 +176,8 @@ impl Battle {
             ships,
             projectiles: Vec::new(),
             explosions: Vec::new(),
+            lasers: Vec::new(),
+            audio_events: Vec::new(),
             matter_world,
             player: BattleShipState {
                 ship_id: player_ship_id,
@@ -182,6 +205,7 @@ impl Battle {
                 weapon: false,
                 special: false,
             },
+            queued_target_weapon: false,
             player_weapon_target: ProjectileTarget::None,
             planet_x,
             planet_y,
@@ -198,12 +222,16 @@ impl Battle {
         self.target_input = input;
     }
 
+    pub fn trigger_target_weapon(&mut self) {
+        self.queued_target_weapon = true;
+    }
+
     pub fn set_player_weapon_target_point(&mut self, x: f64, y: f64) {
         self.player_weapon_target = ProjectileTarget::Point { x, y };
     }
 
     pub fn set_player_weapon_target_ship(&mut self) {
-        self.player_weapon_target = ProjectileTarget::Ship;
+        self.player_weapon_target = ProjectileTarget::TargetShip;
     }
 
     pub fn clear_player_weapon_target(&mut self) {
@@ -232,12 +260,18 @@ impl Battle {
     }
 
     pub fn tick(&mut self, delta: f64) {
+        self.audio_events.clear();
+        self.lasers.clear();
+
         for explosion in &mut self.explosions {
             explosion.frame_index += 1;
         }
         self.explosions.retain(|explosion| {
             explosion.frame_index <= explosion_end_frame_for(explosion.texture_prefix)
         });
+
+        let player_target_body = self.matter_world.body_state(self.player.body_id);
+        let target_target_body = self.matter_world.body_state(self.target.body_id);
 
         for projectile in &mut self.projectiles {
             match projectile.target {
@@ -257,10 +291,14 @@ impl Battle {
                         projectile.turn_wait = HUMAN_NUKE_TRACK_WAIT;
                     }
                 }
-                ProjectileTarget::Ship => {
+                ProjectileTarget::PlayerShip | ProjectileTarget::TargetShip => {
                     if projectile.turn_wait > 0 {
                         projectile.turn_wait -= 1;
-                    } else if let Some(target) = self.matter_world.body_state(self.target.body_id) {
+                    } else if let Some(target) = match projectile.target {
+                        ProjectileTarget::PlayerShip => player_target_body,
+                        ProjectileTarget::TargetShip => target_target_body,
+                        ProjectileTarget::None | ProjectileTarget::Point { .. } => None,
+                    } {
                         projectile.facing_index = turn_projectile_toward_target(
                             projectile.facing_index,
                             projectile.x,
@@ -284,35 +322,75 @@ impl Battle {
             projectile.life -= 1;
         }
 
-        let mut hit_projectile_indexes = Vec::new();
-        let mut target_died = false;
-        if let Some(target_body) = self.matter_world.body_state(self.target.body_id) {
-            let target_facing = radians_to_facing_index(self.ships[self.target.ship_id].facing());
-            let hit_circle = ship_hit_circle_for(
-                self.ships[self.target.ship_id].sprite_prefix(),
-                target_facing,
-            );
-            let hit_center_x = target_body.x + hit_circle.offset_x;
-            let hit_center_y = target_body.y + hit_circle.offset_y;
+        self.step_ship(self.player.ship_id, self.player.body_id, self.player_input, true);
+        let target_input = ShipInput {
+            weapon: self.target_input.weapon || self.queued_target_weapon,
+            ..self.target_input
+        };
+        self.step_ship(
+            self.target.ship_id,
+            self.target.body_id,
+            target_input,
+            false,
+        );
+        self.queued_target_weapon = false;
 
-            for (index, projectile) in self.projectiles.iter().enumerate() {
-                let dx = shortest_wrapped_delta(projectile.x, hit_center_x, self.width);
-                let dy = shortest_wrapped_delta(projectile.y, hit_center_y, self.height);
-                if ((dx * dx) + (dy * dy)).sqrt() <= hit_circle.radius {
-                    target_died |= self.ships[self.target.ship_id].take_damage(HUMAN_NUKE_DAMAGE);
-                    self.explosions.push(ExplosionSnapshot {
-                        x: projectile.x,
-                        y: projectile.y,
-                        frame_index: HUMAN_NUKE_IMPACT_START_FRAME,
-                        texture_prefix: "human-saturn",
-                    });
-                    hit_projectile_indexes.push(index);
+        self.handle_human_point_defense(true, self.player_input);
+        self.handle_human_point_defense(false, target_input);
+
+        let mut hit_projectile_indexes = Vec::new();
+        let mut player_died = false;
+        let mut target_died = false;
+        let mut player_won = false;
+        let mut target_won = false;
+
+        for (index, projectile) in self.projectiles.iter().enumerate() {
+            let Some((is_player, hit_center_x, hit_center_y, hit_radius)) =
+                self.projectile_hit_target(projectile.target)
+            else {
+                continue;
+            };
+
+            let dx = shortest_wrapped_delta(projectile.x, hit_center_x, self.width);
+            let dy = shortest_wrapped_delta(projectile.y, hit_center_y, self.height);
+            if ((dx * dx) + (dy * dy)).sqrt() <= hit_radius {
+                if is_player {
+                    let died = self.ships[self.player.ship_id].take_damage(HUMAN_NUKE_DAMAGE);
+                    player_died |= died;
+                    target_won |= died && !projectile.owner_is_player;
+                } else {
+                    let died = self.ships[self.target.ship_id].take_damage(HUMAN_NUKE_DAMAGE);
+                    target_died |= died;
+                    player_won |= died && projectile.owner_is_player;
                 }
+                self.explosions.push(ExplosionSnapshot {
+                    x: projectile.x,
+                    y: projectile.y,
+                    frame_index: HUMAN_NUKE_IMPACT_START_FRAME,
+                    texture_prefix: "human-saturn",
+                });
+                self.audio_events.push(AudioEventSnapshot {
+                    key: "battle-boom-45",
+                });
+                hit_projectile_indexes.push(index);
             }
         }
 
+        if player_died {
+            self.mark_ship_dead(true);
+        }
         if target_died {
             self.mark_ship_dead(false);
+        }
+        if player_won {
+            self.audio_events.push(AudioEventSnapshot {
+                key: victory_sound_key_for(self.ships[self.player.ship_id].sprite_prefix()),
+            });
+        }
+        if target_won {
+            self.audio_events.push(AudioEventSnapshot {
+                key: victory_sound_key_for(self.ships[self.target.ship_id].sprite_prefix()),
+            });
         }
 
         for index in hit_projectile_indexes.into_iter().rev() {
@@ -320,14 +398,6 @@ impl Battle {
         }
 
         self.projectiles.retain(|projectile| projectile.life >= 0);
-
-        self.step_ship(self.player.ship_id, self.player.body_id, self.player_input, true);
-        self.step_ship(
-            self.target.ship_id,
-            self.target.body_id,
-            self.target_input,
-            false,
-        );
 
         let state = self.matter_world.step(delta);
 
@@ -350,6 +420,8 @@ impl Battle {
             target: self.snapshot_for(&self.target),
             projectiles: self.projectiles.clone(),
             explosions: self.explosions.clone(),
+            lasers: self.lasers.clone(),
+            audio_events: self.audio_events.clone(),
         }
     }
 
@@ -401,7 +473,11 @@ impl Battle {
                 speed: projectile_speed as i32,
                 raw_vx: projectile_raw_vx,
                 raw_vy: projectile_raw_vy,
-                target: self.player_weapon_target,
+                owner_is_player: is_player,
+                target: self.projectile_target_for(is_player),
+            });
+            self.audio_events.push(AudioEventSnapshot {
+                key: primary_sound_key_for(self.ships[ship_id].sprite_prefix()),
             });
         }
         let thrusting = apply_commands(&mut self.matter_world, body_id, commands);
@@ -424,6 +500,97 @@ impl Battle {
     fn in_gravity_well(&self, x: f64, y: f64) -> bool {
         shortest_wrapped_delta(x, self.planet_x, self.width).abs() <= 420.0
             && shortest_wrapped_delta(y, self.planet_y, self.height).abs() <= 420.0
+    }
+
+    fn handle_human_point_defense(&mut self, is_player: bool, input: ShipInput) {
+        if !input.special {
+            return;
+        }
+
+        let ship_state = if is_player { &self.player } else { &self.target };
+        if ship_state.dead {
+            return;
+        }
+
+        let ship_id = ship_state.ship_id;
+        if self.ships[ship_id].sprite_prefix() != "human-cruiser" {
+            return;
+        }
+
+        let special_wait = self.ships[ship_id].special_wait();
+        if self.ships[ship_id].special_counter() != special_wait {
+            return;
+        }
+
+        let special_cost = self.ships[ship_id].special_energy_cost();
+        let energy_before_refund = self.ships[ship_id].energy() + special_cost;
+        let Some(body) = self.matter_world.body_state(ship_state.body_id) else {
+            return;
+        };
+
+        let target_indexes = self.find_point_defense_targets(is_player, body.x, body.y);
+        if target_indexes.is_empty() {
+            self.ships[ship_id].set_special_counter(0);
+            self.ships[ship_id].set_energy(energy_before_refund);
+            return;
+        }
+
+        self.audio_events.push(AudioEventSnapshot {
+            key: "human-special",
+        });
+
+        for index in target_indexes.into_iter().rev() {
+            let projectile = self.projectiles.remove(index);
+            self.lasers.push(LaserSnapshot {
+                start_x: body.x,
+                start_y: body.y,
+                end_x: projectile.x,
+                end_y: projectile.y,
+            });
+        }
+    }
+
+    fn find_point_defense_targets(&self, is_player: bool, ship_x: f64, ship_y: f64) -> Vec<usize> {
+        self.projectiles
+            .iter()
+            .enumerate()
+            .filter(|(_, projectile)| projectile.owner_is_player != is_player)
+            .filter_map(|(index, projectile)| {
+                let dx = shortest_wrapped_delta(ship_x, projectile.x, self.width);
+                let dy = shortest_wrapped_delta(ship_y, projectile.y, self.height);
+                let distance = ((dx * dx) + (dy * dy)).sqrt();
+                (distance <= HUMAN_POINT_DEFENSE_RANGE).then_some((index, distance))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    fn projectile_target_for(&self, is_player: bool) -> ProjectileTarget {
+        if is_player {
+            self.player_weapon_target
+        } else {
+            ProjectileTarget::PlayerShip
+        }
+    }
+
+    fn projectile_hit_target(&self, target: ProjectileTarget) -> Option<(bool, f64, f64, f64)> {
+        let (is_player, ship_state) = match target {
+            ProjectileTarget::PlayerShip => (true, &self.player),
+            ProjectileTarget::TargetShip => (false, &self.target),
+            ProjectileTarget::None | ProjectileTarget::Point { .. } => return None,
+        };
+        let body = self.matter_world.body_state(ship_state.body_id)?;
+        let logic = &self.ships[ship_state.ship_id];
+        let facing = radians_to_facing_index(logic.facing());
+        let hit_circle = ship_hit_circle_for(logic.sprite_prefix(), facing);
+        Some((
+            is_player,
+            body.x + hit_circle.offset_x,
+            body.y + hit_circle.offset_y,
+            hit_circle.radius,
+        ))
     }
 
     fn snapshot_for(&self, ship: &BattleShipState) -> BattleShipSnapshot {
@@ -480,6 +647,9 @@ impl Battle {
                 texture_prefix: "battle-boom",
             });
         }
+        self.audio_events.push(AudioEventSnapshot {
+            key: "battle-shipdies",
+        });
 
         ship.dead = true;
         ship.thrusting = false;
@@ -534,6 +704,20 @@ fn projectile_offset_for(ship_sprite_prefix: &str) -> f64 {
     match ship_sprite_prefix {
         "human-cruiser" => HUMAN_NUKE_OFFSET,
         _ => 0.0,
+    }
+}
+
+fn primary_sound_key_for(ship_sprite_prefix: &str) -> &'static str {
+    match ship_sprite_prefix {
+        "human-cruiser" => "human-primary",
+        _ => "human-primary",
+    }
+}
+
+fn victory_sound_key_for(ship_sprite_prefix: &str) -> &'static str {
+    match ship_sprite_prefix {
+        "human-cruiser" => "human-victory",
+        _ => "human-victory",
     }
 }
 
@@ -639,6 +823,283 @@ mod tests {
     use crate::ship_input::ShipInput;
 
     #[test]
+    fn destroyed_target_adds_winner_victory_audio_event_to_snapshot() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            5000.0,
+            4300.0,
+            500.0,
+            600.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+        battle.set_player_weapon_target_ship();
+
+        for _ in 0..4 {
+            battle.set_player_input(ShipInput {
+                left: false,
+                right: false,
+                thrust: false,
+                weapon: true,
+                special: false,
+            });
+            for _ in 0..80 {
+                battle.tick(1000.0 / 24.0);
+                battle.set_player_input(ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: false,
+                    weapon: false,
+                    special: false,
+                });
+            }
+        }
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+
+        for _ in 0..80 {
+            battle.tick(1000.0 / 24.0);
+            battle.set_player_input(ShipInput {
+                left: false,
+                right: false,
+                thrust: false,
+                weapon: false,
+                special: false,
+            });
+            if battle.snapshot().target.dead {
+                break;
+            }
+        }
+
+        assert_eq!(
+            battle
+                .snapshot()
+                .audio_events
+                .iter()
+                .any(|event| event.key == "human-victory"),
+            true
+        );
+    }
+
+    #[test]
+    fn human_special_adds_audio_event_when_destroying_enemy_projectile() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            5500.0,
+            5000.0,
+            5000.0,
+            5000.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+
+        for _ in 0..4 {
+            battle.set_target_input(ShipInput {
+                left: true,
+                right: false,
+                thrust: false,
+                weapon: false,
+                special: false,
+            });
+            battle.tick(1000.0 / 24.0);
+        }
+
+        battle.trigger_target_weapon();
+        battle.tick(1000.0 / 24.0);
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(
+            battle.snapshot().audio_events.iter().any(|event| event.key == "human-special"),
+            true
+        );
+    }
+
+    #[test]
+    fn human_special_destroys_enemy_projectile_in_range() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            5500.0,
+            5000.0,
+            5000.0,
+            5000.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+        battle.set_player_weapon_target_ship();
+
+        for _ in 0..4 {
+            battle.set_target_input(ShipInput {
+                left: true,
+                right: false,
+                thrust: false,
+                weapon: false,
+                special: false,
+            });
+            battle.tick(1000.0 / 24.0);
+        }
+
+        battle.trigger_target_weapon();
+        battle.tick(1000.0 / 24.0);
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().projectiles.len(), 0);
+    }
+
+    #[test]
+    fn queued_target_weapon_spawns_enemy_projectile() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7600.0,
+            4500.0,
+            5000.0,
+            5000.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+
+        battle.trigger_target_weapon();
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().projectiles.len(), 1);
+    }
+
+    #[test]
+    fn weapon_fire_adds_primary_audio_event_to_snapshot() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7600.0,
+            4500.0,
+            5000.0,
+            5000.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(
+            battle.snapshot().audio_events.first().map(|event| event.key),
+            Some("human-primary")
+        );
+    }
+
+    #[test]
+    fn destroyed_target_adds_ship_death_audio_event_to_snapshot() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            5000.0,
+            4300.0,
+            500.0,
+            600.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+        battle.set_player_weapon_target_ship();
+
+        for _ in 0..4 {
+            battle.set_player_input(ShipInput {
+                left: false,
+                right: false,
+                thrust: false,
+                weapon: true,
+                special: false,
+            });
+            for _ in 0..80 {
+                battle.tick(1000.0 / 24.0);
+                battle.set_player_input(ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: false,
+                    weapon: false,
+                    special: false,
+                });
+            }
+        }
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+
+        for _ in 0..80 {
+            battle.tick(1000.0 / 24.0);
+            battle.set_player_input(ShipInput {
+                left: false,
+                right: false,
+                thrust: false,
+                weapon: false,
+                special: false,
+            });
+            if battle.snapshot().target.dead {
+                break;
+            }
+        }
+
+        assert_eq!(
+            battle
+                .snapshot()
+                .audio_events
+                .iter()
+                .any(|event| event.key == "battle-shipdies"),
+            true
+        );
+    }
+
+    #[test]
     fn destroyed_target_creates_ship_death_explosion_snapshot() {
         let mut battle = Battle::new(
             "human-cruiser",
@@ -653,6 +1114,7 @@ mod tests {
             10000.0,
         )
         .unwrap();
+        battle.set_player_weapon_target_ship();
 
         for _ in 0..4 {
             battle.set_player_input(ShipInput {
@@ -721,6 +1183,7 @@ mod tests {
             10000.0,
         )
         .unwrap();
+        battle.set_player_weapon_target_ship();
 
         for _ in 0..5 {
             battle.set_player_input(ShipInput {
@@ -845,6 +1308,7 @@ mod tests {
             10000.0,
         )
         .unwrap();
+        battle.set_player_weapon_target_ship();
 
         battle.set_player_input(ShipInput {
             left: false,
@@ -933,6 +1397,7 @@ mod tests {
             10000.0,
         )
         .unwrap();
+        battle.set_player_weapon_target_ship();
 
         battle.set_player_input(ShipInput {
             left: false,

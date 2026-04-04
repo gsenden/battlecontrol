@@ -56,6 +56,7 @@ export class MatterScene extends Phaser.Scene {
     hint.setAlpha(0.9);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
+    window.dispatchEvent(new Event('battlecontrol:scene-ready'));
   }
 
   update(_time: number, delta: number) {

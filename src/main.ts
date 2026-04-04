@@ -18,6 +18,45 @@ function mountVersionBadge() {
   document.body.appendChild(badge);
 }
 
+function mountStartOverlay() {
+  const overlay = document.createElement('div');
+  overlay.id = 'start-overlay';
+
+  const button = document.createElement('button');
+  button.id = 'start-game-button';
+  button.type = 'button';
+  button.textContent = 'Loading...';
+  button.disabled = true;
+
+  const onSceneReady = () => {
+    button.disabled = false;
+    button.textContent = 'Start Game';
+  };
+
+  window.addEventListener('battlecontrol:scene-ready', onSceneReady, { once: true });
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (button.disabled) {
+      return;
+    }
+
+    window.removeEventListener('battlecontrol:scene-ready', onSceneReady);
+    window.setTimeout(() => {
+      overlay.remove();
+      window.dispatchEvent(new Event('battlecontrol:start-game'));
+    }, 0);
+  });
+
+  overlay.appendChild(button);
+  document.body.appendChild(overlay);
+}
+
 initGameLogic().then(() => {
   assertVersionSync();
   mountVersionBadge();
@@ -44,5 +83,6 @@ initGameLogic().then(() => {
     },
   };
 
+  mountStartOverlay();
   new Phaser.Game(config);
 });

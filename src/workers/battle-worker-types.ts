@@ -28,11 +28,24 @@ export interface ExplosionSnapshot {
   texturePrefix: string;
 }
 
+export interface LaserSnapshot {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
+export interface AudioEventSnapshot {
+  key: string;
+}
+
 export interface BattleSnapshot {
   player: BattleShipSnapshot;
   target: BattleShipSnapshot;
   projectiles: ProjectileSnapshot[];
   explosions: ExplosionSnapshot[];
+  lasers: LaserSnapshot[];
+  audioEvents: AudioEventSnapshot[];
 }
 
 export type BattleWorkerMessage =
@@ -51,6 +64,7 @@ export type BattleWorkerMessage =
   }
   | { type: 'setPlayerInput'; input: ShipInput }
   | { type: 'setTargetInput'; input: ShipInput }
+  | { type: 'triggerTargetWeapon' }
   | { type: 'setPlayerWeaponTargetPoint'; x: number; y: number }
   | { type: 'setPlayerWeaponTargetShip' }
   | { type: 'clearPlayerWeaponTarget' }

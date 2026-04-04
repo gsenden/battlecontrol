@@ -63,6 +63,37 @@ body {
   box-shadow: 0 0 0 1px rgb(255 255 255 / 8%) inset;
 }
 
+#start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at center, rgb(10 18 34 / 55%), rgb(0 0 0 / 88%));
+}
+
+#start-game-button {
+  min-width: 220px;
+  min-height: 64px;
+  padding: 14px 24px;
+  border: 1px solid #8c8c8c;
+  background: linear-gradient(180deg, #2f3f56, #162031);
+  color: #f1f1f1;
+  font: 700 22px/1 monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 10%) inset,
+    0 12px 32px rgb(0 0 0 / 45%);
+}
+
+#start-game-button:hover {
+  background: linear-gradient(180deg, #3b4e69, #1b283d);
+}
+
 .fleet-scrollbar {
   scrollbar-gutter: stable;
   scrollbar-width: thin;

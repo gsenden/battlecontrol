@@ -81,6 +81,8 @@ self.onmessage = async (event: MessageEvent<BattleWorkerMessage>) => {
       message.input.weapon,
       message.input.special,
     );
+  } else if (message.type === 'triggerTargetWeapon') {
+    battle.triggerTargetWeapon();
   } else if (message.type === 'setPlayerWeaponTargetPoint') {
     battle.setPlayerWeaponTargetPoint(message.x, message.y);
   } else if (message.type === 'setPlayerWeaponTargetShip') {
