@@ -291,6 +291,7 @@ impl AnyShip {
     pub fn crew(&self) -> i32 { dispatch_ref!(self, crew()) }
     pub fn energy(&self) -> i32 { dispatch_ref!(self, energy()) }
     pub fn facing(&self) -> f64 { dispatch_ref!(self, facing()) }
+    pub fn weapon_counter(&self) -> i32 { dispatch_ref!(self, weapon_counter()) }
     pub fn race_name(&self) -> &'static str { dispatch_ref!(self, race_name()) }
     pub fn ship_class(&self) -> &'static str { dispatch_ref!(self, ship_class()) }
     pub fn sprite_prefix(&self) -> &'static str { dispatch_ref!(self, sprite_prefix()) }

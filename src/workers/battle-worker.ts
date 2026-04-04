@@ -73,6 +73,20 @@ self.onmessage = async (event: MessageEvent<BattleWorkerMessage>) => {
       message.input.weapon,
       message.input.special,
     );
+  } else if (message.type === 'setTargetInput') {
+    battle.setTargetInput(
+      message.input.left,
+      message.input.right,
+      message.input.thrust,
+      message.input.weapon,
+      message.input.special,
+    );
+  } else if (message.type === 'setPlayerWeaponTargetPoint') {
+    battle.setPlayerWeaponTargetPoint(message.x, message.y);
+  } else if (message.type === 'setPlayerWeaponTargetShip') {
+    battle.setPlayerWeaponTargetShip();
+  } else if (message.type === 'clearPlayerWeaponTarget') {
+    battle.clearPlayerWeaponTarget();
   } else if (message.type === 'switchPlayerShip') {
     battle.switchPlayerShip(message.shipType);
     postSnapshot();

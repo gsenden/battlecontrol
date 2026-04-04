@@ -9,11 +9,30 @@ export interface BattleShipSnapshot {
   energy: number;
   facing: number;
   thrusting: boolean;
+  dead: boolean;
+}
+
+export interface ProjectileSnapshot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  texturePrefix: string;
+}
+
+export interface ExplosionSnapshot {
+  x: number;
+  y: number;
+  frameIndex: number;
+  texturePrefix: string;
 }
 
 export interface BattleSnapshot {
   player: BattleShipSnapshot;
   target: BattleShipSnapshot;
+  projectiles: ProjectileSnapshot[];
+  explosions: ExplosionSnapshot[];
 }
 
 export type BattleWorkerMessage =
@@ -31,6 +50,10 @@ export type BattleWorkerMessage =
     height: number;
   }
   | { type: 'setPlayerInput'; input: ShipInput }
+  | { type: 'setTargetInput'; input: ShipInput }
+  | { type: 'setPlayerWeaponTargetPoint'; x: number; y: number }
+  | { type: 'setPlayerWeaponTargetShip' }
+  | { type: 'clearPlayerWeaponTarget' }
   | { type: 'switchPlayerShip'; shipType: string };
 
 export type BattleWorkerResponse =

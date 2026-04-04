@@ -46,6 +46,23 @@ body {
   text-shadow: 1px 1px 0 #000;
 }
 
+#debug-overlay {
+  position: fixed;
+  left: 10px;
+  bottom: 28px;
+  z-index: 50;
+  min-width: 270px;
+  min-height: 144px;
+  padding: 8px 10px;
+  pointer-events: none;
+  color: #d7d7d7;
+  background: rgb(0 0 0 / 72%);
+  border: 1px solid #4a4a4a;
+  font: 12px/1.35 monospace;
+  white-space: pre-wrap;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 8%) inset;
+}
+
 .fleet-scrollbar {
   scrollbar-gutter: stable;
   scrollbar-width: thin;

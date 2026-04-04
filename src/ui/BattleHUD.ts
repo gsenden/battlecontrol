@@ -5,7 +5,7 @@ import type { ShipStats, ShipInput } from '../ships/ship-stats.js';
 import type { CaptainHudLayout, OtherShipHudState } from './hud-state.svelte.js';
 
 export interface HUDShipInfo {
-  ship: { crew: number; energy: number };
+  ship: { crew: number; energy: number; dead?: boolean };
   stats: ShipStats;
   portraitUrl: string;
   captainFrameUrls: string[];
@@ -45,6 +45,7 @@ export class BattleHUD {
     this.hudState.energy = info.ship.energy;
     this.hudState.maxEnergy = info.stats.maxEnergy;
     this.hudState.energyBarMax = info.stats.maxEnergy;
+    this.hudState.dead = Boolean(info.ship.dead);
     this.hudState.shipName = info.stats.raceName.toUpperCase();
     this.hudState.captainName = info.captainName;
     this.hudState.portraitUrl = info.portraitUrl;
@@ -62,6 +63,7 @@ export class BattleHUD {
 
     this.hudState.crew = this.ship.ship.crew;
     this.hudState.energy = this.ship.ship.energy;
+    this.hudState.dead = Boolean(this.ship.ship.dead);
     this.hudState.updateInput(input);
   }
 

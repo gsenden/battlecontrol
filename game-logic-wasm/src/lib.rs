@@ -107,6 +107,27 @@ struct BattleShipSnapshotDto {
     energy: i32,
     facing: f64,
     thrusting: bool,
+    dead: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectileSnapshotDto {
+    x: f64,
+    y: f64,
+    vx: f64,
+    vy: f64,
+    life: i32,
+    texture_prefix: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExplosionSnapshotDto {
+    x: f64,
+    y: f64,
+    frame_index: i32,
+    texture_prefix: String,
 }
 
 #[derive(Serialize)]
@@ -114,6 +135,8 @@ struct BattleShipSnapshotDto {
 struct BattleSnapshotDto {
     player: BattleShipSnapshotDto,
     target: BattleShipSnapshotDto,
+    projectiles: Vec<ProjectileSnapshotDto>,
+    explosions: Vec<ExplosionSnapshotDto>,
 }
 
 #[wasm_bindgen]
@@ -330,6 +353,39 @@ impl Battle {
         });
     }
 
+    #[wasm_bindgen(js_name = "setTargetInput")]
+    pub fn set_target_input(
+        &mut self,
+        left: bool,
+        right: bool,
+        thrust: bool,
+        weapon: bool,
+        special: bool,
+    ) {
+        self.battle.set_target_input(ShipInput {
+            left,
+            right,
+            thrust,
+            weapon,
+            special,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "setPlayerWeaponTargetPoint")]
+    pub fn set_player_weapon_target_point(&mut self, x: f64, y: f64) {
+        self.battle.set_player_weapon_target_point(x, y);
+    }
+
+    #[wasm_bindgen(js_name = "setPlayerWeaponTargetShip")]
+    pub fn set_player_weapon_target_ship(&mut self) {
+        self.battle.set_player_weapon_target_ship();
+    }
+
+    #[wasm_bindgen(js_name = "clearPlayerWeaponTarget")]
+    pub fn clear_player_weapon_target(&mut self) {
+        self.battle.clear_player_weapon_target();
+    }
+
     #[wasm_bindgen(js_name = "switchPlayerShip")]
     pub fn switch_player_ship(&mut self, ship_type: &str) -> Result<(), JsError> {
         self.battle
@@ -444,6 +500,7 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             energy: snapshot.player.energy,
             facing: snapshot.player.facing,
             thrusting: snapshot.player.thrusting,
+            dead: snapshot.player.dead,
         },
         target: BattleShipSnapshotDto {
             x: snapshot.target.x,
@@ -454,6 +511,21 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             energy: snapshot.target.energy,
             facing: snapshot.target.facing,
             thrusting: snapshot.target.thrusting,
+            dead: snapshot.target.dead,
         },
+        projectiles: snapshot.projectiles.into_iter().map(|projectile| ProjectileSnapshotDto {
+            x: projectile.x,
+            y: projectile.y,
+            vx: projectile.vx,
+            vy: projectile.vy,
+            life: projectile.life,
+            texture_prefix: projectile.texture_prefix.to_string(),
+        }).collect(),
+        explosions: snapshot.explosions.into_iter().map(|explosion| ExplosionSnapshotDto {
+            x: explosion.x,
+            y: explosion.y,
+            frame_index: explosion.frame_index,
+            texture_prefix: explosion.texture_prefix.to_string(),
+        }).collect(),
     }
 }

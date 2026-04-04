@@ -26,8 +26,11 @@ import starMiscMed0 from '../assets/stars/stars-misc-med-000.png';
 import starMiscMed1 from '../assets/stars/stars-misc-med-001.png';
 import starMiscSml0 from '../assets/stars/stars-misc-sml-000.png';
 import starMiscSml1 from '../assets/stars/stars-misc-sml-001.png';
+import { velocityToSaturnFrame } from './projectile-frame.js';
+import { appendDebugLine, setDebugStatus } from '../debug-overlay.js';
 
 const shipModules = import.meta.glob('../assets/ships/*/*-big-*.png', { eager: true, import: 'default' }) as Record<string, string>;
+const battleModules = import.meta.glob('../assets/battle/*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const planetModules = import.meta.glob('../assets/planets/*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const planetBases = Object.keys(planetModules)
   .filter((path) => path.endsWith('-big-000.png'))
@@ -55,6 +58,7 @@ const PLANET_NEAR_SCALE = 1.15;
 const PLANET_FAR_SCALE = 0.72;
 const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ships';
 const FLEET_LAYOUT_KEY = Phaser.Input.Keyboard.KeyCodes.T;
+const ROTATE_ENEMY_KEY = 106;
 const CHMMR_PREFIX = 'chmmr-avatar';
 const SYREEN_PREFIX = 'syreen-penetrator';
 
@@ -70,6 +74,7 @@ export class BattleScene extends Phaser.Scene {
   private numpadAddKey!: Phaser.Input.Keyboard.Key;
   private numpadSubtractKey!: Phaser.Input.Keyboard.Key;
   private fleetLayoutKey!: Phaser.Input.Keyboard.Key;
+  private rotateEnemyKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
   private battleWorker!: Worker;
@@ -80,6 +85,11 @@ export class BattleScene extends Phaser.Scene {
   private planetRenderScale = PLANET_FAR_SCALE;
   private hud!: BattleHUD;
   private selectedShipIndex = 0;
+  private projectileSprites: Phaser.GameObjects.Image[] = [];
+  private explosionSprites: Phaser.GameObjects.Image[] = [];
+  private currentAllies: OtherShipHudState[] = [];
+  private currentOpponents: OtherShipHudState[] = [];
+  private targetCaptainName = '';
 
   constructor() {
     super('BattleScene');
@@ -105,6 +115,11 @@ export class BattleScene extends Phaser.Scene {
       const file = path.split('/').pop()!.replace('.png', '');
       const folder = path.split('/').at(-2)!;
       this.load.image(`${folder}-${file}`, url);
+    });
+
+    Object.entries(battleModules).forEach(([path, url]) => {
+      const file = path.split('/').pop()!.replace('.png', '');
+      this.load.image(`battle-${file}`, url);
     });
 
     // Planets
@@ -147,6 +162,7 @@ export class BattleScene extends Phaser.Scene {
     // Ship — spawn offset from center so it's not on the planet
     const selectedPreset = this.shipPresets[this.selectedShipIndex];
     const targetPreset = this.getPresetBySpritePrefix('human-cruiser');
+    this.targetCaptainName = Phaser.Utils.Array.GetRandom(targetPreset.stats.captainNames);
     this.playerShip = new Ship(this, this.planetX + 800, this.planetY, selectedPreset.stats);
     this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, targetPreset.stats);
     this.targetShip.setTint(0xff8866);
@@ -193,7 +209,21 @@ export class BattleScene extends Phaser.Scene {
     this.numpadAddKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_ADD);
     this.numpadSubtractKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_SUBTRACT);
     this.fleetLayoutKey = this.input.keyboard!.addKey(FLEET_LAYOUT_KEY);
+    this.rotateEnemyKey = this.input.keyboard!.addKey(ROTATE_ENEMY_KEY);
     this.input.mouse?.disableContextMenu();
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      const x = Math.round(pointer.worldX);
+      const y = Math.round(pointer.worldY);
+      const targetType = this.targetShip.containsPoint(pointer.worldX, pointer.worldY)
+        ? 'ship'
+        : 'point';
+      if (targetType === 'ship') {
+        this.battleWorker.postMessage({ type: 'setPlayerWeaponTargetShip' });
+      } else {
+        this.battleWorker.postMessage({ type: 'setPlayerWeaponTargetPoint', x, y });
+      }
+      appendDebugLine(`${targetType} x=${x} y=${y}`);
+    });
   }
 
   update() {
@@ -229,7 +259,17 @@ export class BattleScene extends Phaser.Scene {
       this.toggleFleetLayout();
     }
 
-    this.battleWorker.postMessage({ type: 'setPlayerInput', input });
+    this.battleWorker.postMessage({ type: 'setPlayerInput', input: hudInput });
+    this.battleWorker.postMessage({
+      type: 'setTargetInput',
+      input: {
+        left: false,
+        right: this.rotateEnemyKey.isDown,
+        thrust: false,
+        weapon: false,
+        special: false,
+      },
+    });
 
     // Visual update every render frame
     this.updateCamera();
@@ -282,6 +322,71 @@ export class BattleScene extends Phaser.Scene {
   private applySnapshot(snapshot: BattleSnapshot) {
     this.playerShip.applySnapshot(snapshot.player);
     this.targetShip.applySnapshot(snapshot.target);
+    this.syncProjectiles(snapshot);
+    this.syncExplosions(snapshot);
+    this.syncTargetOpponent(snapshot);
+    setDebugStatus(
+      snapshot.projectiles[0]
+        ? `rocket life=${snapshot.projectiles[0].life}`
+        : '',
+    );
+  }
+
+  private syncProjectiles(snapshot: BattleSnapshot) {
+    while (this.projectileSprites.length < snapshot.projectiles.length) {
+      const projectile = this.add.image(0, 0, 'ion-particle');
+      projectile.setDepth(10);
+      this.projectileSprites.push(projectile);
+    }
+
+    while (this.projectileSprites.length > snapshot.projectiles.length) {
+      this.projectileSprites.pop()?.destroy();
+    }
+
+    snapshot.projectiles.forEach((projectile, index) => {
+      const sprite = this.projectileSprites[index];
+      sprite.setPosition(projectile.x, projectile.y);
+
+      if (projectile.texturePrefix) {
+        const frameIndex = projectile.texturePrefix === 'human-saturn'
+          ? velocityToSaturnFrame(projectile.vx, projectile.vy)
+          : this.velocityToProjectileFrame(projectile.vx, projectile.vy, 25);
+        sprite.setTexture(`${projectile.texturePrefix}-big-${String(frameIndex).padStart(3, '0')}`);
+        sprite.clearTint();
+        sprite.setScale(0.75);
+      } else {
+        sprite.setTexture('ion-particle');
+        sprite.setTint(0xffffff);
+        sprite.setScale(2);
+      }
+    });
+  }
+
+  private syncExplosions(snapshot: BattleSnapshot) {
+    while (this.explosionSprites.length < snapshot.explosions.length) {
+      const explosion = this.add.image(0, 0, 'shofixti-destruct-big-000');
+      explosion.setDepth(11);
+      this.explosionSprites.push(explosion);
+    }
+
+    while (this.explosionSprites.length > snapshot.explosions.length) {
+      this.explosionSprites.pop()?.destroy();
+    }
+
+    snapshot.explosions.forEach((explosion, index) => {
+      const sprite = this.explosionSprites[index];
+      sprite.setPosition(explosion.x, explosion.y);
+      sprite.setTexture(
+        `${explosion.texturePrefix}-big-${String(explosion.frameIndex).padStart(3, '0')}`,
+      );
+      sprite.setScale(explosion.texturePrefix === 'battle-boom' ? 1 : 0.75);
+    });
+  }
+
+  private velocityToProjectileFrame(vx: number, vy: number, frameCount: number) {
+    let angle = Math.atan2(vy, vx) + Math.PI / 2;
+    angle = ((angle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+    return Math.round(angle / (2 * Math.PI / frameCount)) % frameCount;
   }
 
   private getPresetBySpritePrefix(spritePrefix: string): ShipPreset {
@@ -312,23 +417,32 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private syncFleetLayout() {
-    const [allies, opponents] = this.createRandomFleet(7, 8);
-    this.hud.setFleet(allies, opponents);
+    const [allies, opponents] = this.createRandomFleet(7, 7);
+    const targetPreset = this.getPresetBySpritePrefix('human-cruiser');
+    const targetOpponent = this.toOtherShipHudState(targetPreset, 'target-0', this.targetCaptainName);
+    this.currentAllies = allies;
+    this.currentOpponents = [targetOpponent, ...opponents];
+    this.hud.setFleet(this.currentAllies, this.currentOpponents);
   }
 
   private createRandomFleet(allyCount: number, opponentCount: number): [OtherShipHudState[], OtherShipHudState[]] {
     const playerShipPrefix = this.shipPresets[this.selectedShipIndex].stats.spritePrefix;
-    const availablePresets = this.shipPresets.filter((preset) => preset.stats.spritePrefix !== playerShipPrefix);
+    const targetShipPrefix = this.targetShip.stats.spritePrefix;
+    const availablePresets = this.shipPresets.filter((preset) => (
+      preset.stats.spritePrefix !== playerShipPrefix
+      && preset.stats.spritePrefix !== targetShipPrefix
+    ));
     const availableByPrefix = new Map(availablePresets.map((preset) => [preset.stats.spritePrefix, preset]));
     const usedPrefixes = new Set<string>();
 
     return [
-      this.buildFleetSide(allyCount, availablePresets, availableByPrefix, usedPrefixes),
-      this.buildFleetSide(opponentCount, availablePresets, availableByPrefix, usedPrefixes),
+      this.buildFleetSide('ally', allyCount, availablePresets, availableByPrefix, usedPrefixes),
+      this.buildFleetSide('opponent', opponentCount, availablePresets, availableByPrefix, usedPrefixes),
     ];
   }
 
   private buildFleetSide(
+    side: 'ally' | 'opponent',
     count: number,
     availablePresets: ShipPreset[],
     availableByPrefix: Map<string, ShipPreset>,
@@ -365,16 +479,16 @@ export class BattleScene extends Phaser.Scene {
       usedPrefixes.add(preset.stats.spritePrefix);
     }
 
-    return selected.map((preset, index) => this.toOtherShipHudState(preset, `ally-${index}`));
+    return selected.map((preset, index) => this.toOtherShipHudState(preset, `${side}-${index}`));
   }
 
-  private toOtherShipHudState(preset: ShipPreset, id: string): OtherShipHudState {
+  private toOtherShipHudState(preset: ShipPreset, id: string, captainName = Phaser.Utils.Array.GetRandom(preset.stats.captainNames)): OtherShipHudState {
     return {
       id,
       portraitUrl: preset.portraitUrl,
       portraitHeight: getOtherShipPortraitHeight(preset.stats.size),
       renderScale: preset.stats.renderScale ?? getShipRenderScale(preset.stats.size),
-      captainName: Phaser.Utils.Array.GetRandom(preset.stats.captainNames),
+      captainName,
       shipName: preset.stats.raceName,
       crew: preset.stats.maxCrew,
       maxCrew: preset.stats.maxCrew,
@@ -382,7 +496,23 @@ export class BattleScene extends Phaser.Scene {
       energy: preset.stats.maxEnergy,
       maxEnergy: preset.stats.maxEnergy,
       energyBarMax: preset.stats.maxEnergy,
+      dead: false,
     };
+  }
+
+  private syncTargetOpponent(snapshot: BattleSnapshot) {
+    if (this.currentOpponents.length === 0) {
+      return;
+    }
+
+    const [targetOpponent, ...rest] = this.currentOpponents;
+    this.currentOpponents = [{
+      ...targetOpponent,
+      crew: snapshot.target.crew,
+      energy: snapshot.target.energy,
+      dead: snapshot.target.dead,
+    }, ...rest];
+    this.hud.setFleet(this.currentAllies, this.currentOpponents);
   }
 
   private createStarLayer(textures: string[], count: number, scrollFactor: number) {

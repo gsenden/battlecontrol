@@ -3,6 +3,7 @@ import { BattleScene } from './scenes/BattleScene.js';
 import { MatterScene } from './scenes/MatterScene.js';
 import { assertVersionSync, initGameLogic } from './game-logic.js';
 import { APP_VERSION } from './version.js';
+import { mountDebugOverlay } from './debug-overlay.js';
 
 const gameElement = document.getElementById('game');
 
@@ -20,6 +21,7 @@ function mountVersionBadge() {
 initGameLogic().then(() => {
   assertVersionSync();
   mountVersionBadge();
+  mountDebugOverlay();
 
   const initialScene = window.location.hash === '#matter' ? MatterScene : BattleScene;
   const config: Phaser.Types.Core.GameConfig = {

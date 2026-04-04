@@ -41,6 +41,7 @@ export class Ship {
   y: number;
   vx: number;
   vy: number;
+  dead: boolean;
 
   constructor(scene: Phaser.Scene, x: number, y: number, stats: ShipStats) {
     this.scene = scene;
@@ -55,6 +56,7 @@ export class Ship {
     this.y = y;
     this.vx = 0;
     this.vy = 0;
+    this.dead = false;
 
     const defaultTexture = `${this.spritePrefix}-big-000`;
     this.sprite = scene.add.image(x, y, defaultTexture);
@@ -73,8 +75,9 @@ export class Ship {
     this.crew = snapshot.crew;
     this.energy = snapshot.energy;
     this.facing = snapshot.facing;
+    this.dead = snapshot.dead;
 
-    if (snapshot.thrusting) {
+    if (!snapshot.dead && snapshot.thrusting) {
       this.spawnIonParticle();
     }
 
@@ -89,6 +92,14 @@ export class Ship {
   }
 
   renderUpdate(scale: number = 1) {
+    if (this.dead) {
+      this.sprite.setVisible(false);
+      for (const ghost of this.ghostSprites) {
+        ghost.setVisible(false);
+      }
+      return;
+    }
+
     const frameIndex = this.facingToFrame();
     const texture = `${this.spritePrefix}-big-${String(frameIndex).padStart(3, '0')}`;
     const x = this.x;
@@ -137,6 +148,14 @@ export class Ship {
 
   getSpeed(): number {
     return Math.sqrt((this.vx * this.vx) + (this.vy * this.vy));
+  }
+
+  containsPoint(x: number, y: number): boolean {
+    if (this.dead) {
+      return false;
+    }
+    const radius = Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.5;
+    return Phaser.Math.Distance.Between(this.x, this.y, x, y) <= radius;
   }
 
   destroy() {

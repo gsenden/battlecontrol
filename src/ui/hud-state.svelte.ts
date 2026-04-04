@@ -31,6 +31,7 @@ export interface OtherShipHudState {
   energy: number;
   maxEnergy: number;
   energyBarMax: number;
+  dead: boolean;
 }
 
 const SYREEN_PREFIX = 'syreen-penetrator';
@@ -114,6 +115,7 @@ export class HudState {
   energy = $state(0);
   maxEnergy = $state(0);
   energyBarMax = $state(0);
+  dead = $state(false);
   allies = $state<OtherShipHudState[]>([]);
   opponents = $state<OtherShipHudState[]>([]);
   shipName = $state('');

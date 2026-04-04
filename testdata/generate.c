@@ -26,6 +26,21 @@ extern STATUS_FLAGS inertial_thrust(VELOCITY_DESC *VelocityPtr, COUNT ShipFacing
 #define HUMAN_WEAPON_COST       9
 #define HUMAN_SPECIAL_COST      4
 #define HUMAN_SHIP_MASS         6
+#define HUMAN_OFFSET            RES_SCALE(42)
+#define MIN_MISSILE_SPEED       DISPLAY_TO_WORLD(RES_SCALE(10))
+#define MAX_MISSILE_SPEED       DISPLAY_TO_WORLD(RES_SCALE(20))
+#define MISSILE_SPEED           (HUMAN_MAX_THRUST >= MIN_MISSILE_SPEED ? HUMAN_MAX_THRUST : MIN_MISSILE_SPEED)
+#define THRUST_SCALE            DISPLAY_TO_WORLD(RES_SCALE(1))
+#define MISSILE_LIFE            60
+#define HUMAN_TRACK_WAIT        3
+
+typedef struct {
+    VELOCITY_DESC velocity;
+    COUNT facing;
+    int life;
+    int turn_wait;
+    int pos_x, pos_y;
+} SimProjectile;
 
 // --- Ship simulation state ---
 typedef struct {
@@ -142,6 +157,66 @@ static void sim_apply_gravity(SimShip *s, int planet_x, int planet_y) {
     }
 }
 
+static void sim_human_nuke_init(SimProjectile *p, int ship_x, int ship_y, COUNT facing) {
+    SIZE dx, dy;
+    COUNT angle;
+    memset(p, 0, sizeof(*p));
+    p->facing = facing;
+    p->life = MISSILE_LIFE;
+    p->turn_wait = HUMAN_TRACK_WAIT;
+    angle = FACING_TO_ANGLE(facing);
+    p->pos_x = ship_x + COSINE(angle, DISPLAY_TO_WORLD(HUMAN_OFFSET));
+    p->pos_y = ship_y + SINE(angle, DISPLAY_TO_WORLD(HUMAN_OFFSET));
+    dx = COSINE(angle, WORLD_TO_VELOCITY(MISSILE_SPEED));
+    dy = SINE(angle, WORLD_TO_VELOCITY(MISSILE_SPEED));
+    SetVelocityComponents(&p->velocity, dx, dy);
+    GetCurrentVelocityComponents(&p->velocity, &dx, &dy);
+    p->pos_x -= VELOCITY_TO_WORLD(dx);
+    p->pos_y -= VELOCITY_TO_WORLD(dy);
+}
+
+static void sim_track_target(COUNT *facing, int tracker_x, int tracker_y, int target_x, int target_y) {
+    SIZE delta_x = target_x - tracker_x;
+    SIZE delta_y = target_y - tracker_y;
+    SIZE delta_facing = NORMALIZE_FACING(ANGLE_TO_FACING(ARCTAN(delta_x, delta_y)) - *facing);
+
+    if (delta_facing > 0) {
+        if (delta_facing < ANGLE_TO_FACING(HALF_CIRCLE))
+            *facing = NORMALIZE_FACING(*facing + 1);
+        else
+            *facing = NORMALIZE_FACING(*facing - 1);
+    }
+}
+
+static void sim_human_nuke_frame(SimProjectile *p) {
+    SIZE dx, dy;
+    SDWORD speed = MISSILE_SPEED + ((MISSILE_LIFE - p->life) * THRUST_SCALE);
+    COUNT angle = FACING_TO_ANGLE(p->facing);
+    if (speed > MAX_MISSILE_SPEED)
+        speed = MAX_MISSILE_SPEED;
+
+    SetVelocityComponents(
+        &p->velocity,
+        COSINE(angle, WORLD_TO_VELOCITY(speed)),
+        SINE(angle, WORLD_TO_VELOCITY(speed))
+    );
+    GetNextVelocityComponents(&p->velocity, &dx, &dy, 1);
+    p->pos_x += dx;
+    p->pos_y += dy;
+    p->life--;
+}
+
+static void sim_human_nuke_homing_frame(SimProjectile *p, int target_x, int target_y) {
+    if (p->turn_wait > 0) {
+        p->turn_wait--;
+    } else {
+        sim_track_target(&p->facing, p->pos_x, p->pos_y, target_x, target_y);
+        p->turn_wait = HUMAN_TRACK_WAIT;
+    }
+
+    sim_human_nuke_frame(p);
+}
+
 // --- JSON output helpers ---
 
 static FILE *out;
@@ -157,6 +232,14 @@ static void json_ship_state(SimShip *s, const char *indent) {
     fprintf(out, "%s\"turnWait\": %d, \"thrustWait\": %d,\n", indent, s->turn_wait, s->thrust_wait);
     fprintf(out, "%s\"weaponCounter\": %d, \"specialCounter\": %d,\n", indent, s->weapon_counter, s->special_counter);
     fprintf(out, "%s\"energyCounter\": %d\n", indent, s->energy_counter);
+}
+
+static void json_projectile_state(SimProjectile *p, const char *indent) {
+    SIZE vx, vy;
+    GetCurrentVelocityComponents(&p->velocity, &vx, &vy);
+    fprintf(out, "%s\"x\": %d, \"y\": %d,\n", indent, p->pos_x, p->pos_y);
+    fprintf(out, "%s\"vx\": %d, \"vy\": %d,\n", indent, (int)vx, (int)vy);
+    fprintf(out, "%s\"life\": %d\n", indent, p->life);
 }
 
 static void sim_apply_collision_cooldowns(SimShip *s) {
@@ -568,6 +651,57 @@ static void scenario_gravity_whip(void) {
     fprintf(out, "  }");
 }
 
+static void scenario_human_nuke_straight(void) {
+    SimProjectile nuke;
+    int total = 120;
+    sim_human_nuke_init(&nuke, 5000, 5000, 0);
+
+    fprintf(out, "  \"human_nuke_straight\": {\n");
+    fprintf(out, "    \"description\": \"Human Cruiser nuke fired straight ahead without tracking\",\n");
+    fprintf(out, "    \"ship\": \"human_cruiser\",\n");
+    fprintf(out, "    \"frames\": [\n");
+
+    for (int f = 0; f < total; f++) {
+        fprintf(out, "      {\n");
+        fprintf(out, "        \"frame\": %d,\n", f);
+        sim_human_nuke_frame(&nuke);
+        json_projectile_state(&nuke, "        ");
+        fprintf(out, "      }%s\n", f < total - 1 ? "," : "");
+    }
+
+    fprintf(out, "    ]\n");
+    fprintf(out, "  }");
+}
+
+static void scenario_human_nuke_homing(void) {
+    SimProjectile nuke;
+    int target_x = 5600;
+    int target_y = 4100;
+    int target_vx = 6;
+    int total = 120;
+    sim_human_nuke_init(&nuke, 5000, 5000, 0);
+
+    fprintf(out, "  \"human_nuke_homing\": {\n");
+    fprintf(out, "    \"description\": \"Human Cruiser nuke tracks a slowly moving target ship\",\n");
+    fprintf(out, "    \"ship\": \"human_cruiser\",\n");
+    fprintf(out, "    \"frames\": [\n");
+
+    for (int f = 0; f < total; f++) {
+        fprintf(out, "      {\n");
+        fprintf(out, "        \"frame\": %d,\n", f);
+        sim_human_nuke_homing_frame(&nuke, target_x, target_y);
+        fprintf(out, "        \"targetX\": %d,\n", target_x);
+        fprintf(out, "        \"targetY\": %d,\n", target_y);
+        fprintf(out, "        \"facing\": %d,\n", (int)nuke.facing);
+        json_projectile_state(&nuke, "        ");
+        fprintf(out, "      }%s\n", f < total - 1 ? "," : "");
+        target_x += target_vx;
+    }
+
+    fprintf(out, "    ]\n");
+    fprintf(out, "  }");
+}
+
 // --- Main ---
 
 int main(int argc, char *argv[]) {
@@ -621,6 +755,12 @@ int main(int argc, char *argv[]) {
     fprintf(out, ",\n");
 
     scenario_gravity_whip();
+    fprintf(out, ",\n");
+
+    scenario_human_nuke_straight();
+    fprintf(out, ",\n");
+
+    scenario_human_nuke_homing();
     fprintf(out, "\n");
 
     fprintf(out, "}\n");

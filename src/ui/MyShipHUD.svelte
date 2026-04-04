@@ -14,7 +14,7 @@
       <StatBar type="crew" current={state.crew} max={state.maxCrew} barMax={state.crewBarMax} />
 
       <div class="self-center w-[160px] h-[160px] flex items-center justify-center overflow-hidden">
-        <img class="max-w-full max-h-full [image-rendering:pixelated]" src={state.portraitUrl} alt={state.shipName} />
+        <img class={`max-w-full max-h-full [image-rendering:pixelated] ${state.dead ? 'grayscale brightness-75' : ''}`} src={state.portraitUrl} alt={state.shipName} />
       </div>
 
       <StatBar type="batt" current={state.energy} max={state.maxEnergy} barMax={state.energyBarMax} />
@@ -29,22 +29,28 @@
 
     <div class="border-[#838383] border-b-[#424242] border-r-[#424242] border-3 bg-black">
       <div class="relative w-[220px] h-[120px] overflow-hidden">
-        <img class="absolute left-0 top-0 w-[220px] h-[120px] [image-rendering:pixelated]" src={state.captainBackgroundUrl} alt="Captain" />
+        {#if state.dead}
+          <div class="absolute inset-0 flex items-center justify-center bg-[#1a1a1a] text-[#c9c9c9] text-[44px] font-[StarCon] tracking-[0.15em]">
+            DIED
+          </div>
+        {:else}
+          <img class="absolute left-0 top-0 w-[220px] h-[120px] [image-rendering:pixelated]" src={state.captainBackgroundUrl} alt="Captain" />
 
-        {#each state.captainTurnLayers as turnLayer}
-          <img class="absolute [image-rendering:pixelated]" style={turnLayer.style} src={turnLayer.url} alt="" />
-        {/each}
+          {#each state.captainTurnLayers as turnLayer}
+            <img class="absolute [image-rendering:pixelated]" style={turnLayer.style} src={turnLayer.url} alt="" />
+          {/each}
 
-        {#if state.captainThrustUrl}
-          <img class="absolute [image-rendering:pixelated]" style={state.captainThrustStyle} src={state.captainThrustUrl} alt="" />
-        {/if}
+          {#if state.captainThrustUrl}
+            <img class="absolute [image-rendering:pixelated]" style={state.captainThrustStyle} src={state.captainThrustUrl} alt="" />
+          {/if}
 
-        {#if state.captainWeaponUrl}
-          <img class="absolute [image-rendering:pixelated]" style={state.captainWeaponStyle} src={state.captainWeaponUrl} alt="" />
-        {/if}
+          {#if state.captainWeaponUrl}
+            <img class="absolute [image-rendering:pixelated]" style={state.captainWeaponStyle} src={state.captainWeaponUrl} alt="" />
+          {/if}
 
-        {#if state.captainSpecialUrl}
-          <img class="absolute [image-rendering:pixelated]" style={state.captainSpecialStyle} src={state.captainSpecialUrl} alt="" />
+          {#if state.captainSpecialUrl}
+            <img class="absolute [image-rendering:pixelated]" style={state.captainSpecialStyle} src={state.captainSpecialUrl} alt="" />
+          {/if}
         {/if}
       </div>
     </div>

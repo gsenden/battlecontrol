@@ -5,6 +5,26 @@ import referenceData from './reference.json';
 // and serve as documentation of the original game's behavior
 
 describe('SC2 Reference Data', () => {
+  describe('human_nuke_straight', () => {
+    const scenario = referenceData.human_nuke_straight;
+
+    it('starts with the original human nuke forward speed', () => {
+      expect([scenario.frames[0].vx, scenario.frames[0].vy]).toEqual([0, -1280]);
+    });
+  });
+
+  describe('human_nuke_homing', () => {
+    const scenario = referenceData.human_nuke_homing;
+
+    it('turns toward the moving target on the fourth frame', () => {
+      expect([
+        scenario.frames[3].facing,
+        scenario.frames[3].vx,
+        scenario.frames[3].vy,
+      ]).toEqual([1, 636, -1538]);
+    });
+  });
+
   describe('collision_head_on', () => {
     const scenario = referenceData.collision_head_on;
 

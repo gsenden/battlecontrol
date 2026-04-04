@@ -6,6 +6,8 @@ pub struct ReferenceData {
     pub collision_cooldowns: CollisionCooldownScenario,
     pub collision_existing_cooldowns: CollisionCooldownScenario,
     pub energy: FrameScenario,
+    pub human_nuke_straight: HumanNukeScenario,
+    pub human_nuke_homing: HumanNukeHomingScenario,
 }
 
 #[derive(Deserialize)]
@@ -18,6 +20,16 @@ pub struct CollisionCooldownScenario {
 #[derive(Deserialize)]
 pub struct FrameScenario {
     pub frames: Vec<FrameData>,
+}
+
+#[derive(Deserialize)]
+pub struct HumanNukeScenario {
+    pub frames: Vec<HumanNukeFrameData>,
+}
+
+#[derive(Deserialize)]
+pub struct HumanNukeHomingScenario {
+    pub frames: Vec<HumanNukeHomingFrameData>,
 }
 
 #[derive(Deserialize)]
@@ -34,6 +46,28 @@ pub struct FrameData {
     pub weapon_counter: i32,
     pub special_counter: i32,
     pub energy_counter: i32,
+}
+
+#[derive(Deserialize)]
+pub struct HumanNukeFrameData {
+    pub x: i32,
+    pub y: i32,
+    pub vx: i32,
+    pub vy: i32,
+    pub life: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanNukeHomingFrameData {
+    pub target_x: i32,
+    pub target_y: i32,
+    pub facing: i32,
+    pub x: i32,
+    pub y: i32,
+    pub vx: i32,
+    pub vy: i32,
+    pub life: i32,
 }
 
 pub fn load() -> ReferenceData {
