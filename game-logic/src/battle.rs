@@ -2,38 +2,25 @@ use crate::matter_world::{MatterBodyState, MatterWorld};
 use crate::physics_command::PhysicsCommand;
 use crate::ship_input::ShipInput;
 use crate::traits::game_object::GameObject;
-use crate::traits::ship_trait::HitPolygonPoint;
+use crate::traits::ship_trait::{
+    HitPolygonPoint, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileTargetMode, SpecialAbilitySpec,
+};
 use crate::ships::{apply_collision_between, build_ship, AnyShip};
 use crate::velocity_vector::VelocityVector;
 use crate::wrap::shortest_wrapped_delta;
 use matter_js_rs::geometry::Vec2;
 
-const HUMAN_NUKE_SPEED: f64 = 40.0;
-const HUMAN_NUKE_ACCELERATION: f64 = 4.0;
-const HUMAN_NUKE_MAX_SPEED: f64 = 80.0;
-const HUMAN_NUKE_LIFE: i32 = 60;
-const HUMAN_NUKE_OFFSET: f64 = 168.0;
-const HUMAN_NUKE_TRACK_WAIT: i32 = 3;
-const HUMAN_NUKE_DAMAGE: i32 = 4;
-const HUMAN_NUKE_IMPACT_START_FRAME: i32 = 16;
-const HUMAN_NUKE_IMPACT_END_FRAME: i32 = 24;
-const ANDROSYNTH_BUBBLE_DAMAGE: i32 = 2;
-const GENERIC_BLAST_START_FRAME: i32 = 0;
-const GENERIC_BLAST_END_FRAME: i32 = 7;
+const INITIAL_PLAYER_ID: u64 = 1;
+const INITIAL_TARGET_ID: u64 = 2;
+const INITIAL_NEXT_GAME_OBJECT_ID: u64 = 3;
 const SHIP_DEATH_EXPLOSION_START_FRAME: i32 = 0;
 const SHIP_DEATH_EXPLOSION_END_FRAME: i32 = 8;
-const HUMAN_POINT_DEFENSE_RANGE: f64 = 400.0;
-const ANDROSYNTH_BLAZER_SPEED: f64 = 10.0;
-const ANDROSYNTH_BLAZER_DAMAGE: i32 = 3;
-const ANDROSYNTH_BLAZER_MASS: f64 = 1.0;
-const ANDROSYNTH_BLAZER_HIT_RADIUS: f64 = 24.0;
-const ANDROSYNTH_BUBBLE_SPEED: f64 = 32.0;
-const ANDROSYNTH_BUBBLE_LIFE: i32 = 200;
-const ANDROSYNTH_BUBBLE_OFFSET: f64 = 56.0;
-const ANDROSYNTH_BUBBLE_TRACK_WAIT: i32 = 2;
 const ANDROSYNTH_BUBBLE_RANDOM_SEED: u32 = 0x00C0FFEE;
-const ANDROSYNTH_BUBBLE_DIRECT_TRACK_RANGE: f64 = 180.0;
 const PROJECTILE_FACINGS: f64 = 16.0;
+const EXPLOSION_TEXTURE_BATTLE_BOOM: &str = "battle-boom";
+const AUDIO_SHIP_DEATH: &str = "battle-shipdies";
+const AUDIO_DEFAULT_VICTORY: &str = "human-victory";
 const SC2_SINE_TABLE: [i32; 64] = [
     -16384, -16305, -16069, -15679, -15137, -14449, -13623, -12665,
     -11585, -10394, -9102, -7723, -6270, -4756, -3196, -1606,
@@ -69,6 +56,14 @@ pub struct ProjectileSnapshot {
     pub vy: f64,
     pub life: i32,
     pub texture_prefix: &'static str,
+    damage: i32,
+    impact_texture_prefix: &'static str,
+    impact_start_frame: i32,
+    impact_end_frame: i32,
+    impact_sound_key: &'static str,
+    track_wait: i32,
+    behavior: ProjectileBehaviorSpec,
+    collision: ProjectileCollisionSpec,
     facing: f64,
     acceleration: f64,
     max_speed: f64,
@@ -96,6 +91,7 @@ pub struct ExplosionSnapshot {
     pub x: f64,
     pub y: f64,
     pub frame_index: i32,
+    pub end_frame: i32,
     pub texture_prefix: &'static str,
 }
 
@@ -128,12 +124,6 @@ enum ProjectileTarget {
     Point { x: f64, y: f64 },
     PlayerShip,
     TargetShip,
-}
-
-struct ShipHitCircle {
-    offset_x: f64,
-    offset_y: f64,
-    radius: f64,
 }
 
 struct BattleShipState {
@@ -217,7 +207,7 @@ impl Battle {
             audio_events: Vec::new(),
             matter_world,
             player: BattleShipState {
-                id: 1,
+                id: INITIAL_PLAYER_ID,
                 ship_id: player_ship_id,
                 body_id: player_body_id,
                 thrusting: false,
@@ -228,7 +218,7 @@ impl Battle {
                 previous_y: player_y,
             },
             target: BattleShipState {
-                id: 2,
+                id: INITIAL_TARGET_ID,
                 ship_id: target_ship_id,
                 body_id: target_body_id,
                 thrusting: false,
@@ -259,7 +249,7 @@ impl Battle {
             planet_y,
             width,
             height,
-            next_game_object_id: 3,
+            next_game_object_id: INITIAL_NEXT_GAME_OBJECT_ID,
         })
     }
 
@@ -315,20 +305,15 @@ impl Battle {
         for explosion in &mut self.explosions {
             explosion.frame_index += 1;
         }
-        self.explosions.retain(|explosion| {
-            explosion.frame_index <= explosion_end_frame_for(explosion.texture_prefix)
-        });
+        self.explosions
+            .retain(|explosion| explosion.frame_index <= explosion.end_frame);
 
         let player_target_body = self.matter_world.body_state(self.player.body_id);
         let target_target_body = self.matter_world.body_state(self.target.body_id);
 
         for projectile in &mut self.projectiles {
-            if projectile.texture_prefix == "androsynth-bubble" {
-                step_androsynth_bubble(
-                    projectile,
-                    player_target_body,
-                    target_target_body,
-                );
+            if matches!(projectile.behavior, ProjectileBehaviorSpec::WobbleTracking { .. }) {
+                step_wobble_tracking_projectile(projectile, player_target_body, target_target_body);
                 continue;
             }
 
@@ -346,7 +331,7 @@ impl Battle {
                             y,
                         );
                         projectile.facing = facing_index_to_radians(projectile.facing_index);
-                        projectile.turn_wait = HUMAN_NUKE_TRACK_WAIT;
+                        projectile.turn_wait = projectile.track_wait;
                     }
                 }
                 ProjectileTarget::PlayerShip | ProjectileTarget::TargetShip => {
@@ -364,11 +349,8 @@ impl Battle {
                             target.x,
                             target.y,
                         );
-                        if projectile.texture_prefix == "androsynth-bubble" {
-                            projectile.facing_index = wobble_bubble_facing(projectile.facing_index, projectile.life);
-                        }
                         projectile.facing = facing_index_to_radians(projectile.facing_index);
-                        projectile.turn_wait = if projectile.texture_prefix == "androsynth-bubble" { 2 } else { HUMAN_NUKE_TRACK_WAIT };
+                        projectile.turn_wait = projectile.track_wait;
                     }
                 }
             }
@@ -407,7 +389,7 @@ impl Battle {
                 continue;
             };
 
-            let damage = projectile_damage_for(projectile.texture_prefix);
+            let damage = projectile.damage;
             if is_player {
                 let died = self.ships[self.player.ship_id].take_damage(damage);
                 player_died |= died;
@@ -421,11 +403,12 @@ impl Battle {
                 id: 0,
                 x: projectile.x,
                 y: projectile.y,
-                frame_index: projectile_impact_start_frame_for(projectile.texture_prefix),
-                texture_prefix: projectile_impact_texture_prefix_for(projectile.texture_prefix),
+                frame_index: projectile.impact_start_frame,
+                end_frame: projectile.impact_end_frame,
+                texture_prefix: projectile.impact_texture_prefix,
             });
             self.audio_events.push(AudioEventSnapshot {
-                key: projectile_impact_sound_key_for(projectile.texture_prefix),
+                key: projectile.impact_sound_key,
             });
             hit_projectile_indexes.push(index);
         }
@@ -447,40 +430,52 @@ impl Battle {
         let mut player_blazer_hit_applied = false;
         let mut target_blazer_hit_applied = false;
 
-        let player_blazer_hits = self.player.special_active && !self.target.dead && self.androsynth_blazer_hits_other_ship(true);
+        let player_blazer_spec = self.blazer_spec_for(true);
+        let target_blazer_spec = self.blazer_spec_for(false);
+        let player_blazer_hits = player_blazer_spec.is_some()
+            && self.player.special_active
+            && !self.target.dead
+            && self.androsynth_blazer_hits_other_ship(true);
         if player_blazer_hits && !self.player.special_contacting {
             if let (Some(pb), Some(tb)) = (player_body_before_step, target_body_before_step) {
                 self.apply_blazer_collision_velocity(
+                    player_blazer_spec.expect("blazer hit must have spec").mass,
                     self.player.body_id, self.target.body_id,
                     &pb, &tb, self.ships[self.target.ship_id].mass(),
                 );
             }
             apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
-            let died = self.ships[self.target.ship_id].take_damage(ANDROSYNTH_BLAZER_DAMAGE);
+            let died = self.ships[self.target.ship_id]
+                .take_damage(player_blazer_spec.expect("blazer hit must have spec").damage);
             target_died |= died;
             player_won |= died;
             player_blazer_hit_applied = true;
             self.audio_events.push(AudioEventSnapshot {
-                key: "battle-boom-23",
+                key: player_blazer_spec.expect("blazer hit must have spec").impact_sound_key,
             });
         }
         self.player.special_contacting = player_blazer_hits;
 
-        let target_blazer_hits = self.target.special_active && !self.player.dead && self.androsynth_blazer_hits_other_ship(false);
+        let target_blazer_hits = target_blazer_spec.is_some()
+            && self.target.special_active
+            && !self.player.dead
+            && self.androsynth_blazer_hits_other_ship(false);
         if target_blazer_hits && !self.target.special_contacting {
             if let (Some(pb), Some(tb)) = (player_body_before_step, target_body_before_step) {
                 self.apply_blazer_collision_velocity(
+                    target_blazer_spec.expect("blazer hit must have spec").mass,
                     self.target.body_id, self.player.body_id,
                     &tb, &pb, self.ships[self.player.ship_id].mass(),
                 );
             }
             apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
-            let died = self.ships[self.player.ship_id].take_damage(ANDROSYNTH_BLAZER_DAMAGE);
+            let died = self.ships[self.player.ship_id]
+                .take_damage(target_blazer_spec.expect("blazer hit must have spec").damage);
             player_died |= died;
             target_won |= died;
             target_blazer_hit_applied = true;
             self.audio_events.push(AudioEventSnapshot {
-                key: "battle-boom-23",
+                key: target_blazer_spec.expect("blazer hit must have spec").impact_sound_key,
             });
         }
         self.target.special_contacting = target_blazer_hits;
@@ -497,6 +492,7 @@ impl Battle {
                     (player_body_before_step, target_body_before_step)
                 {
                     self.apply_blazer_collision_velocity(
+                        player_blazer_spec.expect("active blazer must have spec").mass,
                         self.player.body_id,
                         self.target.body_id,
                         &player_before,
@@ -509,6 +505,7 @@ impl Battle {
                     (player_body_before_step, target_body_before_step)
                 {
                     self.apply_blazer_collision_velocity(
+                        target_blazer_spec.expect("active blazer must have spec").mass,
                         self.target.body_id,
                         self.player.body_id,
                         &target_before,
@@ -552,19 +549,21 @@ impl Battle {
                 }
             }
             if self.player.special_active && !self.target.dead && !player_blazer_hit_applied {
-                let died = self.ships[self.target.ship_id].take_damage(ANDROSYNTH_BLAZER_DAMAGE);
+                let player_blazer_spec = player_blazer_spec.expect("active blazer must have spec");
+                let died = self.ships[self.target.ship_id].take_damage(player_blazer_spec.damage);
                 target_died |= died;
                 player_won |= died;
                 self.audio_events.push(AudioEventSnapshot {
-                    key: "battle-boom-23",
+                    key: player_blazer_spec.impact_sound_key,
                 });
             }
             if self.target.special_active && !self.player.dead && !target_blazer_hit_applied {
-                let died = self.ships[self.player.ship_id].take_damage(ANDROSYNTH_BLAZER_DAMAGE);
+                let target_blazer_spec = target_blazer_spec.expect("active blazer must have spec");
+                let died = self.ships[self.player.ship_id].take_damage(target_blazer_spec.damage);
                 player_died |= died;
                 target_won |= died;
                 self.audio_events.push(AudioEventSnapshot {
-                    key: "battle-boom-23",
+                    key: target_blazer_spec.impact_sound_key,
                 });
             }
         }
@@ -577,12 +576,12 @@ impl Battle {
         }
         if player_won {
             self.audio_events.push(AudioEventSnapshot {
-                key: victory_sound_key_for(self.ships[self.player.ship_id].sprite_prefix()),
+                key: self.ships[self.player.ship_id].victory_sound_key().unwrap_or(AUDIO_DEFAULT_VICTORY),
             });
         }
         if target_won {
             self.audio_events.push(AudioEventSnapshot {
-                key: victory_sound_key_for(self.ships[self.target.ship_id].sprite_prefix()),
+                key: self.ships[self.target.ship_id].victory_sound_key().unwrap_or(AUDIO_DEFAULT_VICTORY),
             });
         }
 
@@ -606,9 +605,7 @@ impl Battle {
             return;
         }
 
-        if self.ship_state(is_player).special_active
-            && self.ships[ship_id].sprite_prefix() == "androsynth-guardian"
-        {
+        if self.ship_state(is_player).special_active && self.blazer_spec_for(is_player).is_some() {
             self.step_androsynth_blazer(ship_id, body_id, input, is_player);
             return;
         }
@@ -635,70 +632,68 @@ impl Battle {
             },
             in_gravity_well,
         );
-        if self.ships[ship_id].sprite_prefix() == "androsynth-guardian"
-            && input.special
-            && self.ships[ship_id].energy() < energy_before
-        {
-            let should_play_special_sound = !self.ship_state(is_player).special_active;
-            if should_play_special_sound {
-                self.audio_events.push(AudioEventSnapshot {
-                    key: "androsynth-special",
+        if let SpecialAbilitySpec::Blazer(blazer_spec) = self.ships[ship_id].special_ability_spec() {
+            if input.special && self.ships[ship_id].energy() < energy_before {
+                let should_play_special_sound = !self.ship_state(is_player).special_active;
+                if should_play_special_sound {
+                    self.audio_events.push(AudioEventSnapshot {
+                        key: blazer_spec.activation_sound_key,
+                    });
+                }
+                self.matter_world.set_body_mass(body_id, blazer_spec.mass);
+                let ship_state = self.ship_state_mut(is_player);
+                ship_state.special_active = true;
+                let energy_wait = self.ships[ship_id].energy_wait();
+                self.ships[ship_id].set_energy_counter(energy_wait - 1);
+            }
+            if self.ship_state(is_player).special_active {
+                let facing = self.ships[ship_id].facing();
+                commands.push(PhysicsCommand::SetVelocity {
+                    vx: facing.cos() * blazer_spec.speed,
+                    vy: facing.sin() * blazer_spec.speed,
                 });
             }
-            self.matter_world.set_body_mass(body_id, ANDROSYNTH_BLAZER_MASS);
-            let ship_state = self.ship_state_mut(is_player);
-            ship_state.special_active = true;
-            let energy_wait = self.ships[ship_id].energy_wait();
-            self.ships[ship_id].set_energy_counter(energy_wait - 1);
-        }
-        if self.ship_state(is_player).special_active
-            && self.ships[ship_id].sprite_prefix() == "androsynth-guardian"
-        {
-            let facing = self.ships[ship_id].facing();
-            commands.push(PhysicsCommand::SetVelocity {
-                vx: facing.cos() * ANDROSYNTH_BLAZER_SPEED,
-                vy: facing.sin() * ANDROSYNTH_BLAZER_SPEED,
-            });
         }
         if input.weapon
             && self.ships[ship_id].energy() < energy_before
         {
             let facing = self.ships[ship_id].facing();
             let facing_index = radians_to_facing_index(facing);
-            let sprite_prefix = self.ships[ship_id].sprite_prefix();
-            let projectile_speed = projectile_speed_for(self.ships[ship_id].sprite_prefix());
-            let projectile_offset = projectile_offset_for(sprite_prefix);
-            let (projectile_raw_vx, projectile_raw_vy) = projectile_velocity_for_facing(facing_index, projectile_speed as i32);
-            let spawn_rewind_x = if sprite_prefix == "androsynth-guardian" {
-                projectile_raw_vx as f64 / 32.0
-            } else {
-                0.0
-            };
-            let spawn_rewind_y = if sprite_prefix == "androsynth-guardian" {
-                projectile_raw_vy as f64 / 32.0
-            } else {
-                0.0
-            };
-            let projectile_turn_wait = if sprite_prefix == "androsynth-guardian" {
-                0
-            } else {
-                HUMAN_NUKE_TRACK_WAIT - 1
+            let projectile_spec = self.ships[ship_id]
+                .primary_projectile_spec()
+                .expect("ship with weapon fire must expose a primary projectile spec");
+            let (projectile_raw_vx, projectile_raw_vy) =
+                projectile_velocity_for_facing(facing_index, projectile_spec.speed as i32);
+            let (spawn_rewind_x, spawn_rewind_y) = match projectile_spec.behavior {
+                ProjectileBehaviorSpec::WobbleTracking { spawn_rewind_divisor, .. } => (
+                    projectile_raw_vx as f64 / spawn_rewind_divisor,
+                    projectile_raw_vy as f64 / spawn_rewind_divisor,
+                ),
+                ProjectileBehaviorSpec::Tracking => (0.0, 0.0),
             };
             let projectile_id = self.next_game_object_id();
             self.projectiles.push(ProjectileSnapshot {
                 id: projectile_id,
-                x: current.x + (facing.cos() * projectile_offset) - spawn_rewind_x,
-                y: current.y + (facing.sin() * projectile_offset) - spawn_rewind_y,
+                x: current.x + (facing.cos() * projectile_spec.offset) - spawn_rewind_x,
+                y: current.y + (facing.sin() * projectile_spec.offset) - spawn_rewind_y,
                 vx: projectile_raw_vx as f64 / 32.0,
                 vy: projectile_raw_vy as f64 / 32.0,
-                life: projectile_life_for(sprite_prefix) - 1,
-                texture_prefix: projectile_texture_prefix_for(sprite_prefix),
+                life: projectile_spec.life - 1,
+                texture_prefix: projectile_spec.texture_prefix,
+                damage: projectile_spec.impact.damage,
+                impact_texture_prefix: projectile_spec.impact.texture_prefix,
+                impact_start_frame: projectile_spec.impact.start_frame,
+                impact_end_frame: projectile_spec.impact.end_frame,
+                impact_sound_key: projectile_spec.impact.sound_key,
+                track_wait: projectile_spec.turn_wait,
+                behavior: projectile_spec.behavior,
+                collision: projectile_spec.collision,
                 facing,
-                acceleration: projectile_acceleration_for(sprite_prefix),
-                max_speed: projectile_max_speed_for(sprite_prefix),
-                turn_wait: projectile_turn_wait,
+                acceleration: projectile_spec.acceleration,
+                max_speed: projectile_spec.max_speed,
+                turn_wait: projectile_spec.turn_wait,
                 facing_index,
-                speed: projectile_speed as i32,
+                speed: projectile_spec.speed as i32,
                 raw_vx: projectile_raw_vx,
                 raw_vy: projectile_raw_vy,
                 velocity_width: 0,
@@ -709,7 +704,7 @@ impl Battle {
                 velocity_error_height: 0,
                 velocity_sign_width: 1,
                 velocity_sign_height: 1,
-                bubble_rng: if sprite_prefix == "androsynth-guardian" {
+                bubble_rng: if matches!(projectile_spec.behavior, ProjectileBehaviorSpec::WobbleTracking { .. }) {
                     next_androsynth_random(&mut self.bubble_rng_state) as u32
                 } else {
                     0
@@ -720,7 +715,7 @@ impl Battle {
             let projectile = self.projectiles.last_mut().expect("projectile just pushed");
             set_projectile_velocity_components(projectile, projectile_raw_vx, projectile_raw_vy);
             self.audio_events.push(AudioEventSnapshot {
-                key: primary_sound_key_for(sprite_prefix),
+                key: projectile_spec.sound_key,
             });
         }
         let thrusting = apply_commands(&mut self.matter_world, body_id, commands);
@@ -735,6 +730,9 @@ impl Battle {
     }
 
     fn step_androsynth_blazer(&mut self, ship_id: usize, body_id: usize, input: ShipInput, is_player: bool) {
+        let SpecialAbilitySpec::Blazer(blazer_spec) = self.ships[ship_id].special_ability_spec() else {
+            return;
+        };
         if self.ships[ship_id].energy() <= 0 {
             self.matter_world.set_body_mass(body_id, self.ships[ship_id].mass());
             self.ship_state_mut(is_player).special_active = false;
@@ -776,8 +774,8 @@ impl Battle {
         } else {
             let facing = self.ships[ship_id].facing();
             apply_commands(&mut self.matter_world, body_id, vec![PhysicsCommand::SetVelocity {
-                vx: facing.cos() * ANDROSYNTH_BLAZER_SPEED,
-                vy: facing.sin() * ANDROSYNTH_BLAZER_SPEED,
+                vx: facing.cos() * blazer_spec.speed,
+                vy: facing.sin() * blazer_spec.speed,
             }])
         };
 
@@ -814,9 +812,9 @@ impl Battle {
         }
 
         let ship_id = ship_state.ship_id;
-        if self.ships[ship_id].sprite_prefix() != "human-cruiser" {
+        let SpecialAbilitySpec::PointDefense(point_defense_spec) = self.ships[ship_id].special_ability_spec() else {
             return;
-        }
+        };
 
         let special_wait = self.ships[ship_id].special_wait();
         if self.ships[ship_id].special_counter() != special_wait {
@@ -829,7 +827,7 @@ impl Battle {
             return;
         };
 
-        let target_indexes = self.find_point_defense_targets(is_player, body.x, body.y);
+        let target_indexes = self.find_point_defense_targets(is_player, body.x, body.y, point_defense_spec.range);
         if target_indexes.is_empty() {
             self.ships[ship_id].set_special_counter(0);
             self.ships[ship_id].set_energy(energy_before_refund);
@@ -837,7 +835,7 @@ impl Battle {
         }
 
         self.audio_events.push(AudioEventSnapshot {
-            key: "human-special",
+            key: point_defense_spec.sound_key,
         });
 
         for index in target_indexes.into_iter().rev() {
@@ -853,7 +851,7 @@ impl Battle {
         }
     }
 
-    fn find_point_defense_targets(&self, is_player: bool, ship_x: f64, ship_y: f64) -> Vec<usize> {
+    fn find_point_defense_targets(&self, is_player: bool, ship_x: f64, ship_y: f64, range: f64) -> Vec<usize> {
         self.projectiles
             .iter()
             .enumerate()
@@ -862,7 +860,7 @@ impl Battle {
                 let dx = shortest_wrapped_delta(ship_x, projectile.x, self.width);
                 let dy = shortest_wrapped_delta(ship_y, projectile.y, self.height);
                 let distance = ((dx * dx) + (dy * dy)).sqrt();
-                (distance <= HUMAN_POINT_DEFENSE_RANGE).then_some((index, distance))
+                (distance <= range).then_some((index, distance))
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -872,20 +870,30 @@ impl Battle {
 
     fn projectile_target_for(&self, is_player: bool) -> ProjectileTarget {
         let ship_id = self.ship_state(is_player).ship_id;
-        if self.ships[ship_id].sprite_prefix() == "androsynth-guardian" {
-            if is_player && !matches!(self.player_weapon_target, ProjectileTarget::None) {
-                return self.player_weapon_target;
+        match self.ships[ship_id].primary_projectile_target_mode() {
+            ProjectileTargetMode::None => {
+                if is_player {
+                    self.player_weapon_target
+                } else {
+                    ProjectileTarget::PlayerShip
+                }
             }
-            return if is_player {
-                ProjectileTarget::TargetShip
-            } else {
-                ProjectileTarget::PlayerShip
-            };
-        }
-        if is_player {
-            self.player_weapon_target
-        } else {
-            ProjectileTarget::PlayerShip
+            ProjectileTargetMode::EnemyShip => {
+                if is_player {
+                    ProjectileTarget::TargetShip
+                } else {
+                    ProjectileTarget::PlayerShip
+                }
+            }
+            ProjectileTargetMode::PlayerSelectedOrEnemyShip => {
+                if is_player && !matches!(self.player_weapon_target, ProjectileTarget::None) {
+                    self.player_weapon_target
+                } else if is_player {
+                    ProjectileTarget::TargetShip
+                } else {
+                    ProjectileTarget::PlayerShip
+                }
+            }
         }
     }
 
@@ -900,24 +908,15 @@ impl Battle {
         let facing = radians_to_facing_index(logic.facing());
         let hit_polygon = logic.hit_polygon_for_state(facing, body.x, body.y, ship_state.special_active);
         if !hit_polygon.is_empty() {
-            let projectile_polygon = projectile_hit_polygon(
-                projectile.texture_prefix,
-                projectile.facing_index,
-                projectile.x,
-                projectile.y,
-            );
+            let projectile_polygon =
+                projectile_hit_polygon(projectile.collision, projectile.facing_index, projectile.x, projectile.y);
             if !projectile_polygon.is_empty() {
                 return polygons_intersect(&projectile_polygon, &hit_polygon).then_some(is_player);
             }
             return point_in_polygon(projectile.x, projectile.y, &hit_polygon).then_some(is_player);
         }
 
-        let hit_circle = ship_hit_circle_for(logic.sprite_prefix(), facing);
-        let hit_center_x = body.x + hit_circle.offset_x;
-        let hit_center_y = body.y + hit_circle.offset_y;
-        let dx = shortest_wrapped_delta(projectile.x, hit_center_x, self.width);
-        let dy = shortest_wrapped_delta(projectile.y, hit_center_y, self.height);
-        ((((dx * dx) + (dy * dy)).sqrt()) <= hit_circle.radius).then_some(is_player)
+        None
     }
 
     fn snapshot_for(&self, ship: &BattleShipState) -> BattleShipSnapshot {
@@ -945,11 +944,14 @@ impl Battle {
             facing: logic.facing(),
             thrusting: ship.thrusting,
             dead: ship.dead,
-            texture_prefix: ship_texture_prefix(ship.special_active, logic.sprite_prefix()),
+            texture_prefix: logic.active_texture_prefix(ship.special_active),
         }
     }
 
     fn androsynth_blazer_hits_other_ship(&self, is_player: bool) -> bool {
+        let Some(blazer_spec) = self.blazer_spec_for(is_player) else {
+            return false;
+        };
         let (attacker, defender) = if is_player {
             (&self.player, &self.target)
         } else {
@@ -992,29 +994,11 @@ impl Battle {
                 wrapped_end_x,
                 wrapped_end_y,
                 &wrapped_polygon,
-                ANDROSYNTH_BLAZER_HIT_RADIUS,
+                blazer_spec.hit_radius,
             );
         }
 
-        let defender_hit_circle = ship_hit_circle_for(defender_logic.sprite_prefix(), defender_facing);
-        let defender_center_x = defender_body.x + defender_hit_circle.offset_x;
-        let defender_center_y = defender_body.y + defender_hit_circle.offset_y;
-        let wrapped_end_x = start_x + shortest_wrapped_delta(start_x, end_x, self.width);
-        let wrapped_end_y = start_y + shortest_wrapped_delta(start_y, end_y, self.height);
-        let wrapped_defender_x =
-            start_x + shortest_wrapped_delta(start_x, defender_center_x, self.width);
-        let wrapped_defender_y =
-            start_y + shortest_wrapped_delta(start_y, defender_center_y, self.height);
-
-        segment_hits_circle(
-            start_x,
-            start_y,
-            wrapped_end_x,
-            wrapped_end_y,
-            wrapped_defender_x,
-            wrapped_defender_y,
-            defender_hit_circle.radius + ANDROSYNTH_BLAZER_HIT_RADIUS,
-        )
+        false
     }
 
     fn ship_state(&self, is_player: bool) -> &BattleShipState {
@@ -1035,6 +1019,7 @@ impl Battle {
 
     fn apply_blazer_collision_velocity(
         &mut self,
+        blazer_mass: f64,
         blazer_body_id: usize,
         victim_body_id: usize,
         blazer_before: &MatterBodyState,
@@ -1055,7 +1040,7 @@ impl Battle {
             blazer_before.y,
             nx * blazer_speed,
             ny * blazer_speed,
-            ANDROSYNTH_BLAZER_MASS,
+            blazer_mass,
             victim_before.x,
             victim_before.y,
             victim_before.vx,
@@ -1066,30 +1051,12 @@ impl Battle {
         self.matter_world.set_body_velocity(victim_body_id, victim_vx, victim_vy);
     }
 
-    fn apply_ship_collision_velocity(&mut self) {
-        let Some(player_body) = self.matter_world.body_state(self.player.body_id) else {
-            return;
-        };
-        let Some(target_body) = self.matter_world.body_state(self.target.body_id) else {
-            return;
-        };
-
-        let ((player_vx, player_vy), (target_vx, target_vy)) = resolve_collision_velocity(
-            player_body.x,
-            player_body.y,
-            player_body.vx,
-            player_body.vy,
-            self.ships[self.player.ship_id].mass(),
-            target_body.x,
-            target_body.y,
-            target_body.vx,
-            target_body.vy,
-            self.ships[self.target.ship_id].mass(),
-        );
-        self.matter_world
-            .set_body_velocity(self.player.body_id, player_vx, player_vy);
-        self.matter_world
-            .set_body_velocity(self.target.body_id, target_vx, target_vy);
+    fn blazer_spec_for(&self, is_player: bool) -> Option<crate::traits::ship_trait::BlazerSpecialSpec> {
+        let ship_id = self.ship_state(is_player).ship_id;
+        match self.ships[ship_id].special_ability_spec() {
+            SpecialAbilitySpec::Blazer(spec) => Some(spec),
+            SpecialAbilitySpec::None | SpecialAbilitySpec::PointDefense(_) => None,
+        }
     }
 
     fn next_game_object_id(&mut self) -> u64 {
@@ -1116,11 +1083,12 @@ impl Battle {
                 x: body.x,
                 y: body.y,
                 frame_index: SHIP_DEATH_EXPLOSION_START_FRAME,
-                texture_prefix: "battle-boom",
+                end_frame: SHIP_DEATH_EXPLOSION_END_FRAME,
+                texture_prefix: EXPLOSION_TEXTURE_BATTLE_BOOM,
             });
         }
         self.audio_events.push(AudioEventSnapshot {
-            key: "battle-shipdies",
+            key: AUDIO_SHIP_DEATH,
         });
 
         let ship = if is_player {
@@ -1134,42 +1102,15 @@ impl Battle {
     }
 }
 
-fn ship_texture_prefix(special_active: bool, sprite_prefix: &'static str) -> &'static str {
-    if special_active && sprite_prefix == "androsynth-guardian" {
-        "androsynth-blazer"
-    } else {
-        sprite_prefix
-    }
-}
-
 fn projectile_hit_polygon(
-    texture_prefix: &str,
+    collision: ProjectileCollisionSpec,
     facing: i32,
     center_x: f64,
     center_y: f64,
 ) -> Vec<HitPolygonPoint> {
-    let base_polygon = match texture_prefix {
-        "human-saturn" => &[
-            HitPolygonPoint { x: 0.0, y: -34.0 },
-            HitPolygonPoint { x: 8.0, y: -22.0 },
-            HitPolygonPoint { x: 10.0, y: 8.0 },
-            HitPolygonPoint { x: 6.0, y: 24.0 },
-            HitPolygonPoint { x: 0.0, y: 34.0 },
-            HitPolygonPoint { x: -6.0, y: 24.0 },
-            HitPolygonPoint { x: -10.0, y: 8.0 },
-            HitPolygonPoint { x: -8.0, y: -22.0 },
-        ][..],
-        "androsynth-bubble" => &[
-            HitPolygonPoint { x: 0.0, y: -20.0 },
-            HitPolygonPoint { x: 14.0, y: -14.0 },
-            HitPolygonPoint { x: 20.0, y: 0.0 },
-            HitPolygonPoint { x: 14.0, y: 14.0 },
-            HitPolygonPoint { x: 0.0, y: 20.0 },
-            HitPolygonPoint { x: -14.0, y: 14.0 },
-            HitPolygonPoint { x: -20.0, y: 0.0 },
-            HitPolygonPoint { x: -14.0, y: -14.0 },
-        ][..],
-        _ => return Vec::new(),
+    let base_polygon = match collision {
+        ProjectileCollisionSpec::None => return Vec::new(),
+        ProjectileCollisionSpec::Polygon(points) => points,
     };
     rotate_polygon_points(base_polygon, facing, center_x, center_y)
 }
@@ -1246,146 +1187,6 @@ fn sync_ship_body_angle(matter_world: &mut MatterWorld, body_id: usize, ship: &A
 
 fn ship_body_angle(ship: &AnyShip) -> f64 {
     ship.facing() + std::f64::consts::FRAC_PI_2
-}
-
-fn explosion_end_frame_for(texture_prefix: &str) -> i32 {
-    match texture_prefix {
-        "battle-blast" => GENERIC_BLAST_END_FRAME,
-        "human-saturn" => HUMAN_NUKE_IMPACT_END_FRAME,
-        "battle-boom" => SHIP_DEATH_EXPLOSION_END_FRAME,
-        _ => HUMAN_NUKE_IMPACT_END_FRAME,
-    }
-}
-
-fn projectile_damage_for(texture_prefix: &str) -> i32 {
-    match texture_prefix {
-        "androsynth-bubble" => ANDROSYNTH_BUBBLE_DAMAGE,
-        "human-saturn" => HUMAN_NUKE_DAMAGE,
-        _ => HUMAN_NUKE_DAMAGE,
-    }
-}
-
-fn projectile_impact_texture_prefix_for(texture_prefix: &str) -> &'static str {
-    match texture_prefix {
-        "androsynth-bubble" => "battle-blast",
-        "human-saturn" => "human-saturn",
-        _ => "human-saturn",
-    }
-}
-
-fn projectile_impact_start_frame_for(texture_prefix: &str) -> i32 {
-    match texture_prefix {
-        "androsynth-bubble" => GENERIC_BLAST_START_FRAME,
-        "human-saturn" => HUMAN_NUKE_IMPACT_START_FRAME,
-        _ => HUMAN_NUKE_IMPACT_START_FRAME,
-    }
-}
-
-fn projectile_impact_sound_key_for(texture_prefix: &str) -> &'static str {
-    match texture_prefix {
-        "androsynth-bubble" => "battle-boom-23",
-        "human-saturn" => "battle-boom-45",
-        _ => "battle-boom-45",
-    }
-}
-
-fn projectile_speed_for(ship_sprite_prefix: &str) -> f64 {
-    match ship_sprite_prefix {
-        "androsynth-guardian" => ANDROSYNTH_BUBBLE_SPEED,
-        "human-cruiser" => HUMAN_NUKE_SPEED,
-        _ => HUMAN_NUKE_SPEED,
-    }
-}
-
-fn projectile_life_for(ship_sprite_prefix: &str) -> i32 {
-    match ship_sprite_prefix {
-        "androsynth-guardian" => ANDROSYNTH_BUBBLE_LIFE,
-        "human-cruiser" => HUMAN_NUKE_LIFE,
-        _ => HUMAN_NUKE_LIFE,
-    }
-}
-
-fn projectile_acceleration_for(ship_sprite_prefix: &str) -> f64 {
-    match ship_sprite_prefix {
-        "human-cruiser" => HUMAN_NUKE_ACCELERATION,
-        _ => 0.0,
-    }
-}
-
-fn projectile_max_speed_for(ship_sprite_prefix: &str) -> f64 {
-    match ship_sprite_prefix {
-        "androsynth-guardian" => ANDROSYNTH_BUBBLE_SPEED,
-        "human-cruiser" => HUMAN_NUKE_MAX_SPEED,
-        _ => HUMAN_NUKE_SPEED,
-    }
-}
-
-fn projectile_texture_prefix_for(ship_sprite_prefix: &str) -> &'static str {
-    match ship_sprite_prefix {
-        "androsynth-guardian" => "androsynth-bubble",
-        "human-cruiser" => "human-saturn",
-        _ => "",
-    }
-}
-
-fn projectile_offset_for(ship_sprite_prefix: &str) -> f64 {
-    match ship_sprite_prefix {
-        "androsynth-guardian" => ANDROSYNTH_BUBBLE_OFFSET,
-        "human-cruiser" => HUMAN_NUKE_OFFSET,
-        _ => 0.0,
-    }
-}
-
-fn primary_sound_key_for(ship_sprite_prefix: &str) -> &'static str {
-    match ship_sprite_prefix {
-        "androsynth-guardian" => "androsynth-primary",
-        "human-cruiser" => "human-primary",
-        _ => "human-primary",
-    }
-}
-
-fn victory_sound_key_for(ship_sprite_prefix: &str) -> &'static str {
-    match ship_sprite_prefix {
-        "human-cruiser" => "human-victory",
-        _ => "human-victory",
-    }
-}
-
-fn ship_hit_circle_for(ship_sprite_prefix: &str, facing: i32) -> ShipHitCircle {
-    match ship_sprite_prefix {
-        "human-cruiser" => {
-            const HUMAN_CRUISER_HIT_CIRCLE_OFFSETS: [(f64, f64); 16] = [
-                (0.0, -6.0),
-                (2.0, -6.0),
-                (4.0, -4.0),
-                (6.0, -2.0),
-                (6.0, 0.0),
-                (6.0, 2.0),
-                (4.0, 4.0),
-                (2.0, 6.0),
-                (0.0, 6.0),
-                (-2.0, 6.0),
-                (-4.0, 4.0),
-                (-6.0, 2.0),
-                (-6.0, 0.0),
-                (-6.0, -2.0),
-                (-4.0, -4.0),
-                (-2.0, -6.0),
-            ];
-            let (offset_x, offset_y) =
-                HUMAN_CRUISER_HIT_CIRCLE_OFFSETS[facing.rem_euclid(16) as usize];
-            ShipHitCircle {
-                offset_x,
-                offset_y,
-                radius: 72.0,
-            }
-        }
-        _ => ShipHitCircle {
-            offset_x: 0.0,
-            offset_y: 0.0,
-            radius: 16.0,
-        },
-    }
 }
 
 fn apply_commands(matter_world: &mut MatterWorld, body_id: usize, commands: Vec<PhysicsCommand>) -> bool {
@@ -1498,11 +1299,17 @@ fn next_sc2_velocity_step(vector: i32, fract: i32, error: &mut i32, sign: i32) -
     step
 }
 
-fn step_androsynth_bubble(
+fn step_wobble_tracking_projectile(
     projectile: &mut ProjectileSnapshot,
     player_target_body: Option<MatterBodyState>,
     target_target_body: Option<MatterBodyState>,
 ) {
+    let ProjectileBehaviorSpec::WobbleTracking {
+        direct_track_range,
+        ..
+    } = projectile.behavior else {
+        return;
+    };
     let mut thrust_wait = (projectile.turn_wait >> 8) & 0xff;
     let mut turn_wait = projectile.turn_wait & 0xff;
 
@@ -1527,7 +1334,7 @@ fn step_androsynth_bubble(
         let delta_facing = (desired_facing - current_facing).rem_euclid(PROJECTILE_FACINGS as i32);
         let random_turn = next_androsynth_random(&mut projectile.bubble_rng) & 7;
 
-        projectile.facing_index = if target_distance <= ANDROSYNTH_BUBBLE_DIRECT_TRACK_RANGE {
+        projectile.facing_index = if target_distance <= direct_track_range {
             desired_facing
         } else if delta_facing <= 8 {
             (current_facing + random_turn).rem_euclid(PROJECTILE_FACINGS as i32)
@@ -1535,7 +1342,7 @@ fn step_androsynth_bubble(
             (current_facing - random_turn).rem_euclid(PROJECTILE_FACINGS as i32)
         };
         projectile.facing = facing_index_to_radians(projectile.facing_index);
-        turn_wait = ANDROSYNTH_BUBBLE_TRACK_WAIT;
+        turn_wait = projectile.track_wait;
     }
 
     projectile.turn_wait = (thrust_wait << 8) | turn_wait;
@@ -1579,14 +1386,7 @@ fn vector_to_facing_index(dx: f64, dy: f64) -> i32 {
     best_facing
 }
 
-fn wobble_bubble_facing(facing: i32, life: i32) -> i32 {
-    if (life / 2) % 2 == 0 {
-        (facing + 1).rem_euclid(PROJECTILE_FACINGS as i32)
-    } else {
-        (facing - 1).rem_euclid(PROJECTILE_FACINGS as i32)
-    }
-}
-
+#[cfg(test)]
 fn segment_hits_circle(
     start_x: f64,
     start_y: f64,
@@ -1824,7 +1624,7 @@ fn on_segment(ax: f64, ay: f64, bx: f64, by: f64, px: f64, py: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Battle, HUMAN_NUKE_IMPACT_END_FRAME, HUMAN_NUKE_IMPACT_START_FRAME, HUMAN_NUKE_SPEED, ProjectileSnapshot};
+    use super::{Battle, ProjectileSnapshot};
     use crate::reference_data;
     use crate::ship_input::ShipInput;
     use crate::ships::{AnyShip, HumanCruiser};
@@ -1921,7 +1721,11 @@ mod tests {
     #[test]
     fn androsynth_bubble_polygon_does_not_overlap_human_cruiser_at_the_logged_hit_position() {
         let ship = AnyShip::from(HumanCruiser::new());
-        let projectile_polygon = super::projectile_hit_polygon("androsynth-bubble", 15, 4763.0, 1728.0);
+        let projectile_collision = AnyShip::from(crate::ships::AndrosynthGuardian::new())
+            .primary_projectile_spec()
+            .expect("androsynth projectile spec")
+            .collision;
+        let projectile_polygon = super::projectile_hit_polygon(projectile_collision, 15, 4763.0, 1728.0);
         let ship_polygon = ship.hit_polygon(0, 6440.0, 1660.0);
 
         assert_eq!(super::polygons_intersect(&projectile_polygon, &ship_polygon), false);
@@ -2026,7 +1830,11 @@ mod tests {
     #[test]
     fn androsynth_bubble_polygon_does_not_overlap_human_cruiser_when_still_in_front() {
         let ship = AnyShip::from(HumanCruiser::new());
-        let projectile_polygon = super::projectile_hit_polygon("androsynth-bubble", 0, 5000.0, 4210.0);
+        let projectile_collision = AnyShip::from(crate::ships::AndrosynthGuardian::new())
+            .primary_projectile_spec()
+            .expect("androsynth projectile spec")
+            .collision;
+        let projectile_polygon = super::projectile_hit_polygon(projectile_collision, 0, 5000.0, 4210.0);
         let ship_polygon = ship.hit_polygon(0, 5000.0, 4300.0);
 
         assert_eq!(super::polygons_intersect(&projectile_polygon, &ship_polygon), false);
@@ -2035,7 +1843,11 @@ mod tests {
     #[test]
     fn human_nuke_polygon_can_overlap_human_cruiser_polygon() {
         let ship = AnyShip::from(HumanCruiser::new());
-        let projectile_polygon = super::projectile_hit_polygon("human-saturn", 0, 5000.0, 4300.0);
+        let projectile_collision = AnyShip::from(HumanCruiser::new())
+            .primary_projectile_spec()
+            .expect("human projectile spec")
+            .collision;
+        let projectile_polygon = super::projectile_hit_polygon(projectile_collision, 0, 5000.0, 4300.0);
         let ship_polygon = ship.hit_polygon(0, 5000.0, 4300.0);
 
         assert_eq!(super::polygons_intersect(&projectile_polygon, &ship_polygon), true);
@@ -3521,7 +3333,7 @@ mod tests {
                 .first()
                 .map(|explosion| (
                     explosion.texture_prefix,
-                    (HUMAN_NUKE_IMPACT_START_FRAME..=HUMAN_NUKE_IMPACT_END_FRAME)
+                    (16..=24)
                         .contains(&explosion.frame_index),
                 )),
             Some(("human-saturn", true))
@@ -3947,7 +3759,7 @@ mod tests {
                 snapshot.projectiles[0].vx.round(),
                 snapshot.projectiles[0].vy.round(),
             ),
-            ((facing.cos() * HUMAN_NUKE_SPEED).round(), (facing.sin() * HUMAN_NUKE_SPEED).round())
+            ((facing.cos() * 40.0).round(), (facing.sin() * 40.0).round())
         );
     }
 
@@ -3982,7 +3794,7 @@ mod tests {
                 battle.snapshot().projectiles[0].vx.round(),
                 battle.snapshot().projectiles[0].vy.round(),
             ),
-            ((facing.cos() * HUMAN_NUKE_SPEED).round(), (facing.sin() * HUMAN_NUKE_SPEED).round())
+            ((facing.cos() * 40.0).round(), (facing.sin() * 40.0).round())
         );
     }
 

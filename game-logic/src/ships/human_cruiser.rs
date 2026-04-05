@@ -1,5 +1,31 @@
 use crate::ship::Ship;
-use crate::traits::ship_trait::HitPolygonPoint;
+use crate::traits::ship_trait::{
+    HitPolygonPoint, PointDefenseSpec, PrimaryProjectileSpec,
+    ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec,
+    ProjectileTargetMode, SpecialAbilitySpec,
+};
+
+const HUMAN_NUKE_SPEED: f64 = 40.0;
+const HUMAN_NUKE_ACCELERATION: f64 = 4.0;
+const HUMAN_NUKE_MAX_SPEED: f64 = 80.0;
+const HUMAN_NUKE_LIFE: i32 = 60;
+const HUMAN_NUKE_OFFSET: f64 = 168.0;
+const HUMAN_NUKE_TRACK_WAIT: i32 = 2;
+const HUMAN_NUKE_DAMAGE: i32 = 4;
+const HUMAN_NUKE_IMPACT_START_FRAME: i32 = 16;
+const HUMAN_NUKE_IMPACT_END_FRAME: i32 = 24;
+const HUMAN_POINT_DEFENSE_RANGE: f64 = 400.0;
+const HUMAN_NUKE_POLYGON: [HitPolygonPoint; 8] = [
+    HitPolygonPoint { x: 0.0, y: -34.0 },
+    HitPolygonPoint { x: 8.0, y: -22.0 },
+    HitPolygonPoint { x: 10.0, y: 8.0 },
+    HitPolygonPoint { x: 6.0, y: 24.0 },
+    HitPolygonPoint { x: 0.0, y: 34.0 },
+    HitPolygonPoint { x: -6.0, y: 24.0 },
+    HitPolygonPoint { x: -10.0, y: 8.0 },
+    HitPolygonPoint { x: -8.0, y: -22.0 },
+];
 
 pub struct HumanCruiser {
     crew: i32,
@@ -108,5 +134,42 @@ impl Ship for HumanCruiser {
                 y: center_y + ((point.x * rotation.sin()) + (point.y * rotation.cos())),
             })
             .collect()
+    }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: HUMAN_NUKE_SPEED,
+            acceleration: HUMAN_NUKE_ACCELERATION,
+            max_speed: HUMAN_NUKE_MAX_SPEED,
+            life: HUMAN_NUKE_LIFE,
+            offset: HUMAN_NUKE_OFFSET,
+            turn_wait: HUMAN_NUKE_TRACK_WAIT,
+            texture_prefix: "human-saturn",
+            sound_key: "human-primary",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::Polygon(&HUMAN_NUKE_POLYGON),
+            impact: ProjectileImpactSpec {
+                damage: HUMAN_NUKE_DAMAGE,
+                texture_prefix: "human-saturn",
+                start_frame: HUMAN_NUKE_IMPACT_START_FRAME,
+                end_frame: HUMAN_NUKE_IMPACT_END_FRAME,
+                sound_key: "battle-boom-45",
+            },
+        })
+    }
+
+    fn victory_sound_key(&self) -> Option<&'static str> {
+        Some("human-victory")
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::PointDefense(PointDefenseSpec {
+            range: HUMAN_POINT_DEFENSE_RANGE,
+            sound_key: "human-special",
+        })
+    }
+
+    fn primary_projectile_target_mode(&self) -> ProjectileTargetMode {
+        ProjectileTargetMode::None
     }
 }

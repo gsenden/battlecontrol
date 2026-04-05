@@ -1,5 +1,33 @@
 use crate::ship::Ship;
-use crate::traits::ship_trait::HitPolygonPoint;
+use crate::traits::ship_trait::{
+    BlazerSpecialSpec, HitPolygonPoint, PrimaryProjectileSpec, ProjectileBehaviorSpec,
+    ProjectileCollisionSpec,
+    ProjectileImpactSpec,
+    ProjectileTargetMode, SpecialAbilitySpec,
+};
+
+const ANDROSYNTH_BUBBLE_SPEED: f64 = 32.0;
+const ANDROSYNTH_BUBBLE_LIFE: i32 = 200;
+const ANDROSYNTH_BUBBLE_OFFSET: f64 = 56.0;
+const ANDROSYNTH_BUBBLE_DAMAGE: i32 = 2;
+const GENERIC_BLAST_START_FRAME: i32 = 0;
+const GENERIC_BLAST_END_FRAME: i32 = 7;
+const ANDROSYNTH_BLAZER_SPEED: f64 = 10.0;
+const ANDROSYNTH_BLAZER_MASS: f64 = 1.0;
+const ANDROSYNTH_BLAZER_DAMAGE: i32 = 3;
+const ANDROSYNTH_BLAZER_HIT_RADIUS: f64 = 24.0;
+const ANDROSYNTH_BUBBLE_DIRECT_TRACK_RANGE: f64 = 180.0;
+const ANDROSYNTH_BUBBLE_SPAWN_REWIND_DIVISOR: f64 = 32.0;
+const ANDROSYNTH_BUBBLE_POLYGON: [HitPolygonPoint; 8] = [
+    HitPolygonPoint { x: 0.0, y: -20.0 },
+    HitPolygonPoint { x: 14.0, y: -14.0 },
+    HitPolygonPoint { x: 20.0, y: 0.0 },
+    HitPolygonPoint { x: 14.0, y: 14.0 },
+    HitPolygonPoint { x: 0.0, y: 20.0 },
+    HitPolygonPoint { x: -14.0, y: 14.0 },
+    HitPolygonPoint { x: -20.0, y: 0.0 },
+    HitPolygonPoint { x: -14.0, y: -14.0 },
+];
 
 pub struct AndrosynthGuardian {
     crew: i32,
@@ -114,6 +142,55 @@ impl Ship for AndrosynthGuardian {
             HitPolygonPoint { x: 6.0, y: -58.0 },
         ];
         rotate_polygon(&BLAZER_POLYGON, facing, center_x, center_y)
+    }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: ANDROSYNTH_BUBBLE_SPEED,
+            acceleration: 0.0,
+            max_speed: ANDROSYNTH_BUBBLE_SPEED,
+            life: ANDROSYNTH_BUBBLE_LIFE,
+            offset: ANDROSYNTH_BUBBLE_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "androsynth-bubble",
+            sound_key: "androsynth-primary",
+            behavior: ProjectileBehaviorSpec::WobbleTracking {
+                direct_track_range: ANDROSYNTH_BUBBLE_DIRECT_TRACK_RANGE,
+                spawn_rewind_divisor: ANDROSYNTH_BUBBLE_SPAWN_REWIND_DIVISOR,
+            },
+            collision: ProjectileCollisionSpec::Polygon(&ANDROSYNTH_BUBBLE_POLYGON),
+            impact: ProjectileImpactSpec {
+                damage: ANDROSYNTH_BUBBLE_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: GENERIC_BLAST_START_FRAME,
+                end_frame: GENERIC_BLAST_END_FRAME,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn active_texture_prefix(&self, special_active: bool) -> &'static str {
+        if special_active {
+            "androsynth-blazer"
+        } else {
+            self.sprite_prefix()
+        }
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Blazer(BlazerSpecialSpec {
+            active_texture_prefix: "androsynth-blazer",
+            speed: ANDROSYNTH_BLAZER_SPEED,
+            mass: ANDROSYNTH_BLAZER_MASS,
+            damage: ANDROSYNTH_BLAZER_DAMAGE,
+            hit_radius: ANDROSYNTH_BLAZER_HIT_RADIUS,
+            activation_sound_key: "androsynth-special",
+            impact_sound_key: "battle-boom-23",
+        })
+    }
+
+    fn primary_projectile_target_mode(&self) -> ProjectileTargetMode {
+        ProjectileTargetMode::PlayerSelectedOrEnemyShip
     }
 }
 

@@ -341,6 +341,21 @@ impl AnyShip {
     pub fn weapon_energy_cost(&self) -> i32 { dispatch_ref!(self, weapon_energy_cost()) }
     pub fn special_energy_cost(&self) -> i32 { dispatch_ref!(self, special_energy_cost()) }
     pub fn max_crew(&self) -> i32 { dispatch_ref!(self, max_crew()) }
+    pub fn primary_projectile_spec(&self) -> Option<crate::traits::ship_trait::PrimaryProjectileSpec> {
+        dispatch_ref!(self, primary_projectile_spec())
+    }
+    pub fn victory_sound_key(&self) -> Option<&'static str> {
+        dispatch_ref!(self, victory_sound_key())
+    }
+    pub fn active_texture_prefix(&self, special_active: bool) -> &'static str {
+        dispatch_ref!(self, active_texture_prefix(special_active))
+    }
+    pub fn special_ability_spec(&self) -> crate::traits::ship_trait::SpecialAbilitySpec {
+        dispatch_ref!(self, special_ability_spec())
+    }
+    pub fn primary_projectile_target_mode(&self) -> crate::traits::ship_trait::ProjectileTargetMode {
+        dispatch_ref!(self, primary_projectile_target_mode())
+    }
 }
 
 pub fn apply_collision_between(ships: &mut [AnyShip], ship_a_id: usize, ship_b_id: usize) {
@@ -394,6 +409,42 @@ pub fn build_ship(ship_type: &str) -> Option<AnyShip> {
 mod tests {
     use super::{AndrosynthGuardian, apply_collision_between, AnyShip, HumanCruiser};
     use crate::traits::ship_trait::Ship;
+
+    #[test]
+    fn androsynth_guardian_exposes_primary_projectile_spec() {
+        assert_eq!(
+            AnyShip::from(AndrosynthGuardian::new())
+                .primary_projectile_spec()
+                .map(|spec| spec.texture_prefix),
+            Some("androsynth-bubble"),
+        );
+    }
+
+    #[test]
+    fn human_cruiser_exposes_primary_projectile_spec() {
+        assert_eq!(
+            AnyShip::from(HumanCruiser::new())
+                .primary_projectile_spec()
+                .map(|spec| spec.texture_prefix),
+            Some("human-saturn"),
+        );
+    }
+
+    #[test]
+    fn androsynth_guardian_exposes_blazer_special_spec() {
+        assert!(matches!(
+            AnyShip::from(AndrosynthGuardian::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Blazer(_)
+        ));
+    }
+
+    #[test]
+    fn human_cruiser_exposes_point_defense_special_spec() {
+        assert!(matches!(
+            AnyShip::from(HumanCruiser::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::PointDefense(_)
+        ));
+    }
 
     #[test]
     fn androsynth_guardian_blazer_polygon_differs_from_guardian_polygon() {

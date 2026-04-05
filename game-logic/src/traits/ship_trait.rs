@@ -15,6 +15,76 @@ pub struct HitPolygonPoint {
     pub y: f64,
 }
 
+#[derive(Clone, Copy)]
+pub enum ProjectileCollisionSpec {
+    None,
+    Polygon(&'static [HitPolygonPoint]),
+}
+
+#[derive(Clone, Copy)]
+pub struct ProjectileImpactSpec {
+    pub damage: i32,
+    pub texture_prefix: &'static str,
+    pub start_frame: i32,
+    pub end_frame: i32,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct PrimaryProjectileSpec {
+    pub speed: f64,
+    pub acceleration: f64,
+    pub max_speed: f64,
+    pub life: i32,
+    pub offset: f64,
+    pub turn_wait: i32,
+    pub texture_prefix: &'static str,
+    pub sound_key: &'static str,
+    pub behavior: ProjectileBehaviorSpec,
+    pub collision: ProjectileCollisionSpec,
+    pub impact: ProjectileImpactSpec,
+}
+
+#[derive(Clone, Copy)]
+pub enum ProjectileBehaviorSpec {
+    Tracking,
+    WobbleTracking {
+        direct_track_range: f64,
+        spawn_rewind_divisor: f64,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ProjectileTargetMode {
+    None,
+    EnemyShip,
+    PlayerSelectedOrEnemyShip,
+}
+
+#[derive(Clone, Copy)]
+pub struct PointDefenseSpec {
+    pub range: f64,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct BlazerSpecialSpec {
+    pub active_texture_prefix: &'static str,
+    pub speed: f64,
+    pub mass: f64,
+    pub damage: i32,
+    pub hit_radius: f64,
+    pub activation_sound_key: &'static str,
+    pub impact_sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub enum SpecialAbilitySpec {
+    None,
+    PointDefense(PointDefenseSpec),
+    Blazer(BlazerSpecialSpec),
+}
+
 pub trait Ship {
     const RACE_NAME: &'static str;
     const SHIP_CLASS: &'static str;
@@ -65,6 +135,26 @@ pub trait Ship {
         _special_active: bool,
     ) -> Vec<HitPolygonPoint> {
         self.hit_polygon(facing, center_x, center_y)
+    }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        None
+    }
+
+    fn victory_sound_key(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn active_texture_prefix(&self, _special_active: bool) -> &'static str {
+        self.sprite_prefix()
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::None
+    }
+
+    fn primary_projectile_target_mode(&self) -> ProjectileTargetMode {
+        ProjectileTargetMode::None
     }
 
     fn increase_crew(&mut self, amount: i32) {
