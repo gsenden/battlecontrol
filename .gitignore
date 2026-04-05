@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 PLAN.md
 AGENTS.md
+.codex
+.vite/
+target/
