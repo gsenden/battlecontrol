@@ -9,6 +9,12 @@ const TRAVEL_ALIGNMENT_EPSILON: f64 = 0.0001;
 const GRAVITY_THRESHOLD: f64 = 420.0;
 const GRAVITY_PULL: f64 = 0.12;
 
+#[derive(Clone, Copy, PartialEq)]
+pub struct HitPolygonPoint {
+    pub x: f64,
+    pub y: f64,
+}
+
 pub trait Ship {
     const RACE_NAME: &'static str;
     const SHIP_CLASS: &'static str;
@@ -48,6 +54,18 @@ pub trait Ship {
     fn set_special_counter(&mut self, value: i32);
     fn energy_counter(&self) -> i32;
     fn set_energy_counter(&mut self, value: i32);
+    fn hit_polygon(&self, _facing: i32, _center_x: f64, _center_y: f64) -> Vec<HitPolygonPoint> {
+        Vec::new()
+    }
+    fn hit_polygon_for_state(
+        &self,
+        facing: i32,
+        center_x: f64,
+        center_y: f64,
+        _special_active: bool,
+    ) -> Vec<HitPolygonPoint> {
+        self.hit_polygon(facing, center_x, center_y)
+    }
 
     fn increase_crew(&mut self, amount: i32) {
         self.set_crew(self.crew() + amount);

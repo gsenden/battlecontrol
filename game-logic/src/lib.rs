@@ -11,6 +11,7 @@ pub mod ship {
     pub use crate::physics_command::PhysicsCommand;
     pub use crate::ship_input::ShipInput;
     pub use crate::ships::*;
+    pub use crate::traits::game_object::GameObject;
     pub use crate::traits::ship_trait::Ship;
     pub use crate::velocity_vector::VelocityVector;
 }

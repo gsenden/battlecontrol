@@ -1,6 +1,7 @@
 import type { ShipInput } from '../ships/ship-stats.js';
 
 export interface BattleShipSnapshot {
+  id: number;
   x: number;
   y: number;
   vx: number;
@@ -10,9 +11,11 @@ export interface BattleShipSnapshot {
   facing: number;
   thrusting: boolean;
   dead: boolean;
+  texturePrefix: string;
 }
 
 export interface ProjectileSnapshot {
+  id: number;
   x: number;
   y: number;
   vx: number;
@@ -22,6 +25,7 @@ export interface ProjectileSnapshot {
 }
 
 export interface ExplosionSnapshot {
+  id: number;
   x: number;
   y: number;
   frameIndex: number;
@@ -29,6 +33,7 @@ export interface ExplosionSnapshot {
 }
 
 export interface LaserSnapshot {
+  id: number;
   startX: number;
   startY: number;
   endX: number;

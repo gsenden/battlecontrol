@@ -25,6 +25,31 @@ describe('SC2 Reference Data', () => {
     });
   });
 
+  describe('androsynth_bubble_targeted', () => {
+    const scenario = referenceData.androsynth_bubble_targeted;
+
+    it('shows the first clear spread turn after the initial drift', () => {
+      expect([
+        scenario.frames[11].facing,
+        scenario.frames[11].vx,
+        scenario.frames[11].vy,
+      ]).toEqual([2, 724, -725]);
+    });
+  });
+
+  describe('androsynth_bubble_two_shots', () => {
+    const scenario = referenceData.androsynth_bubble_two_shots;
+
+    it('does not restart the same bubble path for the second shot', () => {
+      expect([
+        scenario.first.vx,
+        scenario.first.vy,
+        scenario.secondFrames[0].vx,
+        scenario.secondFrames[0].vy,
+      ]).toEqual([1024, 0, 724, -725]);
+    });
+  });
+
   describe('collision_head_on', () => {
     const scenario = referenceData.collision_head_on;
 

@@ -34,6 +34,12 @@ extern STATUS_FLAGS inertial_thrust(VELOCITY_DESC *VelocityPtr, COUNT ShipFacing
 #define MISSILE_LIFE            60
 #define HUMAN_TRACK_WAIT        3
 
+// --- Androsynth Guardian stats (from sc2/src/uqm/ships/androsyn/androsyn.c) ---
+#define ANDRO_OFFSET            RES_SCALE(14)
+#define ANDRO_MISSILE_SPEED     DISPLAY_TO_WORLD(RES_SCALE(8))
+#define ANDRO_MISSILE_LIFE      200
+#define ANDRO_TRACK_WAIT        2
+
 typedef struct {
     VELOCITY_DESC velocity;
     COUNT facing;
@@ -215,6 +221,63 @@ static void sim_human_nuke_homing_frame(SimProjectile *p, int target_x, int targ
     }
 
     sim_human_nuke_frame(p);
+}
+
+static uint32 andro_rng_state = 0x00C0FFEEu;
+
+static COUNT sim_andro_random(void) {
+    andro_rng_state = (andro_rng_state * 1103515245u) + 12345u;
+    return (COUNT)((andro_rng_state >> 16) & 0x7FFFu);
+}
+
+static void sim_androsynth_bubble_init(SimProjectile *p, int ship_x, int ship_y, COUNT facing) {
+    SIZE dx, dy;
+    COUNT angle;
+    memset(p, 0, sizeof(*p));
+    p->facing = facing;
+    p->life = ANDRO_MISSILE_LIFE;
+    p->turn_wait = 0;
+    angle = FACING_TO_ANGLE(facing);
+    p->pos_x = ship_x + COSINE(angle, DISPLAY_TO_WORLD(ANDRO_OFFSET));
+    p->pos_y = ship_y + SINE(angle, DISPLAY_TO_WORLD(ANDRO_OFFSET));
+    SetVelocityVector(&p->velocity, ANDRO_MISSILE_SPEED, facing);
+    GetCurrentVelocityComponents(&p->velocity, &dx, &dy);
+    p->pos_x -= VELOCITY_TO_WORLD(dx);
+    p->pos_y -= VELOCITY_TO_WORLD(dy);
+}
+
+static void sim_androsynth_bubble_frame(SimProjectile *p, int target_x, int target_y) {
+    SIZE dx, dy;
+    BYTE thrust_wait = HIBYTE(p->turn_wait);
+    BYTE turn_wait = LOBYTE(p->turn_wait);
+
+    if (thrust_wait > 0) {
+        --thrust_wait;
+    } else {
+        thrust_wait = (BYTE)(sim_andro_random() & 3);
+    }
+
+    if (turn_wait > 0) {
+        --turn_wait;
+    } else {
+        COUNT facing = NORMALIZE_FACING(ANGLE_TO_FACING(GetVelocityTravelAngle(&p->velocity)));
+        SIZE delta_facing = NORMALIZE_FACING(ANGLE_TO_FACING(ARCTAN(target_x - p->pos_x, target_y - p->pos_y)) - facing);
+
+        if (delta_facing <= ANGLE_TO_FACING(HALF_CIRCLE))
+            facing = NORMALIZE_FACING(facing + (sim_andro_random() & (ANGLE_TO_FACING(HALF_CIRCLE) - 1)));
+        else
+            facing = NORMALIZE_FACING(facing - (sim_andro_random() & (ANGLE_TO_FACING(HALF_CIRCLE) - 1)));
+
+        p->facing = facing;
+        SetVelocityVector(&p->velocity, ANDRO_MISSILE_SPEED, facing);
+        turn_wait = ANDRO_TRACK_WAIT;
+    }
+
+    p->turn_wait = MAKE_WORD(thrust_wait, turn_wait);
+    GetNextVelocityComponents(&p->velocity, &dx, &dy, 1);
+    p->pos_x += dx;
+    p->pos_y += dy;
+    p->life--;
 }
 
 // --- JSON output helpers ---
@@ -702,6 +765,80 @@ static void scenario_human_nuke_homing(void) {
     fprintf(out, "  }");
 }
 
+static void scenario_androsynth_bubble_targeted(void) {
+    SimProjectile bubble;
+    int target_x = 5600;
+    int target_y = 4100;
+    int target_vx = 4;
+    int total = 30;
+    andro_rng_state = 0x00C0FFEEu;
+    sim_androsynth_bubble_init(&bubble, 5000, 5000, 0);
+
+    fprintf(out, "  \"androsynth_bubble_targeted\": {\n");
+    fprintf(out, "    \"description\": \"Androsynth bubble tracks a slowly moving target with SC2-style spread\",\n");
+    fprintf(out, "    \"ship\": \"androsynth_guardian\",\n");
+    fprintf(out, "    \"frames\": [\n");
+
+    for (int f = 0; f < total; f++) {
+        fprintf(out, "      {\n");
+        fprintf(out, "        \"frame\": %d,\n", f);
+        sim_androsynth_bubble_frame(&bubble, target_x, target_y);
+        fprintf(out, "        \"targetX\": %d,\n", target_x);
+        fprintf(out, "        \"targetY\": %d,\n", target_y);
+        fprintf(out, "        \"facing\": %d,\n", (int)bubble.facing);
+        json_projectile_state(&bubble, "        ");
+        fprintf(out, "      }%s\n", f < total - 1 ? "," : "");
+        target_x += target_vx;
+    }
+
+    fprintf(out, "    ]\n");
+    fprintf(out, "  }");
+}
+
+static void scenario_androsynth_bubble_two_shots(void) {
+    SimProjectile first_bubble;
+    SimProjectile second_bubble;
+    SIZE vx, vy;
+    int target_x = 5600;
+    int target_y = 4100;
+    int total = 8;
+    andro_rng_state = 0x00C0FFEEu;
+    sim_androsynth_bubble_init(&first_bubble, 5000, 5000, 0);
+
+    for (int f = 0; f < total; f++) {
+        sim_androsynth_bubble_frame(&first_bubble, target_x, target_y);
+    }
+
+    sim_androsynth_bubble_init(&second_bubble, 5000, 5000, 0);
+
+    fprintf(out, "  \"androsynth_bubble_two_shots\": {\n");
+    fprintf(out, "    \"description\": \"Two Androsynth bubbles fired in one SC2 simulation do not restart the same random path\",\n");
+    fprintf(out, "    \"ship\": \"androsynth_guardian\",\n");
+    GetCurrentVelocityComponents(&first_bubble.velocity, &vx, &vy);
+    fprintf(out, "    \"first\": {\n");
+    fprintf(out, "      \"x\": %d,\n", first_bubble.pos_x);
+    fprintf(out, "      \"y\": %d,\n", first_bubble.pos_y);
+    fprintf(out, "      \"vx\": %d,\n", (int)vx);
+    fprintf(out, "      \"vy\": %d\n", (int)vy);
+    fprintf(out, "    },\n");
+    fprintf(out, "    \"secondFrames\": [\n");
+
+    for (int f = 0; f < total; f++) {
+        fprintf(out, "      {\n");
+        fprintf(out, "        \"frame\": %d,\n", f);
+        sim_androsynth_bubble_frame(&second_bubble, target_x, target_y);
+        GetCurrentVelocityComponents(&second_bubble.velocity, &vx, &vy);
+        fprintf(out, "        \"x\": %d,\n", second_bubble.pos_x);
+        fprintf(out, "        \"y\": %d,\n", second_bubble.pos_y);
+        fprintf(out, "        \"vx\": %d,\n", (int)vx);
+        fprintf(out, "        \"vy\": %d\n", (int)vy);
+        fprintf(out, "      }%s\n", f < total - 1 ? "," : "");
+    }
+
+    fprintf(out, "    ]\n");
+    fprintf(out, "  }");
+}
+
 // --- Main ---
 
 int main(int argc, char *argv[]) {
@@ -761,6 +898,12 @@ int main(int argc, char *argv[]) {
     fprintf(out, ",\n");
 
     scenario_human_nuke_homing();
+    fprintf(out, ",\n");
+
+    scenario_androsynth_bubble_targeted();
+    fprintf(out, ",\n");
+
+    scenario_androsynth_bubble_two_shots();
     fprintf(out, "\n");
 
     fprintf(out, "}\n");

@@ -1,0 +1,66 @@
+{
+  "name": "sc2_blazer_vs_human_head_on",
+  "purpose": "Reference scenario for matter SkipVelocity/custom collision response work",
+  "source": {
+    "sc2_files": [
+      "/home/gsenden/projects/sc2/src/uqm/ships/androsyn/androsyn.c",
+      "/home/gsenden/projects/sc2/src/uqm/collide.c",
+      "/home/gsenden/projects/sc2/src/uqm/weapon.c",
+      "/home/gsenden/projects/sc2/src/uqm/units.h",
+      "/home/gsenden/projects/sc2/src/uqm/trans.c"
+    ],
+    "notes": [
+      "Blazer collision does 3 damage first, then normal ship collision bounce.",
+      "For the bounce, blazer mass is 1 and human cruiser mass is 6.",
+      "Ordinary ship collision in SC2 applies collision cooldowns but no ordinary crew damage."
+    ]
+  },
+  "scenario": {
+    "gravity": { "x": 0.0, "y": 0.0, "scale": 0.0 },
+    "bodies": [
+      {
+        "label": "blazer",
+        "body_id": 0,
+        "ship": "androsynth-blazer",
+        "mass": 1.0,
+        "x": 5000.0,
+        "y": 5000.0,
+        "vx": 10.0,
+        "vy": 0.0
+      },
+      {
+        "label": "human",
+        "body_id": 1,
+        "ship": "human-cruiser",
+        "mass": 6.0,
+        "x": 5100.0,
+        "y": 5000.0,
+        "vx": 0.0,
+        "vy": 0.0
+      }
+    ],
+    "expected_collision_normal": {
+      "x": 1.0,
+      "y": 0.0
+    }
+  },
+  "expected_sc2_bounce": {
+    "player": {
+      "label": "blazer",
+      "vx": -7.142857142857143,
+      "vy": 0.0
+    },
+    "target": {
+      "label": "human",
+      "vx": 2.857142857142857,
+      "vy": 0.0
+    }
+  },
+  "expected_sc2_damage": {
+    "target_crew_delta": -3
+  },
+  "expected_sc2_cooldowns": {
+    "turn_wait": 1,
+    "thrust_wait": 3
+  }
+}

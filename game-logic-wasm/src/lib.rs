@@ -99,6 +99,7 @@ struct MatterStepDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BattleShipSnapshotDto {
+    id: u64,
     x: f64,
     y: f64,
     vx: f64,
@@ -108,11 +109,13 @@ struct BattleShipSnapshotDto {
     facing: f64,
     thrusting: bool,
     dead: bool,
+    texture_prefix: String,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectileSnapshotDto {
+    id: u64,
     x: f64,
     y: f64,
     vx: f64,
@@ -124,6 +127,7 @@ struct ProjectileSnapshotDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ExplosionSnapshotDto {
+    id: u64,
     x: f64,
     y: f64,
     frame_index: i32,
@@ -133,6 +137,7 @@ struct ExplosionSnapshotDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LaserSnapshotDto {
+    id: u64,
     start_x: f64,
     start_y: f64,
     end_x: f64,
@@ -514,6 +519,7 @@ fn to_matter_step_dto(result: MatterStepResult) -> MatterStepDto {
 fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
     BattleSnapshotDto {
         player: BattleShipSnapshotDto {
+            id: snapshot.player.id,
             x: snapshot.player.x,
             y: snapshot.player.y,
             vx: snapshot.player.vx,
@@ -523,8 +529,10 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             facing: snapshot.player.facing,
             thrusting: snapshot.player.thrusting,
             dead: snapshot.player.dead,
+            texture_prefix: snapshot.player.texture_prefix.to_string(),
         },
         target: BattleShipSnapshotDto {
+            id: snapshot.target.id,
             x: snapshot.target.x,
             y: snapshot.target.y,
             vx: snapshot.target.vx,
@@ -534,8 +542,10 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             facing: snapshot.target.facing,
             thrusting: snapshot.target.thrusting,
             dead: snapshot.target.dead,
+            texture_prefix: snapshot.target.texture_prefix.to_string(),
         },
         projectiles: snapshot.projectiles.into_iter().map(|projectile| ProjectileSnapshotDto {
+            id: projectile.id,
             x: projectile.x,
             y: projectile.y,
             vx: projectile.vx,
@@ -544,12 +554,14 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             texture_prefix: projectile.texture_prefix.to_string(),
         }).collect(),
         explosions: snapshot.explosions.into_iter().map(|explosion| ExplosionSnapshotDto {
+            id: explosion.id,
             x: explosion.x,
             y: explosion.y,
             frame_index: explosion.frame_index,
             texture_prefix: explosion.texture_prefix.to_string(),
         }).collect(),
         lasers: snapshot.lasers.into_iter().map(|laser| LaserSnapshotDto {
+            id: laser.id,
             start_x: laser.start_x,
             start_y: laser.start_y,
             end_x: laser.end_x,

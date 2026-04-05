@@ -8074,5 +8074,349 @@
         "life": -60
       }
     ]
+  },
+  "androsynth_bubble_targeted": {
+    "description": "Androsynth bubble tracks a slowly moving target with SC2-style spread",
+    "ship": "androsynth_guardian",
+    "frames": [
+      {
+        "frame": 0,
+        "targetX": 5600,
+        "targetY": 4100,
+        "facing": 6,
+        "x": 5022, "y": 4998,
+        "vx": 724, "vy": 724,
+        "life": 199
+      },
+      {
+        "frame": 1,
+        "targetX": 5604,
+        "targetY": 4100,
+        "facing": 6,
+        "x": 5045, "y": 5021,
+        "vx": 724, "vy": 724,
+        "life": 198
+      },
+      {
+        "frame": 2,
+        "targetX": 5608,
+        "targetY": 4100,
+        "facing": 6,
+        "x": 5067, "y": 5043,
+        "vx": 724, "vy": 724,
+        "life": 197
+      },
+      {
+        "frame": 3,
+        "targetX": 5612,
+        "targetY": 4100,
+        "facing": 6,
+        "x": 5090, "y": 5066,
+        "vx": 724, "vy": 724,
+        "life": 196
+      },
+      {
+        "frame": 4,
+        "targetX": 5616,
+        "targetY": 4100,
+        "facing": 6,
+        "x": 5113, "y": 5089,
+        "vx": 724, "vy": 724,
+        "life": 195
+      },
+      {
+        "frame": 5,
+        "targetX": 5620,
+        "targetY": 4100,
+        "facing": 6,
+        "x": 5135, "y": 5111,
+        "vx": 724, "vy": 724,
+        "life": 194
+      },
+      {
+        "frame": 6,
+        "targetX": 5624,
+        "targetY": 4100,
+        "facing": 4,
+        "x": 5167, "y": 5111,
+        "vx": 1024, "vy": 0,
+        "life": 193
+      },
+      {
+        "frame": 7,
+        "targetX": 5628,
+        "targetY": 4100,
+        "facing": 4,
+        "x": 5199, "y": 5111,
+        "vx": 1024, "vy": 0,
+        "life": 192
+      },
+      {
+        "frame": 8,
+        "targetX": 5632,
+        "targetY": 4100,
+        "facing": 4,
+        "x": 5231, "y": 5111,
+        "vx": 1024, "vy": 0,
+        "life": 191
+      },
+      {
+        "frame": 9,
+        "targetX": 5636,
+        "targetY": 4100,
+        "facing": 4,
+        "x": 5263, "y": 5111,
+        "vx": 1024, "vy": 0,
+        "life": 190
+      },
+      {
+        "frame": 10,
+        "targetX": 5640,
+        "targetY": 4100,
+        "facing": 4,
+        "x": 5295, "y": 5111,
+        "vx": 1024, "vy": 0,
+        "life": 189
+      },
+      {
+        "frame": 11,
+        "targetX": 5644,
+        "targetY": 4100,
+        "facing": 2,
+        "x": 5317, "y": 5089,
+        "vx": 724, "vy": -725,
+        "life": 188
+      },
+      {
+        "frame": 12,
+        "targetX": 5648,
+        "targetY": 4100,
+        "facing": 14,
+        "x": 5295, "y": 5067,
+        "vx": -725, "vy": -725,
+        "life": 187
+      },
+      {
+        "frame": 13,
+        "targetX": 5652,
+        "targetY": 4100,
+        "facing": 14,
+        "x": 5272, "y": 5044,
+        "vx": -725, "vy": -725,
+        "life": 186
+      },
+      {
+        "frame": 14,
+        "targetX": 5656,
+        "targetY": 4100,
+        "facing": 14,
+        "x": 5250, "y": 5022,
+        "vx": -725, "vy": -725,
+        "life": 185
+      },
+      {
+        "frame": 15,
+        "targetX": 5660,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5279, "y": 5034,
+        "vx": 946, "vy": 391,
+        "life": 184
+      },
+      {
+        "frame": 16,
+        "targetX": 5664,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5309, "y": 5046,
+        "vx": 946, "vy": 391,
+        "life": 183
+      },
+      {
+        "frame": 17,
+        "targetX": 5668,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5338, "y": 5058,
+        "vx": 946, "vy": 391,
+        "life": 182
+      },
+      {
+        "frame": 18,
+        "targetX": 5672,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5368, "y": 5070,
+        "vx": 946, "vy": 391,
+        "life": 181
+      },
+      {
+        "frame": 19,
+        "targetX": 5676,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5397, "y": 5083,
+        "vx": 946, "vy": 391,
+        "life": 180
+      },
+      {
+        "frame": 20,
+        "targetX": 5680,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5427, "y": 5095,
+        "vx": 946, "vy": 391,
+        "life": 179
+      },
+      {
+        "frame": 21,
+        "targetX": 5684,
+        "targetY": 4100,
+        "facing": 5,
+        "x": 5456, "y": 5107,
+        "vx": 946, "vy": 391,
+        "life": 178
+      },
+      {
+        "frame": 22,
+        "targetX": 5688,
+        "targetY": 4100,
+        "facing": 3,
+        "x": 5485, "y": 5095,
+        "vx": 946, "vy": -392,
+        "life": 177
+      },
+      {
+        "frame": 23,
+        "targetX": 5692,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5456, "y": 5083,
+        "vx": -946, "vy": -392,
+        "life": 176
+      },
+      {
+        "frame": 24,
+        "targetX": 5696,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5426, "y": 5071,
+        "vx": -946, "vy": -392,
+        "life": 175
+      },
+      {
+        "frame": 25,
+        "targetX": 5700,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5397, "y": 5059,
+        "vx": -946, "vy": -392,
+        "life": 174
+      },
+      {
+        "frame": 26,
+        "targetX": 5704,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5367, "y": 5046,
+        "vx": -946, "vy": -392,
+        "life": 173
+      },
+      {
+        "frame": 27,
+        "targetX": 5708,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5338, "y": 5034,
+        "vx": -946, "vy": -392,
+        "life": 172
+      },
+      {
+        "frame": 28,
+        "targetX": 5712,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5308, "y": 5022,
+        "vx": -946, "vy": -392,
+        "life": 171
+      },
+      {
+        "frame": 29,
+        "targetX": 5716,
+        "targetY": 4100,
+        "facing": 13,
+        "x": 5279, "y": 5010,
+        "vx": -946, "vy": -392,
+        "life": 170
+      }
+    ]
+  },
+  "androsynth_bubble_two_shots": {
+    "description": "Two Androsynth bubbles fired in one SC2 simulation do not restart the same random path",
+    "ship": "androsynth_guardian",
+    "first": {
+      "x": 5199,
+      "y": 5111,
+      "vx": 1024,
+      "vy": 0
+    },
+    "secondFrames": [
+      {
+        "frame": 0,
+        "x": 5022,
+        "y": 4954,
+        "vx": 724,
+        "vy": -725
+      },
+      {
+        "frame": 1,
+        "x": 5045,
+        "y": 4931,
+        "vx": 724,
+        "vy": -725
+      },
+      {
+        "frame": 2,
+        "x": 5067,
+        "y": 4909,
+        "vx": 724,
+        "vy": -725
+      },
+      {
+        "frame": 3,
+        "x": 5089,
+        "y": 4931,
+        "vx": 724,
+        "vy": 724
+      },
+      {
+        "frame": 4,
+        "x": 5112,
+        "y": 4954,
+        "vx": 724,
+        "vy": 724
+      },
+      {
+        "frame": 5,
+        "x": 5134,
+        "y": 4976,
+        "vx": 724,
+        "vy": 724
+      },
+      {
+        "frame": 6,
+        "x": 5122,
+        "y": 4947,
+        "vx": -392,
+        "vy": -946
+      },
+      {
+        "frame": 7,
+        "x": 5144,
+        "y": 4969,
+        "vx": 724,
+        "vy": 724
+      }
+    ]
   }
 }

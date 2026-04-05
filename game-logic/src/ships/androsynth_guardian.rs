@@ -1,4 +1,5 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::HitPolygonPoint;
 
 pub struct AndrosynthGuardian {
     crew: i32,
@@ -65,4 +66,69 @@ impl Ship for AndrosynthGuardian {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+    fn hit_polygon(&self, facing: i32, center_x: f64, center_y: f64) -> Vec<HitPolygonPoint> {
+        const GUARDIAN_POLYGON: [HitPolygonPoint; 16] = [
+            HitPolygonPoint { x: 0.0, y: -54.0 },
+            HitPolygonPoint { x: 18.0, y: -44.0 },
+            HitPolygonPoint { x: 24.0, y: -24.0 },
+            HitPolygonPoint { x: 20.0, y: -8.0 },
+            HitPolygonPoint { x: 30.0, y: 8.0 },
+            HitPolygonPoint { x: 24.0, y: 28.0 },
+            HitPolygonPoint { x: 10.0, y: 48.0 },
+            HitPolygonPoint { x: 0.0, y: 56.0 },
+            HitPolygonPoint { x: -10.0, y: 48.0 },
+            HitPolygonPoint { x: -24.0, y: 28.0 },
+            HitPolygonPoint { x: -30.0, y: 8.0 },
+            HitPolygonPoint { x: -20.0, y: -8.0 },
+            HitPolygonPoint { x: -24.0, y: -24.0 },
+            HitPolygonPoint { x: -18.0, y: -44.0 },
+            HitPolygonPoint { x: -8.0, y: -52.0 },
+            HitPolygonPoint { x: 8.0, y: -52.0 },
+        ];
+        rotate_polygon(&GUARDIAN_POLYGON, facing, center_x, center_y)
+    }
+
+    fn hit_polygon_for_state(
+        &self,
+        facing: i32,
+        center_x: f64,
+        center_y: f64,
+        special_active: bool,
+    ) -> Vec<HitPolygonPoint> {
+        if !special_active {
+            return self.hit_polygon(facing, center_x, center_y);
+        }
+
+        const BLAZER_POLYGON: [HitPolygonPoint; 12] = [
+            HitPolygonPoint { x: 0.0, y: -60.0 },
+            HitPolygonPoint { x: 14.0, y: -46.0 },
+            HitPolygonPoint { x: 18.0, y: -22.0 },
+            HitPolygonPoint { x: 12.0, y: 6.0 },
+            HitPolygonPoint { x: 6.0, y: 36.0 },
+            HitPolygonPoint { x: 0.0, y: 58.0 },
+            HitPolygonPoint { x: -6.0, y: 36.0 },
+            HitPolygonPoint { x: -12.0, y: 6.0 },
+            HitPolygonPoint { x: -18.0, y: -22.0 },
+            HitPolygonPoint { x: -14.0, y: -46.0 },
+            HitPolygonPoint { x: -6.0, y: -58.0 },
+            HitPolygonPoint { x: 6.0, y: -58.0 },
+        ];
+        rotate_polygon(&BLAZER_POLYGON, facing, center_x, center_y)
+    }
+}
+
+fn rotate_polygon(
+    base_polygon: &[HitPolygonPoint],
+    facing: i32,
+    center_x: f64,
+    center_y: f64,
+) -> Vec<HitPolygonPoint> {
+    let rotation = (facing.rem_euclid(16) as f64) * ((2.0 * std::f64::consts::PI) / 16.0);
+    base_polygon
+        .iter()
+        .map(|point| HitPolygonPoint {
+            x: center_x + ((point.x * rotation.cos()) - (point.y * rotation.sin())),
+            y: center_y + ((point.x * rotation.sin()) + (point.y * rotation.cos())),
+        })
+        .collect()
 }

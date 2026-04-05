@@ -31,7 +31,7 @@ export class Ship {
   private sprite: Phaser.GameObjects.Image;
   private ghostSprites: Phaser.GameObjects.Image[] = [];
   private ionTrail: IonParticle[] = [];
-  private readonly spritePrefix: string;
+  private spritePrefix: string;
   private readonly renderScaleMultiplier: number;
 
   crew: number;
@@ -76,6 +76,7 @@ export class Ship {
     this.energy = snapshot.energy;
     this.facing = snapshot.facing;
     this.dead = snapshot.dead;
+    this.spritePrefix = snapshot.texturePrefix;
 
     if (!snapshot.dead && snapshot.thrusting) {
       this.spawnIonParticle();
@@ -144,6 +145,11 @@ export class Ship {
     for (; ghostIndex < this.ghostSprites.length; ghostIndex++) {
       this.ghostSprites[ghostIndex].setVisible(false);
     }
+  }
+
+  getCurrentTextureKey(): string {
+    const frameIndex = this.facingToFrame();
+    return `${this.spritePrefix}-big-${String(frameIndex).padStart(3, '0')}`;
   }
 
   getSpeed(): number {

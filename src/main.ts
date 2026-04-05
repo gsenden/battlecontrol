@@ -3,13 +3,15 @@ import { BattleScene } from './scenes/BattleScene.js';
 import { MatterScene } from './scenes/MatterScene.js';
 import { assertVersionSync, initGameLogic } from './game-logic.js';
 import { APP_VERSION } from './version.js';
-import { mountDebugOverlay } from './debug-overlay.js';
+import { mountDebugOverlay, toggleDebugUi } from './debug-overlay.js';
 
 const gameElement = document.getElementById('game');
 
 if (!gameElement) {
   throw new Error('Missing #game mount point');
 }
+
+document.title = import.meta.env.DEV ? 'Battle Control DEV' : 'Battle Control';
 
 function mountVersionBadge() {
   const badge = document.createElement('div');
@@ -61,6 +63,14 @@ initGameLogic().then(() => {
   assertVersionSync();
   mountVersionBadge();
   mountDebugOverlay();
+  window.addEventListener('keydown', (event) => {
+    if (event.code !== 'Backquote') {
+      return;
+    }
+
+    event.preventDefault();
+    toggleDebugUi();
+  });
 
   const initialScene = window.location.hash === '#matter' ? MatterScene : BattleScene;
   const config: Phaser.Types.Core.GameConfig = {

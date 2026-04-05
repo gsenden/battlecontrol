@@ -291,10 +291,35 @@ impl AnyShip {
     pub fn crew(&self) -> i32 { dispatch_ref!(self, crew()) }
     pub fn energy(&self) -> i32 { dispatch_ref!(self, energy()) }
     pub fn facing(&self) -> f64 { dispatch_ref!(self, facing()) }
+    pub fn turn_counter(&self) -> i32 { dispatch_ref!(self, turn_counter()) }
+    pub fn thrust_counter(&self) -> i32 { dispatch_ref!(self, thrust_counter()) }
     pub fn weapon_counter(&self) -> i32 { dispatch_ref!(self, weapon_counter()) }
     pub fn special_counter(&self) -> i32 { dispatch_ref!(self, special_counter()) }
+    pub fn energy_counter(&self) -> i32 { dispatch_ref!(self, energy_counter()) }
+    pub fn hit_polygon(&self, facing: i32, center_x: f64, center_y: f64) -> Vec<crate::traits::ship_trait::HitPolygonPoint> {
+        dispatch_ref!(self, hit_polygon(facing, center_x, center_y))
+    }
+    pub fn hit_polygon_for_state(
+        &self,
+        facing: i32,
+        center_x: f64,
+        center_y: f64,
+        special_active: bool,
+    ) -> Vec<crate::traits::ship_trait::HitPolygonPoint> {
+        dispatch_ref!(self, hit_polygon_for_state(facing, center_x, center_y, special_active))
+    }
+    pub fn set_crew(&mut self, value: i32) { dispatch_mut!(self, set_crew(value)) }
     pub fn set_energy(&mut self, value: i32) { dispatch_mut!(self, set_energy(value)) }
+    pub fn set_turn_counter(&mut self, value: i32) { dispatch_mut!(self, set_turn_counter(value)) }
+    pub fn set_thrust_counter(&mut self, value: i32) { dispatch_mut!(self, set_thrust_counter(value)) }
     pub fn set_special_counter(&mut self, value: i32) { dispatch_mut!(self, set_special_counter(value)) }
+    pub fn set_energy_counter(&mut self, value: i32) { dispatch_mut!(self, set_energy_counter(value)) }
+    pub fn decrease_energy(&mut self, amount: i32) { dispatch_mut!(self, decrease_energy(amount)) }
+    pub fn decrease_facing(&mut self, amount: f64) { dispatch_mut!(self, decrease_facing(amount)) }
+    pub fn increase_facing(&mut self, amount: f64) { dispatch_mut!(self, increase_facing(amount)) }
+    pub fn decrease_turn_counter(&mut self, amount: i32) { dispatch_mut!(self, decrease_turn_counter(amount)) }
+    pub fn decrease_thrust_counter(&mut self, amount: i32) { dispatch_mut!(self, decrease_thrust_counter(amount)) }
+    pub fn decrease_energy_counter(&mut self, amount: i32) { dispatch_mut!(self, decrease_energy_counter(amount)) }
     pub fn race_name(&self) -> &'static str { dispatch_ref!(self, race_name()) }
     pub fn ship_class(&self) -> &'static str { dispatch_ref!(self, ship_class()) }
     pub fn sprite_prefix(&self) -> &'static str { dispatch_ref!(self, sprite_prefix()) }
@@ -367,8 +392,27 @@ pub fn build_ship(ship_type: &str) -> Option<AnyShip> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_collision_between, AnyShip, HumanCruiser};
+    use super::{AndrosynthGuardian, apply_collision_between, AnyShip, HumanCruiser};
     use crate::traits::ship_trait::Ship;
+
+    #[test]
+    fn androsynth_guardian_blazer_polygon_differs_from_guardian_polygon() {
+        let ship = AnyShip::from(AndrosynthGuardian::new());
+        assert_eq!(
+            ship.hit_polygon_for_state(0, 0.0, 0.0, false) == ship.hit_polygon_for_state(0, 0.0, 0.0, true),
+            false,
+        );
+    }
+
+    #[test]
+    fn androsynth_guardian_exposes_hit_polygon() {
+        assert_eq!(AnyShip::from(AndrosynthGuardian::new()).hit_polygon(0, 0.0, 0.0).is_empty(), false);
+    }
+
+    #[test]
+    fn human_cruiser_exposes_hit_polygon() {
+        assert_eq!(AnyShip::from(HumanCruiser::new()).hit_polygon(0, 0.0, 0.0).is_empty(), false);
+    }
 
     #[test]
     fn apply_collision_between_sets_both_ship_cooldowns() {

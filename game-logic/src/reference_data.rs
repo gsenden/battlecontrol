@@ -8,6 +8,8 @@ pub struct ReferenceData {
     pub energy: FrameScenario,
     pub human_nuke_straight: HumanNukeScenario,
     pub human_nuke_homing: HumanNukeHomingScenario,
+    pub androsynth_bubble_targeted: AndrosynthBubbleScenario,
+    pub androsynth_bubble_two_shots: AndrosynthBubbleTwoShotsScenario,
 }
 
 #[derive(Deserialize)]
@@ -30,6 +32,18 @@ pub struct HumanNukeScenario {
 #[derive(Deserialize)]
 pub struct HumanNukeHomingScenario {
     pub frames: Vec<HumanNukeHomingFrameData>,
+}
+
+#[derive(Deserialize)]
+pub struct AndrosynthBubbleScenario {
+    pub frames: Vec<AndrosynthBubbleFrameData>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AndrosynthBubbleTwoShotsScenario {
+    pub first: SimpleProjectileFrameData,
+    pub second_frames: Vec<SimpleProjectileFrameData>,
 }
 
 #[derive(Deserialize)]
@@ -68,6 +82,27 @@ pub struct HumanNukeHomingFrameData {
     pub vx: i32,
     pub vy: i32,
     pub life: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AndrosynthBubbleFrameData {
+    pub target_x: i32,
+    pub target_y: i32,
+    pub facing: i32,
+    pub x: i32,
+    pub y: i32,
+    pub vx: i32,
+    pub vy: i32,
+    pub life: i32,
+}
+
+#[derive(Deserialize)]
+pub struct SimpleProjectileFrameData {
+    pub x: i32,
+    pub y: i32,
+    pub vx: i32,
+    pub vy: i32,
 }
 
 pub fn load() -> ReferenceData {
