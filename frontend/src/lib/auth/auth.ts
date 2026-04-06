@@ -13,6 +13,19 @@ interface LoginRequestDto {
 	name: string;
 }
 
+interface PasskeyOptionsDto {
+	publicKey: unknown;
+}
+
+interface PasskeyStartRequestDto {
+	name: string;
+}
+
+interface PasskeyFinishRequestDto {
+	name: string;
+	credential: unknown;
+}
+
 interface ApiError {
 	code: string;
 	params?: Record<string, string>;
@@ -51,6 +64,90 @@ export async function loginUser(name: string): Promise<UserDto> {
 	return response.json() as Promise<UserDto>;
 }
 
+export async function registerWithPasskey(name: string): Promise<UserDto> {
+	ensurePasskeySupport();
+	const body: PasskeyStartRequestDto = { name };
+	const startResponse = await fetch('/auth/passkey/register/start', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify(body),
+	});
+
+	if (!startResponse.ok) {
+		throw await parseApiError(startResponse);
+	}
+
+	const options = await startResponse.json() as PasskeyOptionsDto;
+	const credential = await navigator.credentials.create({
+		publicKey: parseCreationOptions(options.publicKey),
+	});
+
+	if (!credential) {
+		throw new Error(translate('AUTHENTICATION_FAILED'));
+	}
+
+	const finishResponse = await fetch('/auth/passkey/register/finish', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify({
+			name,
+			credential: credential.toJSON(),
+		} satisfies PasskeyFinishRequestDto),
+	});
+
+	if (!finishResponse.ok) {
+		throw await parseApiError(finishResponse);
+	}
+
+	return finishResponse.json() as Promise<UserDto>;
+}
+
+export async function loginWithPasskey(name: string): Promise<UserDto> {
+	ensurePasskeySupport();
+	const body: PasskeyStartRequestDto = { name };
+	const startResponse = await fetch('/auth/passkey/login/start', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify(body),
+	});
+
+	if (!startResponse.ok) {
+		throw await parseApiError(startResponse);
+	}
+
+	const options = await startResponse.json() as PasskeyOptionsDto;
+	const credential = await navigator.credentials.get({
+		publicKey: parseRequestOptions(options.publicKey),
+	});
+
+	if (!credential) {
+		throw new Error(translate('AUTHENTICATION_FAILED'));
+	}
+
+	const finishResponse = await fetch('/auth/passkey/login/finish', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify({
+			name,
+			credential: credential.toJSON(),
+		} satisfies PasskeyFinishRequestDto),
+	});
+
+	if (!finishResponse.ok) {
+		throw await parseApiError(finishResponse);
+	}
+
+	return finishResponse.json() as Promise<UserDto>;
+}
+
 export function loadStoredUser(): UserDto | null {
 	if (typeof window === 'undefined') {
 		return null;
@@ -85,6 +182,10 @@ export function toReadableErrorMessage(error: unknown): string {
 		return translate('SERVER_OFFLINE', { server: AUTH_SERVER_LABEL });
 	}
 
+	if (error instanceof Error && error.message) {
+		return error.message;
+	}
+
 	return translate('REQUEST_FAILED', { server: AUTH_SERVER_LABEL });
 }
 
@@ -104,6 +205,7 @@ function isApiError(error: unknown): error is ApiError {
 }
 
 const ERROR_KEY_TO_I18N: Record<string, I18nKey | undefined> = {
+	AuthenticationFailed: 'AUTHENTICATION_FAILED',
 	UserAlreadyExists: 'USER_ALREADY_EXISTS',
 	UserNotFound: 'USER_NOT_FOUND',
 	ServerOffline: 'SERVER_OFFLINE',
@@ -112,3 +214,46 @@ const ERROR_KEY_TO_I18N: Record<string, I18nKey | undefined> = {
 	RoomNotFound: 'ROOM_NOT_FOUND',
 	DatabaseError: 'DATABASE_ERROR',
 };
+
+type PublicKeyCredentialWithJsonParsers = typeof PublicKeyCredential & {
+	parseCreationOptionsFromJSON?: (value: unknown) => CredentialCreationOptions['publicKey'];
+	parseRequestOptionsFromJSON?: (value: unknown) => CredentialRequestOptions['publicKey'];
+};
+
+function ensurePasskeySupport() {
+	if (
+		typeof window === 'undefined'
+		|| typeof navigator === 'undefined'
+		|| typeof PublicKeyCredential === 'undefined'
+		|| typeof navigator.credentials === 'undefined'
+	) {
+		throw new Error(translate('PASSKEY_UNAVAILABLE'));
+	}
+}
+
+function parseCreationOptions(value: unknown): CredentialCreationOptions['publicKey'] {
+	const parser = PublicKeyCredential as PublicKeyCredentialWithJsonParsers;
+	if (!parser.parseCreationOptionsFromJSON) {
+		throw new Error(translate('PASSKEY_UNAVAILABLE'));
+	}
+	return parser.parseCreationOptionsFromJSON(unwrapPublicKey(value));
+}
+
+function parseRequestOptions(value: unknown): CredentialRequestOptions['publicKey'] {
+	const parser = PublicKeyCredential as PublicKeyCredentialWithJsonParsers;
+	if (!parser.parseRequestOptionsFromJSON) {
+		throw new Error(translate('PASSKEY_UNAVAILABLE'));
+	}
+	return parser.parseRequestOptionsFromJSON(unwrapPublicKey(value));
+}
+
+function unwrapPublicKey(value: unknown): unknown {
+	if (
+		typeof value === 'object'
+		&& value !== null
+		&& 'publicKey' in value
+	) {
+		return Reflect.get(value, 'publicKey');
+	}
+	return value;
+}

@@ -17,6 +17,54 @@ paths:
       responses:
         "200":
           description: Login successful
+  /auth/passkey/register/start:
+    post:
+      summary: Start passkey registration for a new player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyStartRegistrationRequest"
+      responses:
+        "200":
+          description: Passkey registration options
+  /auth/passkey/register/finish:
+    post:
+      summary: Finish passkey registration for a new player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyFinishRegistrationRequest"
+      responses:
+        "200":
+          description: Passkey registration successful
+  /auth/passkey/login/start:
+    post:
+      summary: Start passkey login for an existing player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyStartLoginRequest"
+      responses:
+        "200":
+          description: Passkey login options
+  /auth/passkey/login/finish:
+    post:
+      summary: Finish passkey login for an existing player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyFinishLoginRequest"
+      responses:
+        "200":
+          description: Passkey login successful
   /auth/user:
     post:
       summary: Register a new player
@@ -46,3 +94,37 @@ components:
       properties:
         name:
           type: string
+    PasskeyStartRegistrationRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    PasskeyFinishRegistrationRequest:
+      type: object
+      required:
+        - name
+        - credential
+      properties:
+        name:
+          type: string
+        credential:
+          type: object
+    PasskeyStartLoginRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    PasskeyFinishLoginRequest:
+      type: object
+      required:
+        - name
+        - credential
+      properties:
+        name:
+          type: string
+        credential:
+          type: object

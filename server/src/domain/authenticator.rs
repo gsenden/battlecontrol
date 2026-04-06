@@ -1,8 +1,24 @@
 use async_trait::async_trait;
 use common::domain::Error;
-use common::domain::error::UserNotFoundError;
-use common::dto::{LoginRequestDto, RegistrationRequestDto, UserDto};
+use common::domain::error::{AuthenticationFailedError, UserNotFoundError};
+use common::dto::{
+    LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
+    PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
+    RegistrationRequestDto, UserDto,
+};
 use crate::ports::{AuthDrivingPort, UserRepositoryDrivenPort};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use uuid::Uuid;
+use webauthn_rs::prelude::{
+    PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential,
+    Url, Webauthn, WebauthnBuilder,
+};
+
+struct PendingPasskeyRegistration {
+    user_handle: Uuid,
+    state: PasskeyRegistration,
+}
 
 pub trait AuthenticatorDrivenPorts: Send + Sync + 'static {
     type UserRepo: UserRepositoryDrivenPort;
@@ -10,11 +26,26 @@ pub trait AuthenticatorDrivenPorts: Send + Sync + 'static {
 
 pub struct Authenticator<DP: AuthenticatorDrivenPorts> {
     user_repo: DP::UserRepo,
+    webauthn: Webauthn,
+    pending_passkey_registrations: Mutex<HashMap<String, PendingPasskeyRegistration>>,
+    pending_passkey_authentications: Mutex<HashMap<String, PasskeyAuthentication>>,
 }
 
 impl<DP: AuthenticatorDrivenPorts> Authenticator<DP> {
     pub fn new(user_repo: DP::UserRepo) -> Self {
-        Self { user_repo }
+        Self::with_webauthn(
+            user_repo,
+            build_webauthn().expect("Failed to construct WebAuthn service"),
+        )
+    }
+
+    pub fn with_webauthn(user_repo: DP::UserRepo, webauthn: Webauthn) -> Self {
+        Self {
+            user_repo,
+            webauthn,
+            pending_passkey_registrations: Mutex::new(HashMap::new()),
+            pending_passkey_authentications: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -33,8 +64,127 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
                 common::domain::error::UserAlreadyExistsError::new(registration_request.name),
             ));
         }
-        self.user_repo.save_user(&registration_request.name).await
+        self.user_repo.save_user(&registration_request.name, Uuid::new_v4()).await
     }
+
+    async fn start_passkey_registration(&self, request: PasskeyStartRegistrationRequestDto) -> Result<PasskeyOptionsDto, Error> {
+        if self.user_repo.find_by_name(&request.name).await?.is_some() {
+            return Err(Error::UserAlreadyExists(
+                common::domain::error::UserAlreadyExistsError::new(request.name),
+            ));
+        }
+
+        let user_handle = Uuid::new_v4();
+        let (options, state) = self
+            .webauthn
+            .start_passkey_registration(user_handle, &request.name, &request.name, None)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        self.pending_passkey_registrations
+            .lock()
+            .expect("passkey registration state poisoned")
+            .insert(
+                request.name,
+                PendingPasskeyRegistration {
+                    user_handle,
+                    state,
+                },
+            );
+
+        Ok(PasskeyOptionsDto {
+            public_key: extract_public_key_json(options)
+                .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?,
+        })
+    }
+
+    async fn finish_passkey_registration(&self, request: PasskeyFinishRegistrationRequestDto) -> Result<UserDto, Error> {
+        let pending_registration = self.pending_passkey_registrations
+            .lock()
+            .expect("passkey registration state poisoned")
+            .remove(&request.name)
+            .ok_or_else(|| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let credential: RegisterPublicKeyCredential = serde_json::from_value(request.credential)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let passkey = self
+            .webauthn
+            .finish_passkey_registration(&credential, &pending_registration.state)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let user = self.user_repo.save_user(&request.name, pending_registration.user_handle).await?;
+        self.user_repo.save_passkey(&request.name, &passkey).await?;
+        Ok(user)
+    }
+
+    async fn start_passkey_login(&self, request: PasskeyStartLoginRequestDto) -> Result<PasskeyOptionsDto, Error> {
+        let passkeys = self.user_repo.list_passkeys_by_name(&request.name).await?;
+        if passkeys.is_empty() {
+            return Err(Error::UserNotFound(UserNotFoundError::new(request.name)));
+        }
+
+        let (options, state) = self
+            .webauthn
+            .start_passkey_authentication(&passkeys)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        self.pending_passkey_authentications
+            .lock()
+            .expect("passkey authentication state poisoned")
+            .insert(request.name, state);
+
+        Ok(PasskeyOptionsDto {
+            public_key: extract_public_key_json(options)
+                .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?,
+        })
+    }
+
+    async fn finish_passkey_login(&self, request: PasskeyFinishLoginRequestDto) -> Result<UserDto, Error> {
+        let state = self.pending_passkey_authentications
+            .lock()
+            .expect("passkey authentication state poisoned")
+            .remove(&request.name)
+            .ok_or_else(|| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let credential: PublicKeyCredential = serde_json::from_value(request.credential)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let authentication_result = self
+            .webauthn
+            .finish_passkey_authentication(&credential, &state)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let mut passkeys = self.user_repo.list_passkeys_by_name(&request.name).await?;
+        let passkey = passkeys
+            .iter_mut()
+            .find(|entry| entry.cred_id() == authentication_result.cred_id())
+            .ok_or_else(|| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+
+        let _ = passkey.update_credential(&authentication_result);
+        self.user_repo.update_passkey(&request.name, passkey).await?;
+
+        self.user_repo
+            .find_by_name(&request.name)
+            .await?
+            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(request.name)))
+    }
+}
+
+fn build_webauthn() -> Result<Webauthn, String> {
+    let dev_origin = Url::parse("http://localhost:5173").map_err(|error| error.to_string())?;
+    let server_origin = Url::parse("http://localhost:3000").map_err(|error| error.to_string())?;
+    let mut builder = WebauthnBuilder::new("localhost", &server_origin).map_err(|error| error.to_string())?;
+    builder = builder.rp_name("Battle Control");
+    builder = builder.append_allowed_origin(&dev_origin);
+    builder.build().map_err(|error| error.to_string())
+}
+
+fn extract_public_key_json<T: ::serde::Serialize>(options: T) -> Result<serde_json::Value, serde_json::Error> {
+    let value = serde_json::to_value(options)?;
+    Ok(value
+        .get("publicKey")
+        .cloned()
+        .unwrap_or(value))
 }
 
 #[cfg(test)]

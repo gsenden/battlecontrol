@@ -1,7 +1,11 @@
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use common::domain::Error;
-use common::dto::{LoginRequestDto, RegistrationRequestDto, UserDto};
+use common::dto::{
+    LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
+    PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
+    RegistrationRequestDto, UserDto,
+};
 use crate::ports::AuthDrivingPort;
 use super::sample_data::test_user;
 
@@ -58,5 +62,21 @@ impl AuthDrivingPort for FakeAuthDrivingPort {
             Some(error) => Err(error.clone()),
             None => Ok(test_user()),
         }
+    }
+
+    async fn start_passkey_registration(&self, _request: PasskeyStartRegistrationRequestDto) -> Result<PasskeyOptionsDto, Error> {
+        Ok(PasskeyOptionsDto { public_key: serde_json::json!({}) })
+    }
+
+    async fn finish_passkey_registration(&self, _request: PasskeyFinishRegistrationRequestDto) -> Result<UserDto, Error> {
+        Ok(test_user())
+    }
+
+    async fn start_passkey_login(&self, _request: PasskeyStartLoginRequestDto) -> Result<PasskeyOptionsDto, Error> {
+        Ok(PasskeyOptionsDto { public_key: serde_json::json!({}) })
+    }
+
+    async fn finish_passkey_login(&self, _request: PasskeyFinishLoginRequestDto) -> Result<UserDto, Error> {
+        Ok(test_user())
     }
 }

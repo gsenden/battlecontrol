@@ -1,7 +1,17 @@
 mod login_request_dto;
+mod passkey_finish_login_request_dto;
+mod passkey_finish_registration_request_dto;
+mod passkey_options_dto;
+mod passkey_start_login_request_dto;
+mod passkey_start_registration_request_dto;
 mod user_dto;
 mod registration_request_dto;
 
 pub use login_request_dto::LoginRequestDto;
+pub use passkey_finish_login_request_dto::PasskeyFinishLoginRequestDto;
+pub use passkey_finish_registration_request_dto::PasskeyFinishRegistrationRequestDto;
+pub use passkey_options_dto::PasskeyOptionsDto;
+pub use passkey_start_login_request_dto::PasskeyStartLoginRequestDto;
+pub use passkey_start_registration_request_dto::PasskeyStartRegistrationRequestDto;
 pub use user_dto::UserDto;
 pub use registration_request_dto::RegistrationRequestDto;

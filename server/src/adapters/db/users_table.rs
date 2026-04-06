@@ -19,7 +19,8 @@ impl TableEntity for UsersTable {
         format!(
             "CREATE TABLE IF NOT EXISTS {} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE
+                name TEXT NOT NULL UNIQUE,
+                user_handle TEXT NOT NULL UNIQUE
             )",
             Self::table_name()
         )

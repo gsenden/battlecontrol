@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { loadStoredUser, loginUser, storeUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
+	import { loadStoredUser, loginWithPasskey, storeUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
@@ -12,9 +12,9 @@
 	let loggedInUser = $state<UserDto | null>(null);
 
 	onMount(() => {
-		loggedInUser = loadStoredUser();
-		if (loggedInUser) {
-			name = loggedInUser.name;
+		const storedUser = loadStoredUser();
+		if (storedUser) {
+			name = storedUser.name;
 		}
 	});
 
@@ -23,7 +23,7 @@
 		isSubmitting = true;
 
 		try {
-			const user = await loginUser(name.trim());
+			const user = await loginWithPasskey(name.trim());
 			storeUser(user);
 			loggedInUser = user;
 		} catch (error) {

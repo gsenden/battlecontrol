@@ -4,6 +4,8 @@ use common::domain::Error;
 use common::dto::UserDto;
 use crate::ports::UserRepositoryDrivenPort;
 use super::sample_data::test_user;
+use uuid::Uuid;
+use webauthn_rs::prelude::Passkey;
 
 #[derive(Clone)]
 pub struct FakeUserRepository {
@@ -35,8 +37,27 @@ impl UserRepositoryDrivenPort for FakeUserRepository {
         Ok(self.existing_user.as_ref().filter(|u| u.name == name).cloned())
     }
 
-    async fn save_user(&self, name: &str) -> Result<UserDto, Error> {
+    async fn find_user_handle_by_name(&self, name: &str) -> Result<Option<Uuid>, Error> {
+        Ok(self.existing_user
+            .as_ref()
+            .filter(|u| u.name == name)
+            .map(|_| Uuid::nil()))
+    }
+
+    async fn save_user(&self, name: &str, _user_handle: Uuid) -> Result<UserDto, Error> {
         self.save_user_calls.lock().unwrap().push(name.to_string());
         Ok(test_user())
+    }
+
+    async fn list_passkeys_by_name(&self, _name: &str) -> Result<Vec<Passkey>, Error> {
+        Ok(Vec::new())
+    }
+
+    async fn save_passkey(&self, _name: &str, _passkey: &Passkey) -> Result<(), Error> {
+        Ok(())
+    }
+
+    async fn update_passkey(&self, _name: &str, _passkey: &Passkey) -> Result<(), Error> {
+        Ok(())
     }
 }

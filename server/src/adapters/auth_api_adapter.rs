@@ -2,7 +2,10 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::Json;
 use axum::routing::post;
-use common::dto::{LoginRequestDto, RegistrationRequestDto};
+use common::dto::{
+    LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
+    PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto, RegistrationRequestDto,
+};
 use super::ApiAdapter;
 use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
 
@@ -37,6 +40,22 @@ where
                 common::domain::Resource::AuthUser.path(),
                 post(register_user::<AuthPort, Logger>),
             )
+            .route(
+                common::domain::Resource::AuthPasskeyRegisterStart.path(),
+                post(start_passkey_registration::<AuthPort, Logger>),
+            )
+            .route(
+                common::domain::Resource::AuthPasskeyRegisterFinish.path(),
+                post(finish_passkey_registration::<AuthPort, Logger>),
+            )
+            .route(
+                common::domain::Resource::AuthPasskeyLoginStart.path(),
+                post(start_passkey_login::<AuthPort, Logger>),
+            )
+            .route(
+                common::domain::Resource::AuthPasskeyLoginFinish.path(),
+                post(finish_passkey_login::<AuthPort, Logger>),
+            )
             .with_state(Arc::new(AppState {
                 auth: self.auth,
                 logger: self.logger,
@@ -49,6 +68,70 @@ async fn login_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     Json(body): Json<LoginRequestDto>,
 ) -> axum::response::Response {
     match state.auth.login_user(body).await {
+        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Err(error) => {
+            state.logger.log_error(&error);
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error),
+            ))
+        }
+    }
+}
+
+async fn start_passkey_registration<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    Json(body): Json<PasskeyStartRegistrationRequestDto>,
+) -> axum::response::Response {
+    match state.auth.start_passkey_registration(body).await {
+        Ok(options) => axum::response::IntoResponse::into_response(Json(options)),
+        Err(error) => {
+            state.logger.log_error(&error);
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error),
+            ))
+        }
+    }
+}
+
+async fn finish_passkey_registration<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    Json(body): Json<PasskeyFinishRegistrationRequestDto>,
+) -> axum::response::Response {
+    match state.auth.finish_passkey_registration(body).await {
+        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Err(error) => {
+            state.logger.log_error(&error);
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error),
+            ))
+        }
+    }
+}
+
+async fn start_passkey_login<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    Json(body): Json<PasskeyStartLoginRequestDto>,
+) -> axum::response::Response {
+    match state.auth.start_passkey_login(body).await {
+        Ok(options) => axum::response::IntoResponse::into_response(Json(options)),
+        Err(error) => {
+            state.logger.log_error(&error);
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error),
+            ))
+        }
+    }
+}
+
+async fn finish_passkey_login<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    Json(body): Json<PasskeyFinishLoginRequestDto>,
+) -> axum::response::Response {
+    match state.auth.finish_passkey_login(body).await {
         Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
         Err(error) => {
             state.logger.log_error(&error);

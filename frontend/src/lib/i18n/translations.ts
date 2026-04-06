@@ -4,11 +4,12 @@ export const defaultLanguage = 'nl-NL';
 
 export type Language = 'en-GB' | 'nl-NL';
 
-export type I18nKey = 'APP_NAME' | 'AUTH_SUBTITLE' | 'AUTH_SUCCESS' | 'CANCEL' | 'DATABASE_ERROR' | 'EMAIL' | 'HOME_SUBTITLE' | 'INVALID_URL' | 'LOGIN' | 'LOGIN_SUBTITLE' | 'LOGIN_WITH_ONE_TIME_CODE' | 'PLAYER_NAME' | 'REGISTER' | 'REQUEST_FAILED' | 'REQUEST_TIMEOUT' | 'ROOM_NOT_FOUND' | 'SERVER_OFFLINE' | 'SIGN_IN' | 'SIGN_UP' | 'START_BATTLE' | 'USER_ALREADY_EXISTS' | 'USER_NOT_FOUND' | 'WELCOME';
+export type I18nKey = 'APP_NAME' | 'AUTHENTICATION_FAILED' | 'AUTH_SUBTITLE' | 'AUTH_SUCCESS' | 'CANCEL' | 'DATABASE_ERROR' | 'EMAIL' | 'HOME_SUBTITLE' | 'INVALID_URL' | 'LOGIN' | 'LOGIN_SUBTITLE' | 'LOGIN_WITH_ONE_TIME_CODE' | 'PASSKEY_UNAVAILABLE' | 'PLAYER_NAME' | 'REGISTER' | 'REQUEST_FAILED' | 'REQUEST_TIMEOUT' | 'ROOM_NOT_FOUND' | 'SERVER_OFFLINE' | 'SIGN_IN' | 'SIGN_UP' | 'START_BATTLE' | 'USER_ALREADY_EXISTS' | 'USER_NOT_FOUND' | 'WELCOME';
 
 export const translations: Record<Language, Record<I18nKey, string>> = {
 	'en-GB': {
 		'APP_NAME': 'Battle Control',
+		'AUTHENTICATION_FAILED': 'Verification failed',
 		'AUTH_SUBTITLE': 'Register a pilot to continue',
 		'AUTH_SUCCESS': 'Pilot ready',
 		'CANCEL': 'Cancel',
@@ -19,6 +20,7 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
 		'LOGIN': 'Log in',
 		'LOGIN_SUBTITLE': 'Resume with an existing pilot',
 		'LOGIN_WITH_ONE_TIME_CODE': 'Log in with one-time code',
+		'PASSKEY_UNAVAILABLE': 'Passkeys are not supported in this browser',
 		'PLAYER_NAME': 'Name',
 		'REGISTER': 'Register',
 		'REQUEST_FAILED': 'Request to {server} failed',
@@ -34,6 +36,7 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
 	},
 	'nl-NL': {
 		'APP_NAME': 'Battle Control',
+		'AUTHENTICATION_FAILED': 'Verificatie is mislukt',
 		'AUTH_SUBTITLE': 'Registreer een piloot om door te gaan',
 		'AUTH_SUCCESS': 'Piloot gereed',
 		'CANCEL': 'Annuleren',
@@ -44,6 +47,7 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
 		'LOGIN': 'Inloggen',
 		'LOGIN_SUBTITLE': 'Ga verder met een bestaande piloot',
 		'LOGIN_WITH_ONE_TIME_CODE': 'Inloggen met eenmalige code',
+		'PASSKEY_UNAVAILABLE': 'Passkeys worden niet ondersteund in deze browser',
 		'PLAYER_NAME': 'Naam',
 		'REGISTER': 'Registreren',
 		'REQUEST_FAILED': 'Verzoek naar {server} is mislukt',

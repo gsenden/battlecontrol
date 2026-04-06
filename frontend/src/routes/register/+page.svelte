@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { registerUser, loadStoredUser, storeUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
+	import { loadStoredUser, registerWithPasskey, storeUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
@@ -14,9 +14,9 @@
 	let registeredUser = $state<UserDto | null>(null);
 
 	onMount(() => {
-		registeredUser = loadStoredUser();
-		if (registeredUser) {
-			name = registeredUser.name;
+		const storedUser = loadStoredUser();
+		if (storedUser) {
+			name = storedUser.name;
 		}
 	});
 
@@ -26,7 +26,7 @@
 
 		try {
 			const trimmedName = name.trim();
-			const user = await registerUser(trimmedName);
+			const user = await registerWithPasskey(trimmedName);
 			storeUser(user);
 			registeredUser = user;
 		} catch (error) {
