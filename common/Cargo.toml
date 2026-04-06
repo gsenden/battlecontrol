@@ -1,0 +1,18 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+reqwest = ["dep:reqwest"]
+
+[dependencies]
+reqwest = { version = "0.12", optional = true }
+serde = { version = "1", features = ["derive"] }
+url = "2"
+
+[dev-dependencies]
+serde_json = "1"
+
+[build-dependencies]
+serde_yml = "0.0"

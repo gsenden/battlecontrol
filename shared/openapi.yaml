@@ -1,0 +1,33 @@
+Hoopenapi: "3.1.0"
+info:
+  title: Matter-rs Game Server
+  version: "0.1.0"
+  description: Multiplayer game server API
+
+paths:
+  /auth/user:
+    post:
+      summary: Register a new player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "200":
+          description: Registration successful
+
+components:
+  schemas:
+    CreateUserRequest:
+      type: object
+      required:
+        - player_name
+        - email
+      properties:
+        player_name:
+          type: string
+        email:
+          type: string
+          format: email

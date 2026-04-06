@@ -1,0 +1,14 @@
+# Game room errors
+- ROOM_NOT_FOUND # Requested game room does not exist
+
+# User errors
+- USER_ALREADY_EXISTS # A user with this email address already exists
+
+# Database errors
+- DATABASE_ERROR # A database operation failed
+
+# Network errors
+- INVALID_URL # Cannot construct URL from host, port and path
+- REQUEST_FAILED # Generic request failure
+- REQUEST_TIMEOUT # Request timed out
+- SERVER_OFFLINE # The frontend cannot connect to the matter-rs server
