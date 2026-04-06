@@ -11,6 +11,7 @@ export interface BattleShipSnapshot {
   facing: number;
   thrusting: boolean;
   dead: boolean;
+  cloaked: boolean;
   texturePrefix: string;
 }
 
@@ -32,12 +33,24 @@ export interface ExplosionSnapshot {
   texturePrefix: string;
 }
 
+export interface MeteorSnapshot {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  frameIndex: number;
+  texturePrefix: string;
+}
+
 export interface LaserSnapshot {
   id: number;
   startX: number;
   startY: number;
   endX: number;
   endY: number;
+  color: number;
+  width: number;
 }
 
 export interface AudioEventSnapshot {
@@ -47,6 +60,7 @@ export interface AudioEventSnapshot {
 export interface BattleSnapshot {
   player: BattleShipSnapshot;
   target: BattleShipSnapshot;
+  meteors: MeteorSnapshot[];
   projectiles: ProjectileSnapshot[];
   explosions: ExplosionSnapshot[];
   lasers: LaserSnapshot[];
@@ -72,7 +86,9 @@ export type BattleWorkerMessage =
   | { type: 'triggerTargetWeapon' }
   | { type: 'setPlayerWeaponTargetPoint'; x: number; y: number }
   | { type: 'setPlayerWeaponTargetShip' }
+  | { type: 'setPlayerSpecialTargetPoint'; x: number; y: number }
   | { type: 'clearPlayerWeaponTarget' }
+  | { type: 'clearPlayerSpecialTarget' }
   | { type: 'switchPlayerShip'; shipType: string };
 
 export type BattleWorkerResponse =

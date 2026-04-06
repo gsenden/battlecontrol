@@ -1,4 +1,21 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    InstantLaserSpec, PrimaryProjectileSpec, ProjectileBehaviorSpec,
+    ProjectileCollisionSpec, ProjectileImpactSpec, ProjectileSpawnSpec,
+    ProjectileTargetMode, ProjectileVolleySpec, SecondaryProjectileSpec,
+    SpecialAbilitySpec,
+};
+
+const CHMMR_LASER_RANGE: f64 = 480.0;
+const CHMMR_LASER_OFFSET: f64 = 48.0;
+const CHMMR_SATELLITE_SPEED: f64 = 10.0;
+const CHMMR_SATELLITE_LIFE: i32 = 120;
+const CHMMR_SATELLITE_OFFSET: f64 = 28.0;
+const CHMMR_SATELLITE_SPAWNS: [ProjectileSpawnSpec; 1] = [ProjectileSpawnSpec {
+    facing_offset: 0,
+    forward_offset: CHMMR_SATELLITE_OFFSET,
+    lateral_offset: 0.0,
+}];
 
 pub struct ChmmrAvatar {
     crew: i32,
@@ -65,4 +82,46 @@ impl Ship for ChmmrAvatar {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
+        Some(InstantLaserSpec {
+            range: CHMMR_LASER_RANGE,
+            damage: 2,
+            offset: CHMMR_LASER_OFFSET,
+            sound_key: "",
+            impact_sound_key: "battle-boom-23",
+            color: 0xffffff,
+            width: 3.0,
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Projectile(SecondaryProjectileSpec {
+            volley: ProjectileVolleySpec {
+                projectile: PrimaryProjectileSpec {
+                    speed: CHMMR_SATELLITE_SPEED,
+                    acceleration: 0.0,
+                    max_speed: CHMMR_SATELLITE_SPEED,
+                    life: CHMMR_SATELLITE_LIFE,
+                    offset: CHMMR_SATELLITE_OFFSET,
+                    turn_wait: 2,
+                    texture_prefix: "chmmr-satellite",
+                    sound_key: "",
+                    behavior: ProjectileBehaviorSpec::Tracking,
+                    collision: ProjectileCollisionSpec::None,
+                    impact: ProjectileImpactSpec {
+                        damage: 2,
+                        texture_prefix: "battle-blast",
+                        start_frame: 0,
+                        end_frame: 7,
+                        sound_key: "battle-boom-23",
+                    },
+                },
+                spawns: &CHMMR_SATELLITE_SPAWNS,
+                sound_key: "",
+                target_mode: ProjectileTargetMode::EnemyShip,
+            },
+        })
+    }
 }

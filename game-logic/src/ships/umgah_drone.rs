@@ -1,4 +1,10 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    DirectionalThrustSpecialSpec, InstantLaserSpec, ProjectileTargetMode, SpecialAbilitySpec,
+};
+
+const UMGAH_CONE_RANGE: f64 = 72.0;
+const UMGAH_RETRO_SPEED: f64 = 40.0;
 
 pub struct UmgahDrone {
     crew: i32,
@@ -65,4 +71,25 @@ impl Ship for UmgahDrone {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
+        Some(InstantLaserSpec {
+            range: UMGAH_CONE_RANGE,
+            damage: 1,
+            offset: 0.0,
+            sound_key: "",
+            impact_sound_key: "battle-boom-23",
+            color: 0xffffff,
+            width: 3.0,
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::DirectionalThrust(DirectionalThrustSpecialSpec {
+            facing_offset: std::f64::consts::PI,
+            speed: UMGAH_RETRO_SPEED,
+            sound_key: "",
+        })
+    }
 }

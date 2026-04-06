@@ -46,6 +46,33 @@ pub struct PrimaryProjectileSpec {
 }
 
 #[derive(Clone, Copy)]
+pub struct ProjectileSpawnSpec {
+    pub facing_offset: i32,
+    pub forward_offset: f64,
+    pub lateral_offset: f64,
+}
+
+#[derive(Clone, Copy)]
+pub struct ProjectileVolleySpec {
+    pub projectile: PrimaryProjectileSpec,
+    pub spawns: &'static [ProjectileSpawnSpec],
+    pub sound_key: &'static str,
+    pub target_mode: ProjectileTargetMode,
+}
+
+#[derive(Clone, Copy)]
+pub struct InstantLaserSpec {
+    pub range: f64,
+    pub damage: i32,
+    pub offset: f64,
+    pub sound_key: &'static str,
+    pub impact_sound_key: &'static str,
+    pub color: u32,
+    pub width: f64,
+    pub target_mode: ProjectileTargetMode,
+}
+
+#[derive(Clone, Copy)]
 pub enum ProjectileBehaviorSpec {
     Tracking,
     WobbleTracking {
@@ -59,11 +86,18 @@ pub enum ProjectileTargetMode {
     None,
     EnemyShip,
     PlayerSelectedOrEnemyShip,
+    PlayerSelectedPointOrForward,
 }
 
 #[derive(Clone, Copy)]
 pub struct PointDefenseSpec {
     pub range: f64,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct ShieldSpecialSpec {
+    pub active_texture_prefix: &'static str,
     pub sound_key: &'static str,
 }
 
@@ -79,10 +113,95 @@ pub struct BlazerSpecialSpec {
 }
 
 #[derive(Clone, Copy)]
+pub struct TeleportSpecialSpec {
+    pub effect_texture_prefix: &'static str,
+    pub end_frame: i32,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct DirectionalThrustSpecialSpec {
+    pub facing_offset: f64,
+    pub speed: f64,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct SecondaryProjectileSpec {
+    pub volley: ProjectileVolleySpec,
+}
+
+#[derive(Clone, Copy)]
+pub struct CrewRegenerationSpec {
+    pub amount: i32,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct CrewToEnergySpec {
+    pub crew_cost: i32,
+    pub energy_gain: i32,
+    pub recoil_speed: f64,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct SelfDestructSpec {
+    pub damage: i32,
+    pub radius: f64,
+    pub texture_prefix: &'static str,
+    pub end_frame: i32,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct SoundOnlySpec {
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct CloakSpec {
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct TransformSpec {
+    pub active_texture_prefix: &'static str,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct CrewDrainTransferSpec {
+    pub range: f64,
+    pub max_transfer: i32,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
+pub struct PlanetHarvestSpec {
+    pub range: f64,
+    pub energy_gain: i32,
+    pub sound_key: &'static str,
+}
+
+#[derive(Clone, Copy)]
 pub enum SpecialAbilitySpec {
     None,
     PointDefense(PointDefenseSpec),
     Blazer(BlazerSpecialSpec),
+    Shield(ShieldSpecialSpec),
+    Teleport(TeleportSpecialSpec),
+    InstantLaser(InstantLaserSpec),
+    DirectionalThrust(DirectionalThrustSpecialSpec),
+    Projectile(SecondaryProjectileSpec),
+    CrewRegeneration(CrewRegenerationSpec),
+    CrewToEnergy(CrewToEnergySpec),
+    SelfDestruct(SelfDestructSpec),
+    SoundOnly(SoundOnlySpec),
+    Cloak(CloakSpec),
+    Transform(TransformSpec),
+    CrewDrainTransfer(CrewDrainTransferSpec),
+    PlanetHarvest(PlanetHarvestSpec),
 }
 
 pub trait Ship {
@@ -141,6 +260,26 @@ pub trait Ship {
         None
     }
 
+    fn primary_projectile_spec_for_state(&self, _special_active: bool) -> Option<PrimaryProjectileSpec> {
+        self.primary_projectile_spec()
+    }
+
+    fn primary_volley_spec(&self) -> Option<ProjectileVolleySpec> {
+        None
+    }
+
+    fn primary_volley_spec_for_state(&self, _special_active: bool) -> Option<ProjectileVolleySpec> {
+        self.primary_volley_spec()
+    }
+
+    fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
+        None
+    }
+
+    fn primary_instant_laser_spec_for_state(&self, _special_active: bool) -> Option<InstantLaserSpec> {
+        self.primary_instant_laser_spec()
+    }
+
     fn victory_sound_key(&self) -> Option<&'static str> {
         None
     }
@@ -155,6 +294,50 @@ pub trait Ship {
 
     fn primary_projectile_target_mode(&self) -> ProjectileTargetMode {
         ProjectileTargetMode::None
+    }
+
+    fn thrust_velocity(
+        &self,
+        velocity: &VelocityVector,
+        allow_beyond_max_speed: bool,
+        current_speed: f64,
+    ) -> Option<(f64, f64)> {
+        let facing = self.facing();
+        let thrust_increment = self.thrust_increment();
+        let max_speed = self.max_speed();
+        let delta_x = facing.cos() * thrust_increment;
+        let delta_y = facing.sin() * thrust_increment;
+
+        Some(get_thrust_velocity(
+            facing,
+            thrust_increment,
+            max_speed,
+            velocity,
+            delta_x,
+            delta_y,
+            current_speed,
+            allow_beyond_max_speed,
+        ))
+    }
+
+    fn idle_velocity(&self, _velocity: &VelocityVector) -> Option<(f64, f64)> {
+        None
+    }
+
+    fn primary_projectile_target_mode_for_state(&self, _special_active: bool) -> ProjectileTargetMode {
+        self.primary_projectile_target_mode()
+    }
+
+    fn special_state_persists_after_cooldown(&self) -> bool {
+        false
+    }
+
+    fn is_targetable(&self, _special_active: bool) -> bool {
+        true
+    }
+
+    fn is_cloaked(&self, _special_active: bool) -> bool {
+        false
     }
 
     fn increase_crew(&mut self, amount: i32) {
@@ -276,19 +459,17 @@ pub trait Ship {
         }
 
         // Thrust
-        let (ti, th_wait, max_spd) =
-            (self.thrust_increment(), self.thrust_wait(), self.max_speed());
+        let (th_wait, max_spd) = (self.thrust_wait(), self.max_speed());
         if self.thrust_counter() > 0 {
             self.decrease_thrust_counter(1);
         } else if input.thrust {
-            let facing = self.facing();
-            let dvx = facing.cos() * ti;
-            let dvy = facing.sin() * ti;
-            let (vx, vy) = get_thrust_velocity(
-                facing, ti, max_spd, velocity, dvx, dvy, current_speed, allow_beyond_max_speed,
-            );
+            let (vx, vy) = self
+                .thrust_velocity(velocity, allow_beyond_max_speed, current_speed)
+                .unwrap_or((self.facing().cos() * max_spd, self.facing().sin() * max_spd));
             commands.push(PhysicsCommand::SetVelocity { vx, vy });
             self.set_thrust_counter(th_wait);
+        } else if let Some((vx, vy)) = self.idle_velocity(velocity) {
+            commands.push(PhysicsCommand::SetVelocity { vx, vy });
         }
 
         // Weapon
@@ -421,6 +602,32 @@ mod tests {
 
     fn zero_velocity() -> VelocityVector {
         VelocityVector { x: 0.0, y: 0.0 }
+    }
+
+    #[test]
+    fn arilou_thrust_replaces_existing_diagonal_drift_with_facing_velocity() {
+        let mut ship = ArilouSkiff::new();
+        let facing = -std::f64::consts::FRAC_PI_4;
+        ship.set_facing(facing);
+
+        let commands = ship.update(
+            &ShipInput {
+                left: false,
+                right: false,
+                thrust: true,
+                weapon: false,
+                special: false,
+            },
+            &VelocityVector { x: -3.0, y: 2.0 },
+            false,
+        );
+
+        assert!(matches!(
+            commands.as_slice(),
+            [PhysicsCommand::SetVelocity { vx, vy }]
+                if (*vx - facing.cos() * ship.max_speed()).abs() < 1e-9
+                    && (*vy - facing.sin() * ship.max_speed()).abs() < 1e-9
+        ));
     }
 
     #[test]

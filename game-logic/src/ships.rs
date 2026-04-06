@@ -344,6 +344,30 @@ impl AnyShip {
     pub fn primary_projectile_spec(&self) -> Option<crate::traits::ship_trait::PrimaryProjectileSpec> {
         dispatch_ref!(self, primary_projectile_spec())
     }
+    pub fn primary_projectile_spec_for_state(
+        &self,
+        special_active: bool,
+    ) -> Option<crate::traits::ship_trait::PrimaryProjectileSpec> {
+        dispatch_ref!(self, primary_projectile_spec_for_state(special_active))
+    }
+    pub fn primary_volley_spec(&self) -> Option<crate::traits::ship_trait::ProjectileVolleySpec> {
+        dispatch_ref!(self, primary_volley_spec())
+    }
+    pub fn primary_volley_spec_for_state(
+        &self,
+        special_active: bool,
+    ) -> Option<crate::traits::ship_trait::ProjectileVolleySpec> {
+        dispatch_ref!(self, primary_volley_spec_for_state(special_active))
+    }
+    pub fn primary_instant_laser_spec(&self) -> Option<crate::traits::ship_trait::InstantLaserSpec> {
+        dispatch_ref!(self, primary_instant_laser_spec())
+    }
+    pub fn primary_instant_laser_spec_for_state(
+        &self,
+        special_active: bool,
+    ) -> Option<crate::traits::ship_trait::InstantLaserSpec> {
+        dispatch_ref!(self, primary_instant_laser_spec_for_state(special_active))
+    }
     pub fn victory_sound_key(&self) -> Option<&'static str> {
         dispatch_ref!(self, victory_sound_key())
     }
@@ -355,6 +379,21 @@ impl AnyShip {
     }
     pub fn primary_projectile_target_mode(&self) -> crate::traits::ship_trait::ProjectileTargetMode {
         dispatch_ref!(self, primary_projectile_target_mode())
+    }
+    pub fn primary_projectile_target_mode_for_state(
+        &self,
+        special_active: bool,
+    ) -> crate::traits::ship_trait::ProjectileTargetMode {
+        dispatch_ref!(self, primary_projectile_target_mode_for_state(special_active))
+    }
+    pub fn special_state_persists_after_cooldown(&self) -> bool {
+        dispatch_ref!(self, special_state_persists_after_cooldown())
+    }
+    pub fn is_targetable(&self, special_active: bool) -> bool {
+        dispatch_ref!(self, is_targetable(special_active))
+    }
+    pub fn is_cloaked(&self, special_active: bool) -> bool {
+        dispatch_ref!(self, is_cloaked(special_active))
     }
 }
 
@@ -407,8 +446,184 @@ pub fn build_ship(ship_type: &str) -> Option<AnyShip> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AndrosynthGuardian, apply_collision_between, AnyShip, HumanCruiser};
+    use super::{
+        AndrosynthGuardian, AnyShip, ArilouSkiff, ChenjesuBroodhome, ChmmrAvatar,
+        DruugeMauler, HumanCruiser, KohrahMarauder, MelnormeTrader, MmrnmhrmXform,
+        MyconPodship, OrzNemesis, PkunkFury, ShofixtiScout, SpathiEluder,
+        IlwrathAvenger, SlylandroProbe, SyreenPenetrator, UmgahDrone, UrquanDreadnought,
+        UtwigJugger, VuxIntruder, YehatTerminator, ZoqfotpikStinger, apply_collision_between,
+    };
     use crate::traits::ship_trait::Ship;
+
+    #[test]
+    fn ilwrath_avenger_exposes_cloak_special() {
+        assert!(matches!(
+            AnyShip::from(IlwrathAvenger::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Cloak(_)
+        ));
+    }
+
+    #[test]
+    fn mmrnmhrm_xform_exposes_transform_special() {
+        assert!(matches!(
+            AnyShip::from(MmrnmhrmXform::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Transform(_)
+        ));
+    }
+
+    #[test]
+    fn syreen_penetrator_exposes_crew_drain_special() {
+        assert!(matches!(
+            AnyShip::from(SyreenPenetrator::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::CrewDrainTransfer(_)
+        ));
+    }
+
+    #[test]
+    fn slylandro_probe_exposes_planet_harvest_special() {
+        assert!(matches!(
+            AnyShip::from(SlylandroProbe::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::PlanetHarvest(_)
+        ));
+    }
+
+    #[test]
+    fn pkunk_fury_exposes_sound_only_special() {
+        assert!(matches!(
+            AnyShip::from(PkunkFury::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::SoundOnly(_)
+        ));
+    }
+
+    #[test]
+    fn orz_nemesis_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(OrzNemesis::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn chenjesu_broodhome_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(ChenjesuBroodhome::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn druuge_mauler_exposes_crew_to_energy_special() {
+        assert!(matches!(
+            AnyShip::from(DruugeMauler::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::CrewToEnergy(_)
+        ));
+    }
+
+    #[test]
+    fn vux_intruder_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(VuxIntruder::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn zoqfotpik_stinger_exposes_instant_laser_special() {
+        assert!(matches!(
+            AnyShip::from(ZoqfotpikStinger::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::InstantLaser(_)
+        ));
+    }
+
+    #[test]
+    fn urquan_dreadnought_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(UrquanDreadnought::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn shofixti_scout_exposes_self_destruct_special() {
+        assert!(matches!(
+            AnyShip::from(ShofixtiScout::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::SelfDestruct(_)
+        ));
+    }
+
+    #[test]
+    fn slylandro_probe_exposes_instant_laser_primary() {
+        assert_eq!(
+            AnyShip::from(SlylandroProbe::new())
+                .primary_instant_laser_spec()
+                .map(|spec| spec.damage),
+            Some(2),
+        );
+    }
+
+    #[test]
+    fn chmmr_avatar_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(ChmmrAvatar::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn pkunk_fury_exposes_primary_volley_spec() {
+        assert_eq!(
+            AnyShip::from(PkunkFury::new())
+                .primary_volley_spec()
+                .map(|spec| spec.spawns.len()),
+            Some(3),
+        );
+    }
+
+    #[test]
+    fn umgah_drone_exposes_directional_thrust_special() {
+        assert!(matches!(
+            AnyShip::from(UmgahDrone::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::DirectionalThrust(_)
+        ));
+    }
+
+    #[test]
+    fn melnorme_trader_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(MelnormeTrader::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn orz_nemesis_exposes_primary_projectile_spec() {
+        assert_eq!(
+            AnyShip::from(OrzNemesis::new())
+                .primary_projectile_spec()
+                .map(|spec| spec.texture_prefix),
+            Some("orz-howitzer"),
+        );
+    }
+
+    #[test]
+    fn mmrnmhrm_xform_exposes_instant_laser_primary() {
+        assert_eq!(
+            AnyShip::from(MmrnmhrmXform::new())
+                .primary_instant_laser_spec()
+                .map(|spec| spec.range as i32),
+            Some(141),
+        );
+    }
+
+    #[test]
+    fn kohrah_marauder_exposes_primary_projectile_spec() {
+        assert_eq!(
+            AnyShip::from(KohrahMarauder::new())
+                .primary_projectile_spec()
+                .map(|spec| spec.texture_prefix),
+            Some("kohrah-buzzsaw"),
+        );
+    }
 
     #[test]
     fn androsynth_guardian_exposes_primary_projectile_spec() {
@@ -443,6 +658,50 @@ mod tests {
         assert!(matches!(
             AnyShip::from(HumanCruiser::new()).special_ability_spec(),
             crate::traits::ship_trait::SpecialAbilitySpec::PointDefense(_)
+        ));
+    }
+
+    #[test]
+    fn arilou_skiff_exposes_instant_laser_primary() {
+        assert_eq!(
+            AnyShip::from(ArilouSkiff::new())
+                .primary_instant_laser_spec()
+                .map(|spec| spec.damage),
+            Some(1),
+        );
+    }
+
+    #[test]
+    fn spathi_eluder_exposes_secondary_projectile_special() {
+        assert!(matches!(
+            AnyShip::from(SpathiEluder::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Projectile(_)
+        ));
+    }
+
+    #[test]
+    fn yehat_terminator_exposes_primary_volley_spec() {
+        assert_eq!(
+            AnyShip::from(YehatTerminator::new())
+                .primary_volley_spec()
+                .map(|spec| spec.spawns.len()),
+            Some(2),
+        );
+    }
+
+    #[test]
+    fn utwig_jugger_exposes_shield_special_spec() {
+        assert!(matches!(
+            AnyShip::from(UtwigJugger::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::Shield(_)
+        ));
+    }
+
+    #[test]
+    fn mycon_podship_exposes_crew_regeneration_special_spec() {
+        assert!(matches!(
+            AnyShip::from(MyconPodship::new()).special_ability_spec(),
+            crate::traits::ship_trait::SpecialAbilitySpec::CrewRegeneration(_)
         ));
     }
 

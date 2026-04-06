@@ -1,4 +1,22 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, ProjectileSpawnSpec, ProjectileTargetMode, ProjectileVolleySpec,
+    SecondaryProjectileSpec, SpecialAbilitySpec,
+};
+
+const ORZ_HOWITZER_SPEED: f64 = 24.0;
+const ORZ_HOWITZER_LIFE: i32 = 18;
+const ORZ_HOWITZER_OFFSET: f64 = 20.0;
+const ORZ_HOWITZER_DAMAGE: i32 = 3;
+const ORZ_MARINE_SPEED: f64 = 10.0;
+const ORZ_MARINE_LIFE: i32 = 90;
+const ORZ_MARINE_OFFSET: f64 = 14.0;
+const ORZ_MARINE_SPAWNS: [ProjectileSpawnSpec; 1] = [ProjectileSpawnSpec {
+    facing_offset: 0,
+    forward_offset: ORZ_MARINE_OFFSET,
+    lateral_offset: 0.0,
+}];
 
 pub struct OrzNemesis {
     crew: i32,
@@ -65,4 +83,55 @@ impl Ship for OrzNemesis {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: ORZ_HOWITZER_SPEED,
+            acceleration: 0.0,
+            max_speed: ORZ_HOWITZER_SPEED,
+            life: ORZ_HOWITZER_LIFE,
+            offset: ORZ_HOWITZER_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "orz-howitzer",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: ORZ_HOWITZER_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Projectile(SecondaryProjectileSpec {
+            volley: ProjectileVolleySpec {
+                projectile: PrimaryProjectileSpec {
+                    speed: ORZ_MARINE_SPEED,
+                    acceleration: 0.0,
+                    max_speed: ORZ_MARINE_SPEED,
+                    life: ORZ_MARINE_LIFE,
+                    offset: ORZ_MARINE_OFFSET,
+                    turn_wait: 3,
+                    texture_prefix: "orz-turret",
+                    sound_key: "",
+                    behavior: ProjectileBehaviorSpec::Tracking,
+                    collision: ProjectileCollisionSpec::None,
+                    impact: ProjectileImpactSpec {
+                        damage: 1,
+                        texture_prefix: "battle-blast",
+                        start_frame: 0,
+                        end_frame: 7,
+                        sound_key: "battle-boom-23",
+                    },
+                },
+                spawns: &ORZ_MARINE_SPAWNS,
+                sound_key: "",
+                target_mode: ProjectileTargetMode::EnemyShip,
+            },
+        })
+    }
 }

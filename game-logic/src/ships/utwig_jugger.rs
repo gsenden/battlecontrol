@@ -1,4 +1,31 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    HitPolygonPoint, PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, ProjectileSpawnSpec, ProjectileTargetMode, ProjectileVolleySpec,
+    ShieldSpecialSpec, SpecialAbilitySpec,
+};
+
+const UTWIG_LANCE_SPEED: f64 = 30.0;
+const UTWIG_LANCE_LIFE: i32 = 10;
+const UTWIG_LANCE_DAMAGE: i32 = 1;
+const UTWIG_PROJECTILE_POLYGON: [HitPolygonPoint; 8] = [
+    HitPolygonPoint { x: 0.0, y: -14.0 },
+    HitPolygonPoint { x: 6.0, y: -9.0 },
+    HitPolygonPoint { x: 8.0, y: 0.0 },
+    HitPolygonPoint { x: 6.0, y: 9.0 },
+    HitPolygonPoint { x: 0.0, y: 14.0 },
+    HitPolygonPoint { x: -6.0, y: 9.0 },
+    HitPolygonPoint { x: -8.0, y: 0.0 },
+    HitPolygonPoint { x: -6.0, y: -9.0 },
+];
+const UTWIG_PRIMARY_SPAWNS: [ProjectileSpawnSpec; 6] = [
+    ProjectileSpawnSpec { facing_offset: 0, forward_offset: 63.0, lateral_offset: 12.0 },
+    ProjectileSpawnSpec { facing_offset: 0, forward_offset: 63.0, lateral_offset: -12.0 },
+    ProjectileSpawnSpec { facing_offset: 1, forward_offset: 54.0, lateral_offset: 0.0 },
+    ProjectileSpawnSpec { facing_offset: -1, forward_offset: 54.0, lateral_offset: 0.0 },
+    ProjectileSpawnSpec { facing_offset: 2, forward_offset: 46.0, lateral_offset: 0.0 },
+    ProjectileSpawnSpec { facing_offset: -2, forward_offset: 46.0, lateral_offset: 0.0 },
+];
 
 pub struct UtwigJugger {
     crew: i32,
@@ -65,4 +92,38 @@ impl Ship for UtwigJugger {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_volley_spec(&self) -> Option<ProjectileVolleySpec> {
+        Some(ProjectileVolleySpec {
+            projectile: PrimaryProjectileSpec {
+                speed: UTWIG_LANCE_SPEED,
+                acceleration: 0.0,
+                max_speed: UTWIG_LANCE_SPEED,
+                life: UTWIG_LANCE_LIFE,
+                offset: 0.0,
+                turn_wait: 0,
+                texture_prefix: "utwig-lance",
+                sound_key: "",
+                behavior: ProjectileBehaviorSpec::Tracking,
+                collision: ProjectileCollisionSpec::Polygon(&UTWIG_PROJECTILE_POLYGON),
+                impact: ProjectileImpactSpec {
+                    damage: UTWIG_LANCE_DAMAGE,
+                    texture_prefix: "battle-blast",
+                    start_frame: 0,
+                    end_frame: 7,
+                    sound_key: "battle-boom-23",
+                },
+            },
+            spawns: &UTWIG_PRIMARY_SPAWNS,
+            sound_key: "",
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Shield(ShieldSpecialSpec {
+            active_texture_prefix: "utwig-jugger",
+            sound_key: "",
+        })
+    }
 }

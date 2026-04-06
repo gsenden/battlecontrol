@@ -1,4 +1,25 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    CrewRegenerationSpec, HitPolygonPoint, PrimaryProjectileSpec, ProjectileBehaviorSpec,
+    ProjectileCollisionSpec, ProjectileImpactSpec, ProjectileTargetMode, SpecialAbilitySpec,
+};
+
+const MYCON_PLASMA_SPEED: f64 = 8.0;
+const MYCON_PLASMA_LIFE: i32 = 143;
+const MYCON_PLASMA_OFFSET: f64 = 24.0;
+const MYCON_PLASMA_DAMAGE: i32 = 10;
+const MYCON_PLASMA_TRACK_WAIT: i32 = 1;
+const MYCON_REGEN_AMOUNT: i32 = 4;
+const MYCON_PLASMA_POLYGON: [HitPolygonPoint; 8] = [
+    HitPolygonPoint { x: 0.0, y: -22.0 },
+    HitPolygonPoint { x: 12.0, y: -16.0 },
+    HitPolygonPoint { x: 16.0, y: 0.0 },
+    HitPolygonPoint { x: 12.0, y: 16.0 },
+    HitPolygonPoint { x: 0.0, y: 22.0 },
+    HitPolygonPoint { x: -12.0, y: 16.0 },
+    HitPolygonPoint { x: -16.0, y: 0.0 },
+    HitPolygonPoint { x: -12.0, y: -16.0 },
+];
 
 pub struct MyconPodship {
     crew: i32,
@@ -65,4 +86,37 @@ impl Ship for MyconPodship {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: MYCON_PLASMA_SPEED,
+            acceleration: 0.0,
+            max_speed: MYCON_PLASMA_SPEED,
+            life: MYCON_PLASMA_LIFE,
+            offset: MYCON_PLASMA_OFFSET,
+            turn_wait: MYCON_PLASMA_TRACK_WAIT,
+            texture_prefix: "mycon-plasma",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::Polygon(&MYCON_PLASMA_POLYGON),
+            impact: ProjectileImpactSpec {
+                damage: MYCON_PLASMA_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-45",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::CrewRegeneration(CrewRegenerationSpec {
+            amount: MYCON_REGEN_AMOUNT,
+            sound_key: "",
+        })
+    }
+
+    fn primary_projectile_target_mode(&self) -> ProjectileTargetMode {
+        ProjectileTargetMode::EnemyShip
+    }
 }

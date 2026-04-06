@@ -87,8 +87,12 @@ self.onmessage = async (event: MessageEvent<BattleWorkerMessage>) => {
     battle.setPlayerWeaponTargetPoint(message.x, message.y);
   } else if (message.type === 'setPlayerWeaponTargetShip') {
     battle.setPlayerWeaponTargetShip();
+  } else if (message.type === 'setPlayerSpecialTargetPoint') {
+    battle.setPlayerSpecialTargetPoint(message.x, message.y);
   } else if (message.type === 'clearPlayerWeaponTarget') {
     battle.clearPlayerWeaponTarget();
+  } else if (message.type === 'clearPlayerSpecialTarget') {
+    battle.clearPlayerSpecialTarget();
   } else if (message.type === 'switchPlayerShip') {
     battle.switchPlayerShip(message.shipType);
     postSnapshot();

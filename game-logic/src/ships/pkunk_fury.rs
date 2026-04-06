@@ -1,4 +1,19 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, ProjectileSpawnSpec, ProjectileTargetMode,
+    ProjectileVolleySpec, SoundOnlySpec, SpecialAbilitySpec,
+};
+
+const PKUNK_BUG_SPEED: f64 = 24.0;
+const PKUNK_BUG_LIFE: i32 = 5;
+const PKUNK_BUG_OFFSET: f64 = 15.0;
+const PKUNK_BUG_DAMAGE: i32 = 1;
+const PKUNK_BUG_SPAWNS: [ProjectileSpawnSpec; 3] = [
+    ProjectileSpawnSpec { facing_offset: -4, forward_offset: PKUNK_BUG_OFFSET, lateral_offset: 0.0 },
+    ProjectileSpawnSpec { facing_offset: 0, forward_offset: PKUNK_BUG_OFFSET, lateral_offset: 0.0 },
+    ProjectileSpawnSpec { facing_offset: 4, forward_offset: PKUNK_BUG_OFFSET, lateral_offset: 0.0 },
+];
 
 pub struct PkunkFury {
     crew: i32,
@@ -65,4 +80,37 @@ impl Ship for PkunkFury {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_volley_spec(&self) -> Option<ProjectileVolleySpec> {
+        Some(ProjectileVolleySpec {
+            projectile: PrimaryProjectileSpec {
+                speed: PKUNK_BUG_SPEED,
+                acceleration: 0.0,
+                max_speed: PKUNK_BUG_SPEED,
+                life: PKUNK_BUG_LIFE,
+                offset: PKUNK_BUG_OFFSET,
+                turn_wait: 0,
+                texture_prefix: "pkunk-bug",
+                sound_key: "",
+                behavior: ProjectileBehaviorSpec::Tracking,
+                collision: ProjectileCollisionSpec::None,
+                impact: ProjectileImpactSpec {
+                    damage: PKUNK_BUG_DAMAGE,
+                    texture_prefix: "battle-blast",
+                    start_frame: 0,
+                    end_frame: 7,
+                    sound_key: "battle-boom-23",
+                },
+            },
+            spawns: &PKUNK_BUG_SPAWNS,
+            sound_key: "",
+            target_mode: ProjectileTargetMode::None,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::SoundOnly(SoundOnlySpec {
+            sound_key: "",
+        })
+    }
 }

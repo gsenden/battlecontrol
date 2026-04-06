@@ -1,4 +1,22 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, ProjectileSpawnSpec, ProjectileTargetMode,
+    ProjectileVolleySpec, SecondaryProjectileSpec, SpecialAbilitySpec,
+};
+
+const MELNORME_PUMPUP_SPEED: f64 = 45.0;
+const MELNORME_PUMPUP_LIFE: i32 = 10;
+const MELNORME_PUMPUP_OFFSET: f64 = 24.0;
+const MELNORME_PUMPUP_DAMAGE: i32 = 4;
+const MELNORME_CONFUSE_SPEED: f64 = 30.0;
+const MELNORME_CONFUSE_LIFE: i32 = 20;
+const MELNORME_CONFUSE_OFFSET: f64 = 8.0;
+const MELNORME_CONFUSE_SPAWNS: [ProjectileSpawnSpec; 1] = [ProjectileSpawnSpec {
+    facing_offset: 0,
+    forward_offset: MELNORME_CONFUSE_OFFSET,
+    lateral_offset: 0.0,
+}];
 
 pub struct MelnormeTrader {
     crew: i32,
@@ -65,4 +83,55 @@ impl Ship for MelnormeTrader {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: MELNORME_PUMPUP_SPEED,
+            acceleration: 0.0,
+            max_speed: MELNORME_PUMPUP_SPEED,
+            life: MELNORME_PUMPUP_LIFE,
+            offset: MELNORME_PUMPUP_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "melnorme-pumpup",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: MELNORME_PUMPUP_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-45",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Projectile(SecondaryProjectileSpec {
+            volley: ProjectileVolleySpec {
+                projectile: PrimaryProjectileSpec {
+                    speed: MELNORME_CONFUSE_SPEED,
+                    acceleration: 0.0,
+                    max_speed: MELNORME_CONFUSE_SPEED,
+                    life: MELNORME_CONFUSE_LIFE,
+                    offset: MELNORME_CONFUSE_OFFSET,
+                    turn_wait: 0,
+                    texture_prefix: "melnorme-confuse",
+                    sound_key: "",
+                    behavior: ProjectileBehaviorSpec::Tracking,
+                    collision: ProjectileCollisionSpec::None,
+                    impact: ProjectileImpactSpec {
+                        damage: 0,
+                        texture_prefix: "battle-blast",
+                        start_frame: 0,
+                        end_frame: 7,
+                        sound_key: "",
+                    },
+                },
+                spawns: &MELNORME_CONFUSE_SPAWNS,
+                sound_key: "",
+                target_mode: ProjectileTargetMode::EnemyShip,
+            },
+        })
+    }
 }

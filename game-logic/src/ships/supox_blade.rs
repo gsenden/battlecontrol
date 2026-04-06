@@ -1,4 +1,24 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    DirectionalThrustSpecialSpec, HitPolygonPoint, PrimaryProjectileSpec, ProjectileBehaviorSpec,
+    ProjectileCollisionSpec, ProjectileImpactSpec, ProjectileTargetMode, SpecialAbilitySpec,
+};
+
+const SUPOX_GOB_SPEED: f64 = 30.0;
+const SUPOX_GOB_LIFE: i32 = 10;
+const SUPOX_GOB_OFFSET: f64 = 23.0;
+const SUPOX_GOB_DAMAGE: i32 = 1;
+const SUPOX_RETRO_SPEED: f64 = 8.0;
+const SUPOX_GOB_POLYGON: [HitPolygonPoint; 8] = [
+    HitPolygonPoint { x: 0.0, y: -14.0 },
+    HitPolygonPoint { x: 6.0, y: -9.0 },
+    HitPolygonPoint { x: 8.0, y: 0.0 },
+    HitPolygonPoint { x: 6.0, y: 9.0 },
+    HitPolygonPoint { x: 0.0, y: 14.0 },
+    HitPolygonPoint { x: -6.0, y: 9.0 },
+    HitPolygonPoint { x: -8.0, y: 0.0 },
+    HitPolygonPoint { x: -6.0, y: -9.0 },
+];
 
 pub struct SupoxBlade {
     crew: i32,
@@ -65,4 +85,38 @@ impl Ship for SupoxBlade {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: SUPOX_GOB_SPEED,
+            acceleration: 0.0,
+            max_speed: SUPOX_GOB_SPEED,
+            life: SUPOX_GOB_LIFE,
+            offset: SUPOX_GOB_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "supox-gob",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::Polygon(&SUPOX_GOB_POLYGON),
+            impact: ProjectileImpactSpec {
+                damage: SUPOX_GOB_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::DirectionalThrust(DirectionalThrustSpecialSpec {
+            facing_offset: std::f64::consts::PI,
+            speed: SUPOX_RETRO_SPEED,
+            sound_key: "",
+        })
+    }
+
+    fn primary_projectile_target_mode(&self) -> ProjectileTargetMode {
+        ProjectileTargetMode::EnemyShip
+    }
 }

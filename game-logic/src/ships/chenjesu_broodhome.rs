@@ -1,4 +1,23 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, ProjectileSpawnSpec, ProjectileTargetMode,
+    ProjectileVolleySpec, SecondaryProjectileSpec, SpecialAbilitySpec,
+};
+
+const CHENJESU_CRYSTAL_SPEED: f64 = 16.0;
+const CHENJESU_CRYSTAL_LIFE: i32 = 90;
+const CHENJESU_CRYSTAL_OFFSET: f64 = 32.0;
+const CHENJESU_CRYSTAL_DAMAGE: i32 = 6;
+const CHENJESU_DOGGY_SPEED: f64 = 8.0;
+const CHENJESU_DOGGY_LIFE: i32 = 80;
+const CHENJESU_DOGGY_OFFSET: f64 = 36.0;
+const CHENJESU_DOGGY_DAMAGE: i32 = 3;
+const CHENJESU_DOGGY_SPAWNS: [ProjectileSpawnSpec; 1] = [ProjectileSpawnSpec {
+    facing_offset: 0,
+    forward_offset: CHENJESU_DOGGY_OFFSET,
+    lateral_offset: 0.0,
+}];
 
 pub struct ChenjesuBroodhome {
     crew: i32,
@@ -65,4 +84,55 @@ impl Ship for ChenjesuBroodhome {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: CHENJESU_CRYSTAL_SPEED,
+            acceleration: 0.0,
+            max_speed: CHENJESU_CRYSTAL_SPEED,
+            life: CHENJESU_CRYSTAL_LIFE,
+            offset: CHENJESU_CRYSTAL_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "chenjesu-spark",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: CHENJESU_CRYSTAL_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-45",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Projectile(SecondaryProjectileSpec {
+            volley: ProjectileVolleySpec {
+                projectile: PrimaryProjectileSpec {
+                    speed: CHENJESU_DOGGY_SPEED,
+                    acceleration: 0.0,
+                    max_speed: CHENJESU_DOGGY_SPEED,
+                    life: CHENJESU_DOGGY_LIFE,
+                    offset: CHENJESU_DOGGY_OFFSET,
+                    turn_wait: 2,
+                    texture_prefix: "chenjesu-doggy",
+                    sound_key: "",
+                    behavior: ProjectileBehaviorSpec::Tracking,
+                    collision: ProjectileCollisionSpec::None,
+                    impact: ProjectileImpactSpec {
+                        damage: CHENJESU_DOGGY_DAMAGE,
+                        texture_prefix: "battle-blast",
+                        start_frame: 0,
+                        end_frame: 7,
+                        sound_key: "battle-boom-23",
+                    },
+                },
+                spawns: &CHENJESU_DOGGY_SPAWNS,
+                sound_key: "",
+                target_mode: ProjectileTargetMode::EnemyShip,
+            },
+        })
+    }
 }

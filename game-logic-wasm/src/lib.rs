@@ -109,6 +109,7 @@ struct BattleShipSnapshotDto {
     facing: f64,
     thrusting: bool,
     dead: bool,
+    cloaked: bool,
     texture_prefix: String,
 }
 
@@ -121,6 +122,18 @@ struct ProjectileSnapshotDto {
     vx: f64,
     vy: f64,
     life: i32,
+    texture_prefix: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeteorSnapshotDto {
+    id: u64,
+    x: f64,
+    y: f64,
+    vx: f64,
+    vy: f64,
+    frame_index: i32,
     texture_prefix: String,
 }
 
@@ -142,6 +155,8 @@ struct LaserSnapshotDto {
     start_y: f64,
     end_x: f64,
     end_y: f64,
+    color: u32,
+    width: f64,
 }
 
 #[derive(Serialize)]
@@ -155,6 +170,7 @@ struct AudioEventSnapshotDto {
 struct BattleSnapshotDto {
     player: BattleShipSnapshotDto,
     target: BattleShipSnapshotDto,
+    meteors: Vec<MeteorSnapshotDto>,
     projectiles: Vec<ProjectileSnapshotDto>,
     explosions: Vec<ExplosionSnapshotDto>,
     lasers: Vec<LaserSnapshotDto>,
@@ -408,9 +424,19 @@ impl Battle {
         self.battle.set_player_weapon_target_ship();
     }
 
+    #[wasm_bindgen(js_name = "setPlayerSpecialTargetPoint")]
+    pub fn set_player_special_target_point(&mut self, x: f64, y: f64) {
+        self.battle.set_player_special_target_point(x, y);
+    }
+
     #[wasm_bindgen(js_name = "clearPlayerWeaponTarget")]
     pub fn clear_player_weapon_target(&mut self) {
         self.battle.clear_player_weapon_target();
+    }
+
+    #[wasm_bindgen(js_name = "clearPlayerSpecialTarget")]
+    pub fn clear_player_special_target(&mut self) {
+        self.battle.clear_player_special_target();
     }
 
     #[wasm_bindgen(js_name = "switchPlayerShip")]
@@ -529,6 +555,7 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             facing: snapshot.player.facing,
             thrusting: snapshot.player.thrusting,
             dead: snapshot.player.dead,
+            cloaked: snapshot.player.cloaked,
             texture_prefix: snapshot.player.texture_prefix.to_string(),
         },
         target: BattleShipSnapshotDto {
@@ -542,8 +569,18 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             facing: snapshot.target.facing,
             thrusting: snapshot.target.thrusting,
             dead: snapshot.target.dead,
+            cloaked: snapshot.target.cloaked,
             texture_prefix: snapshot.target.texture_prefix.to_string(),
         },
+        meteors: snapshot.meteors.into_iter().map(|meteor| MeteorSnapshotDto {
+            id: meteor.id,
+            x: meteor.x,
+            y: meteor.y,
+            vx: meteor.vx,
+            vy: meteor.vy,
+            frame_index: meteor.frame_index,
+            texture_prefix: meteor.texture_prefix.to_string(),
+        }).collect(),
         projectiles: snapshot.projectiles.into_iter().map(|projectile| ProjectileSnapshotDto {
             id: projectile.id,
             x: projectile.x,
@@ -566,6 +603,8 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             start_y: laser.start_y,
             end_x: laser.end_x,
             end_y: laser.end_y,
+            color: laser.color,
+            width: laser.width,
         }).collect(),
         audio_events: snapshot.audio_events.into_iter().map(|event| AudioEventSnapshotDto {
             key: event.key.to_string(),

@@ -1,4 +1,22 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, ProjectileSpawnSpec, ProjectileTargetMode,
+    ProjectileVolleySpec, SecondaryProjectileSpec, SpecialAbilitySpec,
+};
+
+const URQUAN_FUSION_SPEED: f64 = 20.0;
+const URQUAN_FUSION_LIFE: i32 = 20;
+const URQUAN_FUSION_OFFSET: f64 = 32.0;
+const URQUAN_FUSION_DAMAGE: i32 = 6;
+const URQUAN_FIGHTER_SPEED: f64 = 8.0;
+const URQUAN_FIGHTER_LIFE: i32 = 120;
+const URQUAN_FIGHTER_OFFSET: f64 = 16.0;
+const URQUAN_FIGHTER_SPAWNS: [ProjectileSpawnSpec; 1] = [ProjectileSpawnSpec {
+    facing_offset: 0,
+    forward_offset: URQUAN_FIGHTER_OFFSET,
+    lateral_offset: 0.0,
+}];
 
 pub struct UrquanDreadnought {
     crew: i32,
@@ -65,4 +83,55 @@ impl Ship for UrquanDreadnought {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: URQUAN_FUSION_SPEED,
+            acceleration: 0.0,
+            max_speed: URQUAN_FUSION_SPEED,
+            life: URQUAN_FUSION_LIFE,
+            offset: URQUAN_FUSION_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "urquan-fusion",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: URQUAN_FUSION_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-45",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Projectile(SecondaryProjectileSpec {
+            volley: ProjectileVolleySpec {
+                projectile: PrimaryProjectileSpec {
+                    speed: URQUAN_FIGHTER_SPEED,
+                    acceleration: 0.0,
+                    max_speed: URQUAN_FIGHTER_SPEED,
+                    life: URQUAN_FIGHTER_LIFE,
+                    offset: URQUAN_FIGHTER_OFFSET,
+                    turn_wait: 2,
+                    texture_prefix: "urquan-fighter",
+                    sound_key: "",
+                    behavior: ProjectileBehaviorSpec::Tracking,
+                    collision: ProjectileCollisionSpec::None,
+                    impact: ProjectileImpactSpec {
+                        damage: 1,
+                        texture_prefix: "battle-blast",
+                        start_frame: 0,
+                        end_frame: 7,
+                        sound_key: "battle-boom-23",
+                    },
+                },
+                spawns: &URQUAN_FIGHTER_SPAWNS,
+                sound_key: "",
+                target_mode: ProjectileTargetMode::EnemyShip,
+            },
+        })
+    }
 }

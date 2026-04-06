@@ -1,4 +1,16 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, SelfDestructSpec, SpecialAbilitySpec,
+};
+
+const SHOFIXTI_MISSILE_SPEED: f64 = 24.0;
+const SHOFIXTI_MISSILE_LIFE: i32 = 10;
+const SHOFIXTI_MISSILE_OFFSET: f64 = 51.0;
+const SHOFIXTI_MISSILE_DAMAGE: i32 = 1;
+const SHOFIXTI_DESTRUCT_DAMAGE: i32 = 18;
+const SHOFIXTI_DESTRUCT_RADIUS: f64 = 180.0;
+const SHOFIXTI_DESTRUCT_END_FRAME: i32 = 7;
 
 pub struct ShofixtiScout {
     crew: i32,
@@ -65,4 +77,36 @@ impl Ship for ShofixtiScout {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: SHOFIXTI_MISSILE_SPEED,
+            acceleration: 0.0,
+            max_speed: SHOFIXTI_MISSILE_SPEED,
+            life: SHOFIXTI_MISSILE_LIFE,
+            offset: SHOFIXTI_MISSILE_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "shofixti-missile",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: SHOFIXTI_MISSILE_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::SelfDestruct(SelfDestructSpec {
+            damage: SHOFIXTI_DESTRUCT_DAMAGE,
+            radius: SHOFIXTI_DESTRUCT_RADIUS,
+            texture_prefix: "shofixti-destruct",
+            end_frame: SHOFIXTI_DESTRUCT_END_FRAME,
+            sound_key: "",
+        })
+    }
 }

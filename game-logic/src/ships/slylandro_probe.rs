@@ -1,4 +1,9 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{InstantLaserSpec, PlanetHarvestSpec, ProjectileTargetMode, SpecialAbilitySpec};
+
+const SLYLANDRO_HARVEST_RANGE: f64 = 420.0;
+const SLYLANDRO_HARVEST_ENERGY: i32 = 6;
+const SLYLANDRO_LIGHTNING_RANGE: f64 = 72.0;
 
 pub struct SlylandroProbe {
     crew: i32,
@@ -65,4 +70,25 @@ impl Ship for SlylandroProbe {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
+        Some(InstantLaserSpec {
+            range: SLYLANDRO_LIGHTNING_RANGE,
+            damage: 2,
+            offset: 0.0,
+            sound_key: "",
+            impact_sound_key: "battle-boom-23",
+            color: 0xffffff,
+            width: 3.0,
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::PlanetHarvest(PlanetHarvestSpec {
+            range: SLYLANDRO_HARVEST_RANGE,
+            energy_gain: SLYLANDRO_HARVEST_ENERGY,
+            sound_key: "",
+        })
+    }
 }

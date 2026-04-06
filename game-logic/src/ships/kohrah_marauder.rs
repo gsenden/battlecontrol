@@ -1,4 +1,14 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    InstantLaserSpec, PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileTargetMode,
+    ProjectileCollisionSpec, ProjectileImpactSpec, SpecialAbilitySpec,
+};
+
+const KOHRAH_BUZZSAW_SPEED: f64 = 32.0;
+const KOHRAH_BUZZSAW_LIFE: i32 = 64;
+const KOHRAH_BUZZSAW_OFFSET: f64 = 28.0;
+const KOHRAH_BUZZSAW_DAMAGE: i32 = 4;
+const KOHRAH_GAS_RANGE: f64 = 96.0;
 
 pub struct KohrahMarauder {
     crew: i32,
@@ -65,4 +75,39 @@ impl Ship for KohrahMarauder {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: KOHRAH_BUZZSAW_SPEED,
+            acceleration: 0.0,
+            max_speed: KOHRAH_BUZZSAW_SPEED,
+            life: KOHRAH_BUZZSAW_LIFE,
+            offset: KOHRAH_BUZZSAW_OFFSET,
+            turn_wait: 4,
+            texture_prefix: "kohrah-buzzsaw",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: KOHRAH_BUZZSAW_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-45",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::InstantLaser(InstantLaserSpec {
+            range: KOHRAH_GAS_RANGE,
+            damage: 3,
+            offset: 2.0,
+            sound_key: "",
+            impact_sound_key: "battle-boom-23",
+            color: 0xffffff,
+            width: 3.0,
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
 }

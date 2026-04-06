@@ -1,4 +1,14 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    CloakSpec,
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, SpecialAbilitySpec,
+};
+
+const ILWRATH_FIRE_SPEED: f64 = 18.0;
+const ILWRATH_FIRE_LIFE: i32 = 12;
+const ILWRATH_FIRE_OFFSET: f64 = 24.0;
+const ILWRATH_FIRE_DAMAGE: i32 = 1;
 
 pub struct IlwrathAvenger {
     crew: i32,
@@ -65,4 +75,44 @@ impl Ship for IlwrathAvenger {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: ILWRATH_FIRE_SPEED,
+            acceleration: 0.0,
+            max_speed: ILWRATH_FIRE_SPEED,
+            life: ILWRATH_FIRE_LIFE,
+            offset: ILWRATH_FIRE_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "ilwrath-fire",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: ILWRATH_FIRE_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Cloak(CloakSpec {
+            sound_key: "",
+        })
+    }
+
+    fn special_state_persists_after_cooldown(&self) -> bool {
+        true
+    }
+
+    fn is_targetable(&self, special_active: bool) -> bool {
+        !special_active
+    }
+
+    fn is_cloaked(&self, special_active: bool) -> bool {
+        special_active
+    }
 }

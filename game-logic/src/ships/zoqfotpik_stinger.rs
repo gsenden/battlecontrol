@@ -1,4 +1,16 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    InstantLaserSpec, PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileTargetMode,
+    ProjectileCollisionSpec, ProjectileImpactSpec, SpecialAbilitySpec,
+};
+
+const ZOQ_SPIT_SPEED: f64 = 10.0;
+const ZOQ_SPIT_LIFE: i32 = 10;
+const ZOQ_SPIT_OFFSET: f64 = 13.0;
+const ZOQ_SPIT_DAMAGE: i32 = 1;
+const ZOQ_TONGUE_RANGE: f64 = 56.0;
+const ZOQ_TONGUE_OFFSET: f64 = 17.0;
+const ZOQ_TONGUE_DAMAGE: i32 = 12;
 
 pub struct ZoqfotpikStinger {
     crew: i32,
@@ -65,4 +77,39 @@ impl Ship for ZoqfotpikStinger {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: ZOQ_SPIT_SPEED,
+            acceleration: 0.0,
+            max_speed: ZOQ_SPIT_SPEED,
+            life: ZOQ_SPIT_LIFE,
+            offset: ZOQ_SPIT_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "zoqfotpik-spit",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: ZOQ_SPIT_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::InstantLaser(InstantLaserSpec {
+            range: ZOQ_TONGUE_RANGE,
+            damage: ZOQ_TONGUE_DAMAGE,
+            offset: ZOQ_TONGUE_OFFSET,
+            sound_key: "",
+            impact_sound_key: "battle-boom-45",
+            color: 0xffffff,
+            width: 3.0,
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
 }

@@ -29,13 +29,16 @@ import starMiscSml1 from '../assets/stars/stars-misc-sml-001.png';
 import battleMusic from '../assets/audio/battle-music.ogg';
 import androsynthPrimarySound from '../assets/audio/androsynth-primary.wav';
 import androsynthSpecialSound from '../assets/audio/androsynth-special.wav';
+import arilouPrimarySound from '../assets/audio/arilou-primary.wav';
+import arilouSpecialSound from '../assets/audio/arilou-special.wav';
+import arilouVictorySound from '../assets/audio/arilou-victory.ogg';
 import humanPrimarySound from '../assets/audio/human-primary.wav';
 import humanSpecialSound from '../assets/audio/human-special.ogg';
 import humanVictorySound from '../assets/audio/human-victory.ogg';
 import battleShipDiesSound from '../assets/audio/battle-shipdies.wav';
 import battleBoom23Sound from '../assets/audio/battle-boom-23.wav';
 import battleBoom45Sound from '../assets/audio/battle-boom-45.wav';
-import { velocityToSaturnFrame } from './projectile-frame.js';
+import { projectileFrameFor } from './projectile-frame.js';
 import { getShipHitPolygon, getTextureHitPolygon } from './hit-polygon.js';
 import {
   appendDebugLine,
@@ -108,6 +111,7 @@ export class BattleScene extends Phaser.Scene {
   private hud!: BattleHUD;
   private selectedShipIndex = 0;
   private projectileSprites: Phaser.GameObjects.Image[] = [];
+  private meteorSprites: Phaser.GameObjects.Image[] = [];
   private explosionSprites: Phaser.GameObjects.Image[] = [];
   private laserSprites: Phaser.GameObjects.Line[] = [];
   private battleMusic?: HTMLAudioElement;
@@ -165,6 +169,9 @@ export class BattleScene extends Phaser.Scene {
 
     this.load.audio('androsynth-primary', androsynthPrimarySound);
     this.load.audio('androsynth-special', androsynthSpecialSound);
+    this.load.audio('arilou-primary', arilouPrimarySound);
+    this.load.audio('arilou-special', arilouSpecialSound);
+    this.load.audio('arilou-victory', arilouVictorySound);
     this.load.audio('human-primary', humanPrimarySound);
     this.load.audio('human-special', humanSpecialSound);
     this.load.audio('human-victory', humanVictorySound);
@@ -285,6 +292,12 @@ export class BattleScene extends Phaser.Scene {
 
       const x = Math.round(pointer.worldX);
       const y = Math.round(pointer.worldY);
+      if (pointer.rightButtonDown()) {
+        this.battleWorker.postMessage({ type: 'setPlayerSpecialTargetPoint', x, y });
+        appendDebugLine(`teleport x=${x} y=${y}`);
+        return;
+      }
+
       const targetType = this.targetShip.containsPoint(pointer.worldX, pointer.worldY)
         ? 'ship'
         : 'point';
@@ -384,6 +397,11 @@ export class BattleScene extends Phaser.Scene {
   private updateCamera() {
     if (this.targetShip.dead) {
       this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
+      this.shipRenderScale = SHIP_FAR_SCALE;
+      this.planetRenderScale = PLANET_FAR_SCALE;
+      this.cameras.main.setZoom(
+        Phaser.Math.Linear(this.cameras.main.zoom, MIN_CAMERA_ZOOM, ZOOM_LERP),
+      );
       return;
     }
 
@@ -432,15 +450,17 @@ export class BattleScene extends Phaser.Scene {
     this.playerShip.applySnapshot(snapshot.player);
     this.targetShip.applySnapshot(snapshot.target);
     this.syncProjectileTrace(snapshot);
+    this.syncMeteors(snapshot);
     this.syncProjectiles(snapshot);
     this.syncExplosions(snapshot);
     this.syncLasers(snapshot);
     this.syncTargetOpponent(snapshot);
     this.playAudioEvents(snapshot);
+    const zoomStatus = `zoom=${this.cameras.main.zoom.toFixed(3)}`;
     setDebugStatus(
       snapshot.projectiles[0]
-        ? `rocket life=${snapshot.projectiles[0].life}`
-        : '',
+        ? `${zoomStatus} rocket life=${snapshot.projectiles[0].life}`
+        : zoomStatus,
     );
   }
 
@@ -480,6 +500,15 @@ export class BattleScene extends Phaser.Scene {
           this.sound.play(event.key, { volume: 0.55 });
           break;
         case 'androsynth-special':
+          this.sound.play(event.key, { volume: 0.65 });
+          break;
+        case 'arilou-primary':
+          this.sound.play(event.key, { volume: 0.55 });
+          break;
+        case 'arilou-special':
+          this.sound.play(event.key, { volume: 0.65 });
+          break;
+        case 'arilou-victory':
           this.sound.play(event.key, { volume: 0.65 });
           break;
         case 'human-primary':
@@ -533,11 +562,12 @@ export class BattleScene extends Phaser.Scene {
       sprite.setPosition(projectile.x, projectile.y);
 
       if (projectile.texturePrefix) {
-        const frameIndex = projectile.texturePrefix === 'human-saturn'
-          ? velocityToSaturnFrame(projectile.vx, projectile.vy)
-          : projectile.texturePrefix === 'androsynth-bubble'
-            ? projectile.life % 3
-          : this.velocityToProjectileFrame(projectile.vx, projectile.vy, 25);
+        const frameIndex = projectileFrameFor(
+          projectile.texturePrefix,
+          projectile.vx,
+          projectile.vy,
+          projectile.life,
+        );
         sprite.setTexture(`${projectile.texturePrefix}-big-${String(frameIndex).padStart(3, '0')}`);
         if (projectile.texturePrefix === 'androsynth-bubble') {
           sprite.setTint(0xa8f0ff);
@@ -553,6 +583,27 @@ export class BattleScene extends Phaser.Scene {
       }
 
       this.renderProjectileHitPolygon(polygon, sprite, 0x4488ff);
+    });
+  }
+
+  private syncMeteors(snapshot: BattleSnapshot) {
+    while (this.meteorSprites.length < snapshot.meteors.length) {
+      const meteor = this.add.image(0, 0, 'battle-asteroid-big-000');
+      meteor.setDepth(8);
+      this.meteorSprites.push(meteor);
+    }
+
+    while (this.meteorSprites.length > snapshot.meteors.length) {
+      this.meteorSprites.pop()?.destroy();
+    }
+
+    snapshot.meteors.forEach((meteor, index) => {
+      const sprite = this.meteorSprites[index];
+      sprite.setPosition(meteor.x, meteor.y);
+      sprite.setTexture(
+        `${meteor.texturePrefix}-big-${String(meteor.frameIndex).padStart(3, '0')}`,
+      );
+      sprite.setScale(0.9);
     });
   }
 
@@ -595,7 +646,6 @@ export class BattleScene extends Phaser.Scene {
   private syncLasers(snapshot: BattleSnapshot) {
     while (this.laserSprites.length < snapshot.lasers.length) {
       const laser = this.add.line(0, 0, 0, 0, 0, 0, 0xffffff, 0.95);
-      laser.setLineWidth(3, 3);
       laser.setDepth(12);
       this.laserSprites.push(laser);
     }
@@ -608,6 +658,7 @@ export class BattleScene extends Phaser.Scene {
       const line = this.laserSprites[index];
       line.setTo(laser.startX, laser.startY, laser.endX, laser.endY);
       line.setOrigin(0, 0);
+      line.setStrokeStyle(laser.width, laser.color, 0.95);
     });
   }
 
@@ -682,12 +733,6 @@ export class BattleScene extends Phaser.Scene {
     }
     graphics.closePath();
     graphics.strokePath();
-  }
-
-  private velocityToProjectileFrame(vx: number, vy: number, frameCount: number) {
-    let angle = Math.atan2(vy, vx) + Math.PI / 2;
-    angle = ((angle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
-    return Math.round(angle / (2 * Math.PI / frameCount)) % frameCount;
   }
 
   private getPresetBySpritePrefix(spritePrefix: string): ShipPreset {

@@ -1,4 +1,21 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    InstantLaserSpec, PrimaryProjectileSpec, ProjectileBehaviorSpec,
+    ProjectileCollisionSpec, ProjectileImpactSpec, ProjectileSpawnSpec,
+    ProjectileTargetMode, ProjectileVolleySpec, SecondaryProjectileSpec,
+    SpecialAbilitySpec,
+};
+
+const VUX_LASER_RANGE: f64 = 162.0;
+const VUX_LASER_OFFSET: f64 = 38.0;
+const VUX_LIMPET_SPEED: f64 = 25.0;
+const VUX_LIMPET_LIFE: i32 = 80;
+const VUX_LIMPET_OFFSET: f64 = 12.0;
+const VUX_LIMPET_SPAWNS: [ProjectileSpawnSpec; 1] = [ProjectileSpawnSpec {
+    facing_offset: 0,
+    forward_offset: VUX_LIMPET_OFFSET,
+    lateral_offset: 0.0,
+}];
 
 pub struct VuxIntruder {
     crew: i32,
@@ -65,4 +82,46 @@ impl Ship for VuxIntruder {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
+        Some(InstantLaserSpec {
+            range: VUX_LASER_RANGE,
+            damage: 1,
+            offset: VUX_LASER_OFFSET,
+            sound_key: "",
+            impact_sound_key: "battle-boom-23",
+            color: 0xffffff,
+            width: 3.0,
+            target_mode: ProjectileTargetMode::EnemyShip,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Projectile(SecondaryProjectileSpec {
+            volley: ProjectileVolleySpec {
+                projectile: PrimaryProjectileSpec {
+                    speed: VUX_LIMPET_SPEED,
+                    acceleration: 0.0,
+                    max_speed: VUX_LIMPET_SPEED,
+                    life: VUX_LIMPET_LIFE,
+                    offset: VUX_LIMPET_OFFSET,
+                    turn_wait: 2,
+                    texture_prefix: "vux-limpets",
+                    sound_key: "",
+                    behavior: ProjectileBehaviorSpec::Tracking,
+                    collision: ProjectileCollisionSpec::None,
+                    impact: ProjectileImpactSpec {
+                        damage: 0,
+                        texture_prefix: "battle-blast",
+                        start_frame: 0,
+                        end_frame: 7,
+                        sound_key: "",
+                    },
+                },
+                spawns: &VUX_LIMPET_SPAWNS,
+                sound_key: "",
+                target_mode: ProjectileTargetMode::EnemyShip,
+            },
+        })
+    }
 }

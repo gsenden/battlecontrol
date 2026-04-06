@@ -19,6 +19,8 @@ const ION_COLORS = [
   0x580000,
 ];
 
+const SHIP_DEPTH = 13;
+
 interface IonParticle {
   sprite: Phaser.GameObjects.Image;
   colorIndex: number;
@@ -42,6 +44,7 @@ export class Ship {
   vx: number;
   vy: number;
   dead: boolean;
+  cloaked: boolean;
 
   constructor(scene: Phaser.Scene, x: number, y: number, stats: ShipStats) {
     this.scene = scene;
@@ -57,11 +60,14 @@ export class Ship {
     this.vx = 0;
     this.vy = 0;
     this.dead = false;
+    this.cloaked = false;
 
     const defaultTexture = `${this.spritePrefix}-big-000`;
     this.sprite = scene.add.image(x, y, defaultTexture);
+    this.sprite.setDepth(SHIP_DEPTH);
     for (let i = 0; i < 8; i++) {
       const ghost = scene.add.image(x, y, defaultTexture);
+      ghost.setDepth(SHIP_DEPTH);
       ghost.setVisible(false);
       this.ghostSprites.push(ghost);
     }
@@ -76,6 +82,7 @@ export class Ship {
     this.energy = snapshot.energy;
     this.facing = snapshot.facing;
     this.dead = snapshot.dead;
+    this.cloaked = snapshot.cloaked;
     this.spritePrefix = snapshot.texturePrefix;
 
     if (!snapshot.dead && snapshot.thrusting) {
@@ -109,6 +116,7 @@ export class Ship {
     this.sprite.setPosition(x, y);
     this.sprite.setTexture(texture);
     this.sprite.setScale(scale * this.renderScaleMultiplier);
+    this.sprite.setAlpha(this.cloaked ? 0.28 : 1);
     const margin = Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.5;
 
     const xOffsets = [0];
@@ -138,6 +146,7 @@ export class Ship {
         ghost.setTexture(texture);
         ghost.setPosition(x + xOffset, y + yOffset);
         ghost.setScale(scale * this.renderScaleMultiplier);
+        ghost.setAlpha(this.cloaked ? 0.28 : 1);
         ghost.setVisible(true);
       }
     }

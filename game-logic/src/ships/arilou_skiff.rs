@@ -1,4 +1,13 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    InstantLaserSpec, ProjectileTargetMode, SpecialAbilitySpec, TeleportSpecialSpec,
+};
+use crate::velocity_vector::VelocityVector;
+
+const ARILOU_LASER_RANGE: f64 = 436.0;
+const ARILOU_LASER_DAMAGE: i32 = 1;
+const ARILOU_LASER_OFFSET: f64 = 0.0;
+const ARILOU_WARP_END_FRAME: i32 = 1;
 
 pub struct ArilouSkiff {
     crew: i32,
@@ -65,4 +74,42 @@ impl Ship for ArilouSkiff {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
+        Some(InstantLaserSpec {
+            range: ARILOU_LASER_RANGE,
+            damage: ARILOU_LASER_DAMAGE,
+            offset: ARILOU_LASER_OFFSET,
+            sound_key: "arilou-primary",
+            impact_sound_key: "battle-boom-23",
+            color: 0xffee55,
+            width: 4.0,
+            target_mode: ProjectileTargetMode::PlayerSelectedPointOrForward,
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::Teleport(TeleportSpecialSpec {
+            effect_texture_prefix: "arilou-warp",
+            end_frame: ARILOU_WARP_END_FRAME,
+            sound_key: "arilou-special",
+        })
+    }
+
+    fn victory_sound_key(&self) -> Option<&'static str> {
+        Some("arilou-victory")
+    }
+
+    fn thrust_velocity(
+        &self,
+        _velocity: &VelocityVector,
+        _allow_beyond_max_speed: bool,
+        _current_speed: f64,
+    ) -> Option<(f64, f64)> {
+        Some((self.facing().cos() * self.max_speed(), self.facing().sin() * self.max_speed()))
+    }
+
+    fn idle_velocity(&self, _velocity: &VelocityVector) -> Option<(f64, f64)> {
+        Some((0.0, 0.0))
+    }
 }

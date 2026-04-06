@@ -1,4 +1,16 @@
 use crate::ship::Ship;
+use crate::traits::ship_trait::{
+    CrewDrainTransferSpec,
+    PrimaryProjectileSpec, ProjectileBehaviorSpec, ProjectileCollisionSpec,
+    ProjectileImpactSpec, SpecialAbilitySpec,
+};
+
+const SYREEN_SONG_RANGE: f64 = 208.0;
+const SYREEN_MAX_TRANSFER: i32 = 8;
+const SYREEN_DAGGER_SPEED: f64 = 24.0;
+const SYREEN_DAGGER_LIFE: i32 = 16;
+const SYREEN_DAGGER_OFFSET: f64 = 28.0;
+const SYREEN_DAGGER_DAMAGE: i32 = 2;
 
 pub struct SyreenPenetrator {
     crew: i32,
@@ -65,4 +77,34 @@ impl Ship for SyreenPenetrator {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn primary_projectile_spec(&self) -> Option<PrimaryProjectileSpec> {
+        Some(PrimaryProjectileSpec {
+            speed: SYREEN_DAGGER_SPEED,
+            acceleration: 0.0,
+            max_speed: SYREEN_DAGGER_SPEED,
+            life: SYREEN_DAGGER_LIFE,
+            offset: SYREEN_DAGGER_OFFSET,
+            turn_wait: 0,
+            texture_prefix: "syreen-dagger",
+            sound_key: "",
+            behavior: ProjectileBehaviorSpec::Tracking,
+            collision: ProjectileCollisionSpec::None,
+            impact: ProjectileImpactSpec {
+                damage: SYREEN_DAGGER_DAMAGE,
+                texture_prefix: "battle-blast",
+                start_frame: 0,
+                end_frame: 7,
+                sound_key: "battle-boom-23",
+            },
+        })
+    }
+
+    fn special_ability_spec(&self) -> SpecialAbilitySpec {
+        SpecialAbilitySpec::CrewDrainTransfer(CrewDrainTransferSpec {
+            range: SYREEN_SONG_RANGE,
+            max_transfer: SYREEN_MAX_TRANSFER,
+            sound_key: "",
+        })
+    }
 }
