@@ -87,6 +87,8 @@ export class Ship {
 
     if (!snapshot.dead && snapshot.thrusting) {
       this.spawnIonParticle();
+    } else {
+      this.clearIonTrail();
     }
 
     this.updateIonTrail();
@@ -174,10 +176,7 @@ export class Ship {
   }
 
   destroy() {
-    for (const particle of this.ionTrail) {
-      particle.sprite.destroy();
-    }
-    this.ionTrail = [];
+    this.clearIonTrail();
 
     this.sprite.destroy();
     for (const ghost of this.ghostSprites) {
@@ -210,6 +209,13 @@ export class Ship {
         particle.sprite.setTint(ION_COLORS[particle.colorIndex]);
       }
     }
+  }
+
+  private clearIonTrail() {
+    for (const particle of this.ionTrail) {
+      particle.sprite.destroy();
+    }
+    this.ionTrail = [];
   }
 
   private facingToFrame(): number {

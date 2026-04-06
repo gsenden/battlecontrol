@@ -2079,11 +2079,14 @@ fn ship_body_angle(ship: &AnyShip) -> f64 {
 
 fn apply_commands(matter_world: &mut MatterWorld, body_id: usize, commands: Vec<PhysicsCommand>) -> bool {
     let mut thrusting = false;
+    const THRUST_VELOCITY_EPSILON: f64 = 0.001;
 
     for command in commands {
         match command {
             PhysicsCommand::SetVelocity { vx, vy } => {
-                thrusting = true;
+                if vx.abs() > THRUST_VELOCITY_EPSILON || vy.abs() > THRUST_VELOCITY_EPSILON {
+                    thrusting = true;
+                }
                 matter_world.set_body_velocity(body_id, vx, vy);
             }
             PhysicsCommand::AddVelocity { vx, vy } => {

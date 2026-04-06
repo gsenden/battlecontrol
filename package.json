@@ -4,12 +4,19 @@
   "version": "0.1.6",
   "type": "module",
   "scripts": {
+    "build:wasm": "wasm-pack build game-logic-wasm --target web --out-dir ../pkg",
+    "predev": "npm run build:wasm",
     "dev": "vite",
+    "prebuild": "npm run build:wasm",
     "build": "tsc && vite build",
+    "prebuild:pages": "npm run build:wasm",
     "build:pages": "tsc && vite build --mode pages",
+    "prepreview": "npm run build:wasm",
     "preview": "vite preview",
+    "pretest": "npm run build:wasm",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "npm run build:wasm"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
