@@ -29,6 +29,9 @@ export default defineConfig({
 		fs: {
 			allow: ['..'],
 		},
+		proxy: {
+			'/auth': 'http://localhost:3000',
+		},
 	},
 	worker: {
 		plugins: () => [wasm()],

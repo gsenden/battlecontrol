@@ -1,3 +1,6 @@
 [workspace]
-members = ["common", "game-logic", "game-logic-wasm"]
+members = ["common", "game-logic", "game-logic-wasm", "server"]
+
+[workspace.package]
+version = "0.1.0"
 resolver = "2"

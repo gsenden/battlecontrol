@@ -1,0 +1,50 @@
+use common::dto::UserDto;
+use super::row::Row;
+use super::table_entity::TableEntity;
+
+pub struct UsersTable;
+
+impl TableEntity for UsersTable {
+    type Entity = UserDto;
+
+    fn table_name() -> &'static str {
+        "users"
+    }
+
+    fn schema_version() -> u32 {
+        1
+    }
+
+    fn create_table_sql() -> String {
+        format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE
+            )",
+            Self::table_name()
+        )
+    }
+
+    fn from_row(row: &Row) -> Result<Self::Entity, String> {
+        Ok(UserDto {
+            id: row.get("id")?,
+            name: row.get("name")?,
+            email: row.get("email")?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adapters::db::SqliteAdapter;
+
+    #[test]
+    fn ensure_table_creates_users_table() {
+        let adapter = SqliteAdapter::new(":memory:").unwrap();
+        adapter.ensure_table::<UsersTable>().unwrap();
+        let rows = adapter.query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").unwrap();
+        assert_eq!(rows.len(), 1);
+    }
+}

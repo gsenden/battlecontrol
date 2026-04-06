@@ -13,6 +13,7 @@ dist-ssr
 *.local
 frontend/build
 frontend/.svelte-kit
+*.db
 
 # Editor directories and files
 .vscode/*
