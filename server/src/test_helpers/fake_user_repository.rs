@@ -31,10 +31,6 @@ impl FakeUserRepository {
 
 #[async_trait]
 impl UserRepositoryDrivenPort for FakeUserRepository {
-    async fn find_by_email(&self, email: &str) -> Result<Option<UserDto>, Error> {
-        Ok(self.existing_user.as_ref().filter(|u| u.email == email).cloned())
-    }
-
     async fn find_by_name(&self, name: &str) -> Result<Option<UserDto>, Error> {
         Ok(self.existing_user.as_ref().filter(|u| u.name == name).cloned())
     }

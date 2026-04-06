@@ -35,11 +35,10 @@ components:
     LoginUserRequest:
       type: object
       required:
-        - email
+        - name
       properties:
-        email:
+        name:
           type: string
-          format: email
     CreateUserRequest:
       type: object
       required:

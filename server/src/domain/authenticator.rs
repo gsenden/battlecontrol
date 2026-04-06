@@ -22,9 +22,9 @@ impl<DP: AuthenticatorDrivenPorts> Authenticator<DP> {
 impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
     async fn login_user(&self, login_request: LoginRequestDto) -> Result<UserDto, Error> {
         self.user_repo
-            .find_by_email(&login_request.email)
+            .find_by_name(&login_request.name)
             .await?
-            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(login_request.email)))
+            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(login_request.name)))
     }
 
     async fn register_user(&self, registration_request: RegistrationRequestDto) -> Result<UserDto, Error> {
@@ -42,7 +42,7 @@ mod tests {
     use super::*;
     use crate::ports::AuthDrivingPort;
     use crate::test_helpers::FakeUserRepository;
-    use crate::test_helpers::sample_data::{test_registration_request, TEST_EMAIL};
+    use crate::test_helpers::sample_data::{test_registration_request, TEST_PLAYER_NAME};
 
     struct FakeDrivenPorts;
     impl AuthenticatorDrivenPorts for FakeDrivenPorts {
@@ -55,10 +55,10 @@ mod tests {
             .with_existing_user(crate::test_helpers::sample_data::test_user());
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
         let result = auth
-            .login_user(LoginRequestDto { email: TEST_EMAIL.to_string() })
+            .login_user(LoginRequestDto { name: TEST_PLAYER_NAME.to_string() })
             .await
             .unwrap();
-        assert_eq!(result.email, TEST_EMAIL);
+        assert_eq!(result.name, TEST_PLAYER_NAME);
     }
 
     #[tokio::test]
@@ -66,7 +66,7 @@ mod tests {
         let repo = FakeUserRepository::new();
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
         let result = auth
-            .login_user(LoginRequestDto { email: TEST_EMAIL.to_string() })
+            .login_user(LoginRequestDto { name: TEST_PLAYER_NAME.to_string() })
             .await;
         assert!(matches!(result, Err(Error::UserNotFound(_))));
     }

@@ -6,7 +6,7 @@
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
 
-	let email = $state('');
+	let name = $state('');
 	let isSubmitting = $state(false);
 	let errorMessage = $state('');
 	let loggedInUser = $state<UserDto | null>(null);
@@ -14,7 +14,7 @@
 	onMount(() => {
 		loggedInUser = loadStoredUser();
 		if (loggedInUser) {
-			email = loggedInUser.email;
+			name = loggedInUser.name;
 		}
 	});
 
@@ -23,7 +23,7 @@
 		isSubmitting = true;
 
 		try {
-			const user = await loginUser(email.trim());
+			const user = await loginUser(name.trim());
 			storeUser(user);
 			loggedInUser = user;
 		} catch (error) {
@@ -46,14 +46,13 @@
 			void submitLogin();
 		}}>
 			<div class="space-y-2">
-				<label class="block font-mono text-[12px] uppercase tracking-[0.24em] text-[#86a8cc]" for="email">
-					{t('EMAIL', $currentLanguage)}
+				<label class="block font-mono text-[12px] uppercase tracking-[0.24em] text-[#86a8cc]" for="player-name">
+					{t('PLAYER_NAME', $currentLanguage)}
 				</label>
 				<input
-					id="email"
-					bind:value={email}
+					id="player-name"
+					bind:value={name}
 					class="w-full rounded-[12px] border border-[#3d5570] bg-[#08111d] px-4 py-3 text-[16px] text-[#f3f7fb] outline-none transition focus:border-[#83c5ff]"
-					type="email"
 					required
 				/>
 			</div>

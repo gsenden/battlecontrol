@@ -7,11 +7,10 @@ const AUTH_SERVER_LABEL = 'localhost:3000';
 export interface UserDto {
 	id: number;
 	name: string;
-	email: string;
 }
 
 interface LoginRequestDto {
-	email: string;
+	name: string;
 }
 
 interface ApiError {
@@ -35,8 +34,8 @@ export async function registerUser(name: string): Promise<UserDto> {
 	return response.json() as Promise<UserDto>;
 }
 
-export async function loginUser(email: string): Promise<UserDto> {
-	const body: LoginRequestDto = { email };
+export async function loginUser(name: string): Promise<UserDto> {
+	const body: LoginRequestDto = { name };
 	const response = await fetch('/auth/login', {
 		method: 'POST',
 		headers: {

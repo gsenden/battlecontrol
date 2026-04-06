@@ -12,15 +12,14 @@ impl TableEntity for UsersTable {
     }
 
     fn schema_version() -> u32 {
-        1
+        2
     }
 
     fn create_table_sql() -> String {
         format!(
             "CREATE TABLE IF NOT EXISTS {} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL UNIQUE
+                name TEXT NOT NULL UNIQUE
             )",
             Self::table_name()
         )
@@ -30,7 +29,6 @@ impl TableEntity for UsersTable {
         Ok(UserDto {
             id: row.get("id")?,
             name: row.get("name")?,
-            email: row.get("email")?,
         })
     }
 }

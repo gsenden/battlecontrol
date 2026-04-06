@@ -19,37 +19,10 @@ impl SqliteUserRepository {
         sqlite.ensure_table::<UsersTable>()?;
         Ok(Self { sqlite })
     }
-
-    fn generated_email(name: &str) -> String {
-        let slug = name
-            .to_lowercase()
-            .trim()
-            .chars()
-            .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
-            .collect::<String>()
-            .split('-')
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join("-");
-        format!("{}@battlecontrol.local", if slug.is_empty() { "pilot" } else { &slug })
-    }
 }
 
 #[async_trait]
 impl UserRepositoryDrivenPort for SqliteUserRepository {
-    async fn find_by_email(&self, email: &str) -> Result<Option<UserDto>, Error> {
-        let rows = self.sqlite.query_with_params(
-            &format!("SELECT * FROM {} WHERE email = ?", UsersTable::table_name()),
-            &[&email as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())?;
-
-        match rows.first() {
-            Some(row) => Ok(Some(UsersTable::from_row(row)
-                .map_err(|_| db_error())?)),
-            None => Ok(None),
-        }
-    }
-
     async fn find_by_name(&self, name: &str) -> Result<Option<UserDto>, Error> {
         let rows = self.sqlite.query_with_params(
             &format!("SELECT * FROM {} WHERE name = ?", UsersTable::table_name()),
@@ -64,10 +37,9 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
     }
 
     async fn save_user(&self, name: &str) -> Result<UserDto, Error> {
-        let email = Self::generated_email(name);
         self.sqlite.execute_with_params(
-            &format!("INSERT INTO {} (name, email) VALUES (?, ?)", UsersTable::table_name()),
-            &[&name as &dyn rusqlite::types::ToSql, &email],
+            &format!("INSERT INTO {} (name) VALUES (?)", UsersTable::table_name()),
+            &[&name as &dyn rusqlite::types::ToSql],
         ).map_err(|_| db_error())?;
 
         let id = self.sqlite.last_insert_rowid()
@@ -76,7 +48,6 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
         Ok(UserDto {
             id,
             name: name.to_string(),
-            email: email.to_string(),
         })
     }
 }
@@ -88,21 +59,6 @@ mod tests {
     fn repo_in_memory() -> SqliteUserRepository {
         let sqlite = SqliteAdapter::new(":memory:").unwrap();
         SqliteUserRepository::new(sqlite).unwrap()
-    }
-
-    #[tokio::test]
-    async fn save_user_can_be_found_by_email() {
-        let repo = repo_in_memory();
-        repo.save_user("TestPlayer").await.unwrap();
-        let found = repo.find_by_email("testplayer@battlecontrol.local").await.unwrap();
-        assert!(found.is_some());
-    }
-
-    #[tokio::test]
-    async fn find_by_email_returns_none_when_not_found() {
-        let repo = repo_in_memory();
-        let found = repo.find_by_email("nobody@test.com").await.unwrap();
-        assert!(found.is_none());
     }
 
     #[tokio::test]

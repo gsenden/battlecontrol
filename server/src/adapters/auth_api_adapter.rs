@@ -84,10 +84,10 @@ mod tests {
     use common::domain::ErrorTrait;
     use crate::adapters::ApiAdapter;
     use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
-    use crate::test_helpers::sample_data::{TEST_EMAIL, TEST_PLAYER_NAME, TEST_USER_ID};
+    use crate::test_helpers::sample_data::{TEST_PLAYER_NAME, TEST_USER_ID};
 
     fn login_request() -> axum::http::Request<Body> {
-        let body = format!(r#"{{"email":"{TEST_EMAIL}"}}"#);
+        let body = format!(r#"{{"name":"{TEST_PLAYER_NAME}"}}"#);
         axum::http::Request::builder()
             .method("POST")
             .uri(common::domain::Resource::AuthLogin.path())
@@ -142,14 +142,14 @@ mod tests {
 
     #[tokio::test]
     async fn login_user_error_logs_error() {
-        let error = common::domain::error::UserNotFoundError::new(TEST_EMAIL.to_string());
+        let error = common::domain::error::UserNotFoundError::new(TEST_PLAYER_NAME.to_string());
         let (_, logger) = post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
         assert_eq!(logger.logged_errors()[0].key(), common::domain::ErrorCode::UserNotFound);
     }
 
     #[tokio::test]
     async fn login_user_error_returns_error_code() {
-        let error = common::domain::error::UserNotFoundError::new(TEST_EMAIL.to_string());
+        let error = common::domain::error::UserNotFoundError::new(TEST_PLAYER_NAME.to_string());
         let (response, _) = post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -165,9 +165,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_user_passes_email_to_port() {
+    async fn login_user_passes_name_to_port() {
         let (_, port) = post_login_user().await;
-        assert_eq!(port.login_user_calls()[0].email, TEST_EMAIL);
+        assert_eq!(port.login_user_calls()[0].name, TEST_PLAYER_NAME);
     }
 
     #[tokio::test]
