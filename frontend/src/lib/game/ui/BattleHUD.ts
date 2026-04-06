@@ -20,12 +20,7 @@ export class BattleHUD {
   private component: Record<string, unknown>;
   private ship: HUDShipInfo | null = null;
 
-  constructor() {
-    const hudRoot = document.getElementById('hud');
-    if (!hudRoot) {
-      throw new Error('Missing #hud mount point');
-    }
-
+  constructor(hudRoot: HTMLElement) {
     this.container = document.createElement('div');
     this.container.id = 'battle-hud';
     this.container.className = 'h-full w-full pointer-events-none';

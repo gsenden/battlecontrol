@@ -269,7 +269,8 @@ export class BattleScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.cameraTarget);
 
     // HUD
-    this.hud = new BattleHUD();
+    const hudElement = this.game.registry.get('hudElement') as HTMLElement;
+    this.hud = new BattleHUD(hudElement);
     this.syncHudWithSelectedShip();
 
     // Input

@@ -5,31 +5,11 @@
   "type": "module",
   "scripts": {
     "build:wasm": "wasm-pack build game-logic-wasm --target web --out-dir ../pkg",
-    "predev": "npm run build:wasm",
-    "dev": "vite",
-    "prebuild": "npm run build:wasm",
-    "build": "tsc && vite build",
-    "prebuild:pages": "npm run build:wasm",
-    "build:pages": "tsc && vite build --mode pages",
-    "prepreview": "npm run build:wasm",
-    "preview": "vite preview",
-    "pretest": "npm run build:wasm",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "postinstall": "npm run build:wasm"
-  },
-  "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "@tailwindcss/vite": "^4.2.2",
-    "svelte": "^5.55.0",
-    "tailwindcss": "^4.2.2",
-    "typescript": "~5.9.3",
-    "vite": "^8.0.1",
-    "vite-plugin-wasm": "^3.6.0",
-    "vitest": "^4.1.1"
-  },
-  "dependencies": {
-    "game-logic-wasm": "file:pkg",
-    "phaser": "^3.90.0"
+    "dev": "npm run build:wasm && cd frontend && npm run dev",
+    "build": "npm run build:wasm && cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "test": "cd frontend && npm run test",
+    "test:watch": "cd frontend && npm run test:watch",
+    "postinstall": "npm run build:wasm && cd frontend && npm install"
   }
 }

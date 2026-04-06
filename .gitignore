@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+frontend/build
+frontend/.svelte-kit
 
 # Editor directories and files
 .vscode/*
