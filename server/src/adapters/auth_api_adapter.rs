@@ -97,7 +97,7 @@ mod tests {
     }
 
     fn register_request() -> axum::http::Request<Body> {
-        let body = format!(r#"{{"name":"{TEST_PLAYER_NAME}","email":"{TEST_EMAIL}"}}"#);
+        let body = format!(r#"{{"name":"{TEST_PLAYER_NAME}"}}"#);
         axum::http::Request::builder()
             .method("POST")
             .uri(common::domain::Resource::AuthUser.path())
@@ -199,12 +199,6 @@ mod tests {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
         assert_eq!(user.id, TEST_USER_ID);
-    }
-
-    #[tokio::test]
-    async fn register_user_passes_email_to_port() {
-        let (_, port) = post_register_user().await;
-        assert_eq!(port.register_user_calls()[0].email, TEST_EMAIL);
     }
 
     #[tokio::test]

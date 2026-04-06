@@ -28,12 +28,12 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
     }
 
     async fn register_user(&self, registration_request: RegistrationRequestDto) -> Result<UserDto, Error> {
-        if self.user_repo.find_by_email(&registration_request.email).await?.is_some() {
+        if self.user_repo.find_by_name(&registration_request.name).await?.is_some() {
             return Err(Error::UserAlreadyExists(
-                common::domain::error::UserAlreadyExistsError::new(registration_request.email),
+                common::domain::error::UserAlreadyExistsError::new(registration_request.name),
             ));
         }
-        self.user_repo.save_user(&registration_request.name, &registration_request.email).await
+        self.user_repo.save_user(&registration_request.name).await
     }
 }
 

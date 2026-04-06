@@ -19,6 +19,20 @@ impl SqliteUserRepository {
         sqlite.ensure_table::<UsersTable>()?;
         Ok(Self { sqlite })
     }
+
+    fn generated_email(name: &str) -> String {
+        let slug = name
+            .to_lowercase()
+            .trim()
+            .chars()
+            .map(|character| if character.is_ascii_alphanumeric() { character } else { '-' })
+            .collect::<String>()
+            .split('-')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("-");
+        format!("{}@battlecontrol.local", if slug.is_empty() { "pilot" } else { &slug })
+    }
 }
 
 #[async_trait]
@@ -36,7 +50,21 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
         }
     }
 
-    async fn save_user(&self, name: &str, email: &str) -> Result<UserDto, Error> {
+    async fn find_by_name(&self, name: &str) -> Result<Option<UserDto>, Error> {
+        let rows = self.sqlite.query_with_params(
+            &format!("SELECT * FROM {} WHERE name = ?", UsersTable::table_name()),
+            &[&name as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())?;
+
+        match rows.first() {
+            Some(row) => Ok(Some(UsersTable::from_row(row)
+                .map_err(|_| db_error())?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn save_user(&self, name: &str) -> Result<UserDto, Error> {
+        let email = Self::generated_email(name);
         self.sqlite.execute_with_params(
             &format!("INSERT INTO {} (name, email) VALUES (?, ?)", UsersTable::table_name()),
             &[&name as &dyn rusqlite::types::ToSql, &email],
@@ -65,8 +93,8 @@ mod tests {
     #[tokio::test]
     async fn save_user_can_be_found_by_email() {
         let repo = repo_in_memory();
-        repo.save_user("TestPlayer", "test@test.com").await.unwrap();
-        let found = repo.find_by_email("test@test.com").await.unwrap();
+        repo.save_user("TestPlayer").await.unwrap();
+        let found = repo.find_by_email("testplayer@battlecontrol.local").await.unwrap();
         assert!(found.is_some());
     }
 
@@ -75,5 +103,13 @@ mod tests {
         let repo = repo_in_memory();
         let found = repo.find_by_email("nobody@test.com").await.unwrap();
         assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn save_user_can_be_found_by_name() {
+        let repo = repo_in_memory();
+        repo.save_user("TestPlayer").await.unwrap();
+        let found = repo.find_by_name("TestPlayer").await.unwrap();
+        assert!(found.is_some());
     }
 }

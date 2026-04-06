@@ -8,7 +8,7 @@ use super::sample_data::test_user;
 #[derive(Clone)]
 pub struct FakeUserRepository {
     existing_user: Option<UserDto>,
-    save_user_calls: Arc<Mutex<Vec<(String, String)>>>,
+    save_user_calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl FakeUserRepository {
@@ -24,7 +24,7 @@ impl FakeUserRepository {
         self
     }
 
-    pub fn save_user_calls(&self) -> Vec<(String, String)> {
+    pub fn save_user_calls(&self) -> Vec<String> {
         self.save_user_calls.lock().unwrap().clone()
     }
 }
@@ -35,8 +35,12 @@ impl UserRepositoryDrivenPort for FakeUserRepository {
         Ok(self.existing_user.as_ref().filter(|u| u.email == email).cloned())
     }
 
-    async fn save_user(&self, name: &str, email: &str) -> Result<UserDto, Error> {
-        self.save_user_calls.lock().unwrap().push((name.to_string(), email.to_string()));
+    async fn find_by_name(&self, name: &str) -> Result<Option<UserDto>, Error> {
+        Ok(self.existing_user.as_ref().filter(|u| u.name == name).cloned())
+    }
+
+    async fn save_user(&self, name: &str) -> Result<UserDto, Error> {
+        self.save_user_calls.lock().unwrap().push(name.to_string());
         Ok(test_user())
     }
 }

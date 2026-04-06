@@ -20,22 +20,13 @@
 		}
 	});
 
-	function registrationEmailFor(playerName: string): string {
-		const slug = playerName
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-		return `${slug || 'pilot'}@battlecontrol.local`;
-	}
-
 	async function submitRegistration() {
 		errorMessage = '';
 		isSubmitting = true;
 
 		try {
 			const trimmedName = name.trim();
-			const user = await registerUser(trimmedName, registrationEmailFor(trimmedName));
+			const user = await registerUser(trimmedName);
 			storeUser(user);
 			registeredUser = user;
 		} catch (error) {

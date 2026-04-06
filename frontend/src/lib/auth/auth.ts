@@ -19,13 +19,13 @@ interface ApiError {
 	params?: Record<string, string>;
 }
 
-export async function registerUser(name: string, email: string): Promise<UserDto> {
+export async function registerUser(name: string): Promise<UserDto> {
 	const response = await fetch('/auth/user', {
 		method: 'POST',
 		headers: {
 			'content-type': 'application/json',
 		},
-		body: JSON.stringify({ name, email }),
+		body: JSON.stringify({ name }),
 	});
 
 	if (!response.ok) {

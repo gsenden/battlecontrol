@@ -28,8 +28,8 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
 		'SIGN_IN': 'Sign in',
 		'SIGN_UP': 'Sign up',
 		'START_BATTLE': 'Start battle',
-		'USER_ALREADY_EXISTS': 'User with email address {email} already exists',
-		'USER_NOT_FOUND': 'No pilot found for email address {email}',
+		'USER_ALREADY_EXISTS': 'User {email} already exists',
+		'USER_NOT_FOUND': 'No pilot found for {email}',
 		'WELCOME': 'Welcome',
 	},
 	'nl-NL': {
@@ -53,8 +53,8 @@ export const translations: Record<Language, Record<I18nKey, string>> = {
 		'SIGN_IN': 'Inloggen',
 		'SIGN_UP': 'Registreren',
 		'START_BATTLE': 'Start gevecht',
-		'USER_ALREADY_EXISTS': 'Gebruiker met e-mailadres {email} bestaat al',
-		'USER_NOT_FOUND': 'Geen piloot gevonden voor e-mailadres {email}',
+		'USER_ALREADY_EXISTS': 'Gebruiker {email} bestaat al',
+		'USER_NOT_FOUND': 'Geen piloot gevonden voor {email}',
 		'WELCOME': 'Welkom',
 	},
 };

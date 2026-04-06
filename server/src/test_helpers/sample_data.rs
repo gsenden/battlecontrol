@@ -7,7 +7,6 @@ pub const TEST_USER_ID: i64 = 1;
 pub fn test_registration_request() -> RegistrationRequestDto {
     RegistrationRequestDto {
         name: TEST_PLAYER_NAME.to_string(),
-        email: TEST_EMAIL.to_string(),
     }
 }
 
