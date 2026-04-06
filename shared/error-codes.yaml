@@ -3,6 +3,7 @@
 
 # User errors
 - USER_ALREADY_EXISTS # A user with this email address already exists
+- USER_NOT_FOUND # No user exists for this email address
 
 # Database errors
 - DATABASE_ERROR # A database operation failed

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use common::domain::Error;
-use common::dto::{RegistrationRequestDto, UserDto};
+use common::domain::error::UserNotFoundError;
+use common::dto::{LoginRequestDto, RegistrationRequestDto, UserDto};
 use crate::ports::{AuthDrivingPort, UserRepositoryDrivenPort};
 
 pub trait AuthenticatorDrivenPorts: Send + Sync + 'static {
@@ -19,6 +20,13 @@ impl<DP: AuthenticatorDrivenPorts> Authenticator<DP> {
 
 #[async_trait]
 impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
+    async fn login_user(&self, login_request: LoginRequestDto) -> Result<UserDto, Error> {
+        self.user_repo
+            .find_by_email(&login_request.email)
+            .await?
+            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(login_request.email)))
+    }
+
     async fn register_user(&self, registration_request: RegistrationRequestDto) -> Result<UserDto, Error> {
         if self.user_repo.find_by_email(&registration_request.email).await?.is_some() {
             return Err(Error::UserAlreadyExists(
@@ -34,11 +42,33 @@ mod tests {
     use super::*;
     use crate::ports::AuthDrivingPort;
     use crate::test_helpers::FakeUserRepository;
-    use crate::test_helpers::sample_data::{test_registration_request, TEST_PLAYER_NAME, TEST_EMAIL};
+    use crate::test_helpers::sample_data::{test_registration_request, TEST_EMAIL};
 
     struct FakeDrivenPorts;
     impl AuthenticatorDrivenPorts for FakeDrivenPorts {
         type UserRepo = FakeUserRepository;
+    }
+
+    #[tokio::test]
+    async fn login_user_returns_existing_user() {
+        let repo = FakeUserRepository::new()
+            .with_existing_user(crate::test_helpers::sample_data::test_user());
+        let auth = Authenticator::<FakeDrivenPorts>::new(repo);
+        let result = auth
+            .login_user(LoginRequestDto { email: TEST_EMAIL.to_string() })
+            .await
+            .unwrap();
+        assert_eq!(result.email, TEST_EMAIL);
+    }
+
+    #[tokio::test]
+    async fn login_user_returns_error_when_user_does_not_exist() {
+        let repo = FakeUserRepository::new();
+        let auth = Authenticator::<FakeDrivenPorts>::new(repo);
+        let result = auth
+            .login_user(LoginRequestDto { email: TEST_EMAIL.to_string() })
+            .await;
+        assert!(matches!(result, Err(Error::UserNotFound(_))));
     }
 
     #[tokio::test]

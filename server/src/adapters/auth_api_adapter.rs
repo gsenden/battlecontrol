@@ -2,7 +2,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::Json;
 use axum::routing::post;
-use common::dto::RegistrationRequestDto;
+use common::dto::{LoginRequestDto, RegistrationRequestDto};
 use super::ApiAdapter;
 use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
 
@@ -30,6 +30,10 @@ where
     fn routes(self) -> axum::Router {
         axum::Router::new()
             .route(
+                common::domain::Resource::AuthLogin.path(),
+                post(login_user::<AuthPort, Logger>),
+            )
+            .route(
                 common::domain::Resource::AuthUser.path(),
                 post(register_user::<AuthPort, Logger>),
             )
@@ -37,6 +41,22 @@ where
                 auth: self.auth,
                 logger: self.logger,
             }))
+    }
+}
+
+async fn login_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    Json(body): Json<LoginRequestDto>,
+) -> axum::response::Response {
+    match state.auth.login_user(body).await {
+        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Err(error) => {
+            state.logger.log_error(&error);
+            axum::response::IntoResponse::into_response((
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(error),
+            ))
+        }
     }
 }
 
@@ -66,6 +86,16 @@ mod tests {
     use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
     use crate::test_helpers::sample_data::{TEST_EMAIL, TEST_PLAYER_NAME, TEST_USER_ID};
 
+    fn login_request() -> axum::http::Request<Body> {
+        let body = format!(r#"{{"email":"{TEST_EMAIL}"}}"#);
+        axum::http::Request::builder()
+            .method("POST")
+            .uri(common::domain::Resource::AuthLogin.path())
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    }
+
     fn register_request() -> axum::http::Request<Body> {
         let body = format!(r#"{{"name":"{TEST_PLAYER_NAME}","email":"{TEST_EMAIL}"}}"#);
         axum::http::Request::builder()
@@ -74,6 +104,23 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(body))
             .unwrap()
+    }
+
+    async fn post_login_user() -> (axum::http::Response<Body>, FakeAuthDrivingPort) {
+        let fake_port = FakeAuthDrivingPort::new();
+        let port_clone = fake_port.clone();
+        let adapter = AuthApiAdapter { auth: fake_port, logger: FakeLoggerDrivingPort::new() };
+        let response = adapter.routes().oneshot(login_request()).await.unwrap();
+        (response, port_clone)
+    }
+
+    async fn post_login_user_with_error(error: common::domain::Error) -> (axum::http::Response<Body>, FakeLoggerDrivingPort) {
+        let fake_port = FakeAuthDrivingPort::new().with_login_user_error(error);
+        let fake_logger = FakeLoggerDrivingPort::new();
+        let logger_clone = fake_logger.clone();
+        let adapter = AuthApiAdapter { auth: fake_port, logger: fake_logger };
+        let response = adapter.routes().oneshot(login_request()).await.unwrap();
+        (response, logger_clone)
     }
 
     async fn post_register_user() -> (axum::http::Response<Body>, FakeAuthDrivingPort) {
@@ -91,6 +138,36 @@ mod tests {
         let adapter = AuthApiAdapter { auth: fake_port, logger: fake_logger };
         let response = adapter.routes().oneshot(register_request()).await.unwrap();
         (response, logger_clone)
+    }
+
+    #[tokio::test]
+    async fn login_user_error_logs_error() {
+        let error = common::domain::error::UserNotFoundError::new(TEST_EMAIL.to_string());
+        let (_, logger) = post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
+        assert_eq!(logger.logged_errors()[0].key(), common::domain::ErrorCode::UserNotFound);
+    }
+
+    #[tokio::test]
+    async fn login_user_error_returns_error_code() {
+        let error = common::domain::error::UserNotFoundError::new(TEST_EMAIL.to_string());
+        let (response, _) = post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["code"], "UserNotFound");
+    }
+
+    #[tokio::test]
+    async fn login_user_returns_user_id() {
+        let (response, _) = post_login_user().await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
+        assert_eq!(user.id, TEST_USER_ID);
+    }
+
+    #[tokio::test]
+    async fn login_user_passes_email_to_port() {
+        let (_, port) = post_login_user().await;
+        assert_eq!(port.login_user_calls()[0].email, TEST_EMAIL);
     }
 
     #[tokio::test]
@@ -139,6 +216,12 @@ mod tests {
     #[tokio::test]
     async fn routes_registers_post_auth_user() {
         let (response, _) = post_register_user().await;
+        assert_ne!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn routes_registers_post_auth_login() {
+        let (response, _) = post_login_user().await;
         assert_ne!(response.status(), axum::http::StatusCode::NOT_FOUND);
     }
 

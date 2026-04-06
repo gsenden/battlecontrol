@@ -1,10 +1,22 @@
-Hoopenapi: "3.1.0"
+openapi: "3.1.0"
 info:
   title: Matter-rs Game Server
   version: "0.1.0"
   description: Multiplayer game server API
 
 paths:
+  /auth/login:
+    post:
+      summary: Sign in an existing player
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginUserRequest"
+      responses:
+        "200":
+          description: Login successful
   /auth/user:
     post:
       summary: Register a new player
@@ -20,13 +32,21 @@ paths:
 
 components:
   schemas:
+    LoginUserRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
     CreateUserRequest:
       type: object
       required:
-        - player_name
+        - name
         - email
       properties:
-        player_name:
+        name:
           type: string
         email:
           type: string
