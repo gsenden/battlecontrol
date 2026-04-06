@@ -1,6 +1,7 @@
 APP_NAME: "Battle Control"
 AUTH_SUBTITLE: "Registreer een piloot om door te gaan"
 AUTH_SUCCESS: "Piloot gereed"
+CANCEL: "Annuleren"
 HOME_SUBTITLE: "In ons universum, waar de Androsynth, VUX, Thraddash, Ur-Quan, Melnorme, Mensen en andere rassen strijden om Star Control, ben jij de piloot die samen met je maten telkens weer de overwinning behaalt door:"
 LOGIN: "Inloggen"
 LOGIN_SUBTITLE: "Ga verder met een bestaande piloot"
