@@ -1,7 +1,7 @@
 SERVER:
   HOST:
     env: MATTER_SERVER_HOST
-    default: "localhost"
+    default: "127.0.0.1"
   PORT:
     env: MATTER_SERVER_PORT
     default: "3000"

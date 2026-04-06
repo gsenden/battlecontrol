@@ -1,8 +1,7 @@
 import { translate } from '$lib/i18n/i18n.js';
 import type { I18nKey } from '$lib/i18n/translations.js';
 
-const AUTH_USER_STORAGE_KEY = 'battlecontrol.auth.user';
-const AUTH_SERVER_LABEL = 'localhost:3000';
+const AUTH_SERVER_LABEL = '127.0.0.1:3000';
 
 export interface UserDto {
 	id: number;
@@ -34,6 +33,7 @@ interface ApiError {
 export async function registerUser(name: string): Promise<UserDto> {
 	const response = await fetch('/auth/user', {
 		method: 'POST',
+		credentials: 'same-origin',
 		headers: {
 			'content-type': 'application/json',
 		},
@@ -51,6 +51,7 @@ export async function loginUser(name: string): Promise<UserDto> {
 	const body: LoginRequestDto = { name };
 	const response = await fetch('/auth/login', {
 		method: 'POST',
+		credentials: 'same-origin',
 		headers: {
 			'content-type': 'application/json',
 		},
@@ -69,6 +70,7 @@ export async function registerWithPasskey(name: string): Promise<UserDto> {
 	const body: PasskeyStartRequestDto = { name };
 	const startResponse = await fetch('/auth/passkey/register/start', {
 		method: 'POST',
+		credentials: 'same-origin',
 		headers: {
 			'content-type': 'application/json',
 		},
@@ -90,6 +92,7 @@ export async function registerWithPasskey(name: string): Promise<UserDto> {
 
 	const finishResponse = await fetch('/auth/passkey/register/finish', {
 		method: 'POST',
+		credentials: 'same-origin',
 		headers: {
 			'content-type': 'application/json',
 		},
@@ -111,6 +114,7 @@ export async function loginWithPasskey(name: string): Promise<UserDto> {
 	const body: PasskeyStartRequestDto = { name };
 	const startResponse = await fetch('/auth/passkey/login/start', {
 		method: 'POST',
+		credentials: 'same-origin',
 		headers: {
 			'content-type': 'application/json',
 		},
@@ -132,6 +136,7 @@ export async function loginWithPasskey(name: string): Promise<UserDto> {
 
 	const finishResponse = await fetch('/auth/passkey/login/finish', {
 		method: 'POST',
+		credentials: 'same-origin',
 		headers: {
 			'content-type': 'application/json',
 		},
@@ -148,26 +153,32 @@ export async function loginWithPasskey(name: string): Promise<UserDto> {
 	return finishResponse.json() as Promise<UserDto>;
 }
 
-export function loadStoredUser(): UserDto | null {
-	if (typeof window === 'undefined') {
+export async function getCurrentUser(): Promise<UserDto | null> {
+	const response = await fetch('/auth/me', {
+		method: 'GET',
+		credentials: 'same-origin',
+	});
+
+	if (response.status === 401) {
 		return null;
 	}
 
-	const raw = window.localStorage.getItem(AUTH_USER_STORAGE_KEY);
-	if (!raw) {
-		return null;
+	if (!response.ok) {
+		throw await parseApiError(response);
 	}
 
-	try {
-		return JSON.parse(raw) as UserDto;
-	} catch {
-		window.localStorage.removeItem(AUTH_USER_STORAGE_KEY);
-		return null;
-	}
+	return response.json() as Promise<UserDto>;
 }
 
-export function storeUser(user: UserDto) {
-	window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+export async function logoutUser(): Promise<void> {
+	const response = await fetch('/auth/logout', {
+		method: 'POST',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
 }
 
 export function toReadableErrorMessage(error: unknown): string {
@@ -176,6 +187,10 @@ export function toReadableErrorMessage(error: unknown): string {
 		if (key) {
 			return translate(key, error.params);
 		}
+	}
+
+	if (isPasskeyCancelledError(error)) {
+		return translate('PASSKEY_CANCELLED');
 	}
 
 	if (error instanceof TypeError) {
@@ -202,6 +217,10 @@ function isApiError(error: unknown): error is ApiError {
 		&& error !== null
 		&& 'code' in error
 		&& typeof Reflect.get(error, 'code') === 'string';
+}
+
+function isPasskeyCancelledError(error: unknown): boolean {
+	return error instanceof DOMException && error.name === 'NotAllowedError';
 }
 
 const ERROR_KEY_TO_I18N: Record<string, I18nKey | undefined> = {

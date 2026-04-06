@@ -7,6 +7,7 @@ HOME_SUBTITLE: "In a universe where the Androsynth, VUX, Thraddash, Ur-Quan, Mel
 LOGIN: "Log in"
 LOGIN_SUBTITLE: "Resume with an existing pilot"
 LOGIN_WITH_ONE_TIME_CODE: "Log in with one-time code"
+PASSKEY_CANCELLED: "The passkey action was cancelled or denied"
 PASSKEY_UNAVAILABLE: "Passkeys are not supported in this browser"
 DATABASE_ERROR: "A database error occurred"
 EMAIL: "Email address"

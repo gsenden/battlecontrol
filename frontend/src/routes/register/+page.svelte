@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { loadStoredUser, registerWithPasskey, storeUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
+	import { getCurrentUser, registerWithPasskey, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
@@ -14,11 +14,19 @@
 	let registeredUser = $state<UserDto | null>(null);
 
 	onMount(() => {
-		const storedUser = loadStoredUser();
-		if (storedUser) {
-			name = storedUser.name;
-		}
+		void loadCurrentUser();
 	});
+
+	async function loadCurrentUser() {
+		try {
+			const currentUser = await getCurrentUser();
+			if (currentUser) {
+				name = currentUser.name;
+			}
+		} catch {
+			// The page should still be usable even if the session probe fails.
+		}
+	}
 
 	async function submitRegistration() {
 		errorMessage = '';
@@ -27,7 +35,6 @@
 		try {
 			const trimmedName = name.trim();
 			const user = await registerWithPasskey(trimmedName);
-			storeUser(user);
 			registeredUser = user;
 		} catch (error) {
 			errorMessage = toReadableErrorMessage(error);

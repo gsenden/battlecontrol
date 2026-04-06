@@ -1,11 +1,16 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
-use axum::routing::post;
+use axum::routing::{get, post};
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
-    PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto, RegistrationRequestDto,
+    PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto, RegistrationRequestDto, UserDto,
 };
+use uuid::Uuid;
 use super::ApiAdapter;
 use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
 
@@ -23,6 +28,7 @@ impl<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> AuthApiAdapter<AuthPo
 struct AppState<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> {
     auth: AuthPort,
     logger: Logger,
+    sessions: Mutex<HashMap<String, UserDto>>,
 }
 
 impl<AuthPort, Logger> ApiAdapter for AuthApiAdapter<AuthPort, Logger>
@@ -35,6 +41,14 @@ where
             .route(
                 common::domain::Resource::AuthLogin.path(),
                 post(login_user::<AuthPort, Logger>),
+            )
+            .route(
+                common::domain::Resource::AuthMe.path(),
+                get(current_user::<AuthPort, Logger>),
+            )
+            .route(
+                common::domain::Resource::AuthLogout.path(),
+                post(logout::<AuthPort, Logger>),
             )
             .route(
                 common::domain::Resource::AuthUser.path(),
@@ -59,22 +73,21 @@ where
             .with_state(Arc::new(AppState {
                 auth: self.auth,
                 logger: self.logger,
+                sessions: Mutex::new(HashMap::new()),
             }))
     }
 }
 
 async fn login_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
     Json(body): Json<LoginRequestDto>,
-) -> axum::response::Response {
+) -> Response {
     match state.auth.login_user(body).await {
-        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Ok(user) => login_response(jar, &state, user),
         Err(error) => {
             state.logger.log_error(&error);
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error),
-            ))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
         }
     }
 }
@@ -82,31 +95,26 @@ async fn login_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
 async fn start_passkey_registration<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
     Json(body): Json<PasskeyStartRegistrationRequestDto>,
-) -> axum::response::Response {
+) -> Response {
     match state.auth.start_passkey_registration(body).await {
-        Ok(options) => axum::response::IntoResponse::into_response(Json(options)),
+        Ok(options) => Json(options).into_response(),
         Err(error) => {
             state.logger.log_error(&error);
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error),
-            ))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
         }
     }
 }
 
 async fn finish_passkey_registration<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
     Json(body): Json<PasskeyFinishRegistrationRequestDto>,
-) -> axum::response::Response {
+) -> Response {
     match state.auth.finish_passkey_registration(body).await {
-        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Ok(user) => login_response(jar, &state, user),
         Err(error) => {
             state.logger.log_error(&error);
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error),
-            ))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
         }
     }
 }
@@ -114,55 +122,103 @@ async fn finish_passkey_registration<AuthPort: AuthDrivingPort, Logger: LoggerDr
 async fn start_passkey_login<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
     Json(body): Json<PasskeyStartLoginRequestDto>,
-) -> axum::response::Response {
+) -> Response {
     match state.auth.start_passkey_login(body).await {
-        Ok(options) => axum::response::IntoResponse::into_response(Json(options)),
+        Ok(options) => Json(options).into_response(),
         Err(error) => {
             state.logger.log_error(&error);
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error),
-            ))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
         }
     }
 }
 
 async fn finish_passkey_login<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
     Json(body): Json<PasskeyFinishLoginRequestDto>,
-) -> axum::response::Response {
+) -> Response {
     match state.auth.finish_passkey_login(body).await {
-        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Ok(user) => login_response(jar, &state, user),
         Err(error) => {
             state.logger.log_error(&error);
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error),
-            ))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
         }
     }
 }
 
 async fn register_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
     Json(body): Json<RegistrationRequestDto>,
-) -> axum::response::Response {
+) -> Response {
     match state.auth.register_user(body).await {
-        Ok(user) => axum::response::IntoResponse::into_response(Json(user)),
+        Ok(user) => login_response(jar, &state, user),
         Err(error) => {
             state.logger.log_error(&error);
-            axum::response::IntoResponse::into_response((
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(error),
-            ))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
         }
     }
+}
+
+async fn current_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
+) -> Response {
+    match session_user(&state, &jar) {
+        Some(user) => Json(user).into_response(),
+        None => StatusCode::UNAUTHORIZED.into_response(),
+    }
+}
+
+async fn logout<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
+) -> Response {
+    if let Some(session_id) = session_id(&jar) {
+        state.sessions.lock().unwrap().remove(&session_id);
+    }
+
+    let cleared_jar = jar.remove(session_cookie(""));
+    (cleared_jar, StatusCode::NO_CONTENT).into_response()
+}
+
+fn login_response<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    jar: CookieJar,
+    state: &AppState<AuthPort, Logger>,
+    user: UserDto,
+) -> Response {
+    let session_id = Uuid::new_v4().to_string();
+    state.sessions.lock().unwrap().insert(session_id.clone(), user.clone());
+    let jar = jar.add(session_cookie(&session_id));
+    (jar, Json(user)).into_response()
+}
+
+fn session_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    state: &AppState<AuthPort, Logger>,
+    jar: &CookieJar,
+) -> Option<UserDto> {
+    let session_id = session_id(jar)?;
+    state.sessions.lock().unwrap().get(&session_id).cloned()
+}
+
+fn session_id(jar: &CookieJar) -> Option<String> {
+    jar.get("battlecontrol-session")
+        .map(|cookie| cookie.value().to_string())
+}
+
+fn session_cookie(session_id: &str) -> Cookie<'static> {
+    Cookie::build(("battlecontrol-session", session_id.to_string()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .build()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::Body;
+    use axum::http::header::SET_COOKIE;
     use tower::ServiceExt;
     use common::domain::ErrorTrait;
     use crate::adapters::ApiAdapter;
@@ -186,6 +242,15 @@ mod tests {
             .uri(common::domain::Resource::AuthUser.path())
             .header("content-type", "application/json")
             .body(Body::from(body))
+            .unwrap()
+    }
+
+    fn auth_me_request(session_cookie: &str) -> axum::http::Request<Body> {
+        axum::http::Request::builder()
+            .method("GET")
+            .uri(common::domain::Resource::AuthMe.path())
+            .header("cookie", session_cookie)
+            .body(Body::empty())
             .unwrap()
     }
 
@@ -221,6 +286,29 @@ mod tests {
         let adapter = AuthApiAdapter { auth: fake_port, logger: fake_logger };
         let response = adapter.routes().oneshot(register_request()).await.unwrap();
         (response, logger_clone)
+    }
+
+    #[tokio::test]
+    async fn login_user_sets_session_cookie() {
+        let (response, _) = post_login_user().await;
+        let set_cookie = response.headers().get(SET_COOKIE).unwrap().to_str().unwrap();
+        assert!(set_cookie.contains("battlecontrol-session="));
+    }
+
+    #[tokio::test]
+    async fn auth_me_returns_logged_in_user() {
+        let fake_port = FakeAuthDrivingPort::new();
+        let adapter = AuthApiAdapter { auth: fake_port, logger: FakeLoggerDrivingPort::new() };
+        let app = adapter.routes();
+
+        let login_response = app.clone().oneshot(login_request()).await.unwrap();
+        let set_cookie = login_response.headers().get(SET_COOKIE).unwrap().to_str().unwrap();
+        let session_cookie = set_cookie.split(';').next().unwrap();
+
+        let response = app.oneshot(auth_me_request(session_cookie)).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
+        assert_eq!(user.id, TEST_USER_ID);
     }
 
     #[tokio::test]

@@ -7,6 +7,7 @@ HOME_SUBTITLE: "In ons universum, waar de Androsynth, VUX, Thraddash, Ur-Quan, M
 LOGIN: "Inloggen"
 LOGIN_SUBTITLE: "Ga verder met een bestaande piloot"
 LOGIN_WITH_ONE_TIME_CODE: "Inloggen met eenmalige code"
+PASSKEY_CANCELLED: "De passkey-actie is geannuleerd of geweigerd"
 PASSKEY_UNAVAILABLE: "Passkeys worden niet ondersteund in deze browser"
 DATABASE_ERROR: "Er is een databasefout opgetreden"
 EMAIL: "E-mailadres"

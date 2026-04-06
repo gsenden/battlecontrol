@@ -1,4 +1,9 @@
+use std::convert::Infallible;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use axum::response::IntoResponse;
 use tower_http::services::{ServeDir, ServeFile};
+use tower::ServiceExt;
 use super::ApiAdapter;
 
 pub struct AxumAdapter {
@@ -20,8 +25,24 @@ impl AxumAdapter {
     pub fn serve_spa(self, static_dir: &str) -> Self {
         let fallback = ServeFile::new(format!("{static_dir}/index.html"));
         let serve_dir = ServeDir::new(static_dir).fallback(fallback);
+        let static_service = tower::service_fn(move |request: Request<Body>| {
+            let serve_dir = serve_dir.clone();
+            async move {
+                if request.uri().path().starts_with("/auth") {
+                    return Ok::<_, Infallible>(StatusCode::NOT_FOUND.into_response());
+                }
+
+                let response = serve_dir
+                    .oneshot(request)
+                    .await
+                    .map(|response| response.into_response())
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                Ok::<_, Infallible>(response)
+            }
+        });
+
         AxumAdapter {
-            router: self.router.fallback_service(serve_dir),
+            router: self.router.fallback_service(static_service),
         }
     }
 
@@ -45,6 +66,10 @@ impl AxumAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
+    use tower::ServiceExt;
+    use crate::adapters::AuthApiAdapter;
+    use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
 
     #[test]
     fn axum_adapter_exists() {
@@ -62,5 +87,48 @@ mod tests {
 
         let _ = AxumAdapter::new()
             .register(MockAdapter);
+    }
+
+    #[tokio::test]
+    async fn serve_spa_does_not_handle_auth_paths() {
+        let app = AxumAdapter::new()
+            .register(AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new()))
+            .serve_spa("frontend/build")
+            .router;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/auth/unknown")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert!(body.is_empty());
+    }
+
+    #[tokio::test]
+    async fn serve_spa_keeps_auth_me_route_active() {
+        let app = AxumAdapter::new()
+            .register(AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new()))
+            .serve_spa("frontend/build")
+            .router;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }

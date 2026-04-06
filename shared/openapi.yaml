@@ -17,6 +17,20 @@ paths:
       responses:
         "200":
           description: Login successful
+  /auth/me:
+    get:
+      summary: Get the current signed-in player
+      responses:
+        "200":
+          description: Current user
+        "401":
+          description: No active session
+  /auth/logout:
+    post:
+      summary: Sign out the current player
+      responses:
+        "204":
+          description: Logout successful
   /auth/passkey/register/start:
     post:
       summary: Start passkey registration for a new player
