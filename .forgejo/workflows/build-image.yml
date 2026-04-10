@@ -1,0 +1,33 @@
+name: Build Image
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-image:
+    runs-on: codeberg-homelab
+    env:
+      IMAGE_NAME: forgejo.senden.dev/gsenden/battlecontrol
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image tag
+        run: |
+          echo "IMAGE_TAG=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
+
+      - name: Log in to Forgejo registry
+        env:
+          FORGEJO_REGISTRY_USER: ${{ secrets.FORGEJO_REGISTRY_USER }}
+          FORGEJO_REGISTRY_TOKEN: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
+        run: |
+          echo "$FORGEJO_REGISTRY_TOKEN" | docker login forgejo.senden.dev --username "$FORGEJO_REGISTRY_USER" --password-stdin
+
+      - name: Publish branch image
+        if: github.ref != 'refs/heads/main'
+        run: ./scripts/publish-image.sh "$IMAGE_NAME" "$IMAGE_TAG"
+
+      - name: Publish main image
+        if: github.ref == 'refs/heads/main'
+        run: ./scripts/publish-image.sh "$IMAGE_NAME" "$IMAGE_TAG" latest

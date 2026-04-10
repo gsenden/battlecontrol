@@ -1,0 +1,12 @@
+.git
+.idea
+.vite
+node_modules
+frontend/node_modules
+target
+pkg
+frontend/build
+battlecontrol.db
+.claude
+.codex
+PLAN.md

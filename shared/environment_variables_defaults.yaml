@@ -1,4 +1,7 @@
 SERVER:
+  DATABASE_PATH:
+    env: MATTER_SERVER_DATABASE_PATH
+    default: "battlecontrol.db"
   HOST:
     env: MATTER_SERVER_HOST
     default: "127.0.0.1"
