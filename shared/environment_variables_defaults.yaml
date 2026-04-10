@@ -8,3 +8,13 @@ SERVER:
   PORT:
     env: MATTER_SERVER_PORT
     default: "3000"
+  WEBAUTHN:
+    RP_ID:
+      env: MATTER_SERVER_WEBAUTHN_RP_ID
+      default: "localhost"
+    ORIGIN:
+      env: MATTER_SERVER_WEBAUTHN_ORIGIN
+      default: "http://localhost:3000"
+    ALLOWED_ORIGINS:
+      env: MATTER_SERVER_WEBAUTHN_ALLOWED_ORIGINS
+      default: "http://localhost:5173,http://localhost:5175"

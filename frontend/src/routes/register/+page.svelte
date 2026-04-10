@@ -17,11 +17,11 @@
 		void loadCurrentUser();
 	});
 
-	async function loadCurrentUser() {
+async function loadCurrentUser() {
 		try {
 			const currentUser = await getCurrentUser();
 			if (currentUser) {
-				name = currentUser.name;
+				window.location.assign('/lobby');
 			}
 		} catch {
 			// The page should still be usable even if the session probe fails.
@@ -36,6 +36,7 @@
 			const trimmedName = name.trim();
 			const user = await registerWithPasskey(trimmedName);
 			registeredUser = user;
+			window.location.assign('/lobby');
 		} catch (error) {
 			errorMessage = toReadableErrorMessage(error);
 		} finally {

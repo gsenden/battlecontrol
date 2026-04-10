@@ -66,6 +66,7 @@ export default defineConfig({
 		exclude: ['game-logic-wasm'],
 	},
 	server: {
+		strictPort: true,
 		fs: {
 			allow: ['..'],
 		},

@@ -1,10 +1,27 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { getCurrentUser } from '$lib/auth/auth.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
 	import LandingActionButton from '$lib/ui/LandingActionButton.svelte';
 	import LandingTextLink from '$lib/ui/LandingTextLink.svelte';
+
+	onMount(() => {
+		void redirectLoggedInUserToLobby();
+	});
+
+	async function redirectLoggedInUserToLobby() {
+		try {
+			const currentUser = await getCurrentUser();
+			if (currentUser) {
+				window.location.assign('/lobby');
+			}
+		} catch {
+			// The landing page should remain usable when the session probe fails.
+		}
+	}
 </script>
 
 <div class="flex h-full items-start justify-center px-6 pt-[18vh]">

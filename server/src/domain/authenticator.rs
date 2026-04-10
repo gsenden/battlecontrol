@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use common::domain::EnvVar;
 use common::domain::Error;
 use common::domain::error::{AuthenticationFailedError, UserNotFoundError};
 use common::dto::{
@@ -91,10 +92,11 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
                 },
             );
 
-        Ok(PasskeyOptionsDto {
-            public_key: extract_public_key_json(options)
-                .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?,
-        })
+        let mut public_key = extract_public_key_json(options)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
+        simplify_registration_options(&mut public_key);
+
+        Ok(PasskeyOptionsDto { public_key })
     }
 
     async fn finish_passkey_registration(&self, request: PasskeyFinishRegistrationRequestDto) -> Result<UserDto, Error> {
@@ -171,12 +173,43 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
 }
 
 fn build_webauthn() -> Result<Webauthn, String> {
-    let dev_origin = Url::parse("http://localhost:5173").map_err(|error| error.to_string())?;
-    let server_origin = Url::parse("http://localhost:3000").map_err(|error| error.to_string())?;
-    let mut builder = WebauthnBuilder::new("localhost", &server_origin).map_err(|error| error.to_string())?;
+    let rp_id = EnvVar::ServerWebauthnRpId.value();
+    let server_origin = Url::parse(&EnvVar::ServerWebauthnOrigin.value()).map_err(|error| error.to_string())?;
+    let mut builder = WebauthnBuilder::new(&rp_id, &server_origin)
+        .map_err(|error| error.to_string())?;
     builder = builder.rp_name("Battle Control");
-    builder = builder.append_allowed_origin(&dev_origin);
+
+    for allowed_origin in webauthn_allowed_origins() {
+        let allowed_origin = Url::parse(&allowed_origin).map_err(|error| error.to_string())?;
+        builder = builder.append_allowed_origin(&allowed_origin);
+    }
+
     builder.build().map_err(|error| error.to_string())
+}
+
+fn webauthn_allowed_origins() -> Vec<String> {
+    EnvVar::ServerWebauthnAllowedOrigins
+        .value()
+        .split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn simplify_registration_options(options: &mut serde_json::Value) {
+    let target = if options.get("publicKey").is_some() {
+        &mut options["publicKey"]
+    } else {
+        options
+    };
+    if let Some(auth_selection) = target.get_mut("authenticatorSelection") {
+        auth_selection["residentKey"] = "preferred".into();
+        auth_selection["userVerification"] = "preferred".into();
+    }
+    if let Some(extensions) = target.get_mut("extensions") {
+        *extensions = serde_json::json!({ "credProps": true });
+    }
 }
 
 fn extract_public_key_json<T: ::serde::Serialize>(options: T) -> Result<serde_json::Value, serde_json::Error> {
@@ -197,6 +230,33 @@ mod tests {
     struct FakeDrivenPorts;
     impl AuthenticatorDrivenPorts for FakeDrivenPorts {
         type UserRepo = FakeUserRepository;
+    }
+
+    #[test]
+    fn webauthn_allowed_origins_returns_default_origins() {
+        assert_eq!(webauthn_allowed_origins(), vec![
+            "http://localhost:5173".to_string(),
+            "http://localhost:5175".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn webauthn_allowed_origins_splits_env_var() {
+        unsafe {
+            std::env::set_var(
+                "MATTER_SERVER_WEBAUTHN_ALLOWED_ORIGINS",
+                "https://battlecontrol.io,https://www.battlecontrol.io",
+            );
+        }
+
+        assert_eq!(webauthn_allowed_origins(), vec![
+            "https://battlecontrol.io".to_string(),
+            "https://www.battlecontrol.io".to_string(),
+        ]);
+
+        unsafe {
+            std::env::remove_var("MATTER_SERVER_WEBAUTHN_ALLOWED_ORIGINS");
+        }
     }
 
     #[tokio::test]
