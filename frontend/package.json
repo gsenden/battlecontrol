@@ -1,33 +1,33 @@
 {
-  "name": "battlecontrol-frontend",
-  "private": true,
-  "version": "0.1.6",
-  "type": "module",
-  "scripts": {
-    "generate:i18n": "node scripts/generate-i18n.js",
-    "dev": "npm run generate:i18n && vite dev",
-    "build": "npm run generate:i18n && vite build",
-    "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "devDependencies": {
-    "@sveltejs/adapter-static": "^3.0.0",
-    "@sveltejs/kit": "^2.0.0",
-    "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "@tailwindcss/vite": "^4.2.2",
-    "svelte": "^5.55.0",
-    "svelte-check": "^4.0.0",
-    "tailwindcss": "^4.2.2",
-    "typescript": "~5.9.3",
-    "vite": "^8.0.1",
-    "vite-plugin-wasm": "^3.6.0",
-    "vitest": "^4.1.1",
-    "yaml": "^2.8.3"
-  },
-  "dependencies": {
-    "game-logic-wasm": "file:../pkg",
-    "phaser": "^3.90.0"
-  }
+	"name": "battlecontrol-frontend",
+	"private": true,
+	"version": "0.1.7",
+	"type": "module",
+	"scripts": {
+		"generate:i18n": "node scripts/generate-i18n.js",
+		"dev": "npm run generate:i18n && vite dev",
+		"build": "npm run generate:i18n && vite build",
+		"preview": "vite preview",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-static": "^3.0.0",
+		"@sveltejs/kit": "^2.0.0",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@tailwindcss/vite": "^4.2.2",
+		"svelte": "^5.55.0",
+		"svelte-check": "^4.0.0",
+		"tailwindcss": "^4.2.2",
+		"typescript": "~5.9.3",
+		"vite": "^8.0.1",
+		"vite-plugin-wasm": "^3.6.0",
+		"vitest": "^4.1.1",
+		"yaml": "^2.8.3"
+	},
+	"dependencies": {
+		"game-logic-wasm": "file:../pkg",
+		"phaser": "^3.90.0"
+	}
 }

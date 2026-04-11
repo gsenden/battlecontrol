@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { currentLanguage, setLanguage } from '$lib/i18n/i18n.js';
+	import { APP_VERSION } from '$lib/game/version.js';
 	import StarfieldBackground from '$lib/ui/StarfieldBackground.svelte';
 
 	let { children } = $props();
@@ -27,4 +28,5 @@
 	<div class="app-content">
 		{@render children()}
 	</div>
+	<div id="version-badge">v{APP_VERSION}</div>
 </div>
