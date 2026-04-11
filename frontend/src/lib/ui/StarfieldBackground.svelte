@@ -95,49 +95,67 @@
 
 <div class="starfield-shell" aria-hidden="true">
 
-	<div class="starfield-layer starfield-layer-big">
-		{#each bigStars as star}
-			<img
-				alt=""
-				class="starfield-star"
-				draggable="false"
-				src={star.texture}
-				style:left={`${star.x}%`};
-				style:top={`${star.y}%`};
-				style:opacity={star.opacity};
-				style:transform={`translate(-50%, -50%) scale(${star.scale})`}
-			/>
-		{/each}
+	<div class="starfield-layer">
+		<div class="starfield-track starfield-layer-big">
+			{#each [0, 1, 2, 3] as tile}
+				<div class="starfield-tile" class:starfield-tile-right={tile % 2 === 1} class:starfield-tile-bottom={tile >= 2}>
+					{#each bigStars as star}
+						<img
+							alt=""
+							class="starfield-star"
+							draggable="false"
+							src={star.texture}
+							style:left={`${star.x}%`};
+							style:top={`${star.y}%`};
+							style:opacity={star.opacity};
+							style:transform={`translate(-50%, -50%) scale(${star.scale})`}
+						/>
+					{/each}
+				</div>
+			{/each}
+		</div>
 	</div>
 
-	<div class="starfield-layer starfield-layer-medium">
-		{#each medStars as star}
-			<img
-				alt=""
-				class="starfield-star"
-				draggable="false"
-				src={star.texture}
-				style:left={`${star.x}%`};
-				style:top={`${star.y}%`};
-				style:opacity={star.opacity};
-				style:transform={`translate(-50%, -50%) scale(${star.scale})`}
-			/>
-		{/each}
+	<div class="starfield-layer">
+		<div class="starfield-track starfield-layer-medium">
+			{#each [0, 1, 2, 3] as tile}
+				<div class="starfield-tile" class:starfield-tile-right={tile % 2 === 1} class:starfield-tile-bottom={tile >= 2}>
+					{#each medStars as star}
+						<img
+							alt=""
+							class="starfield-star"
+							draggable="false"
+							src={star.texture}
+							style:left={`${star.x}%`};
+							style:top={`${star.y}%`};
+							style:opacity={star.opacity};
+							style:transform={`translate(-50%, -50%) scale(${star.scale})`}
+						/>
+					{/each}
+				</div>
+			{/each}
+		</div>
 	</div>
 
-	<div class="starfield-layer starfield-layer-small">
-		{#each smallStars as star}
-			<img
-				alt=""
-				class="starfield-star"
-				draggable="false"
-				src={star.texture}
-				style:left={`${star.x}%`};
-				style:top={`${star.y}%`};
-				style:opacity={star.opacity};
-				style:transform={`translate(-50%, -50%) scale(${star.scale})`}
-			/>
-		{/each}
+	<div class="starfield-layer">
+		<div class="starfield-track starfield-layer-small">
+			{#each [0, 1, 2, 3] as tile}
+				<div class="starfield-tile" class:starfield-tile-right={tile % 2 === 1} class:starfield-tile-bottom={tile >= 2}>
+					{#each smallStars as star}
+						<img
+							alt=""
+							class="starfield-star"
+							draggable="false"
+							src={star.texture}
+							style:left={`${star.x}%`};
+							style:top={`${star.y}%`};
+							style:opacity={star.opacity};
+							style:transform={`translate(-50%, -50%) scale(${star.scale})`}
+						/>
+					{/each}
+				</div>
+			{/each}
+		</div>
 	</div>
 
 	{#each flybys as flyby}

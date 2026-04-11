@@ -61,20 +61,42 @@ body {
 
 .starfield-layer {
 	position: absolute;
-	inset: -14%;
+	inset: 0;
+	overflow: hidden;
+}
+
+.starfield-track {
+	position: absolute;
+	inset: 0;
+	width: 200%;
+	height: 200%;
 	will-change: transform;
 }
 
+.starfield-tile {
+	position: absolute;
+	width: 50%;
+	height: 50%;
+}
+
+.starfield-tile-right {
+	left: 50%;
+}
+
+.starfield-tile-bottom {
+	top: 50%;
+}
+
 .starfield-layer-big {
-	animation: starfield-drift-big 16s linear infinite alternate;
+	animation: starfield-drift-big 24s linear infinite;
 }
 
 .starfield-layer-medium {
-	animation: starfield-drift-medium 23s linear infinite alternate;
+	animation: starfield-drift-medium 34s linear infinite;
 }
 
 .starfield-layer-small {
-	animation: starfield-drift-small 30s linear infinite alternate;
+	animation: starfield-drift-small 44s linear infinite;
 }
 
 .starfield-star {
@@ -108,31 +130,31 @@ body {
 
 @keyframes starfield-drift-big {
 	from {
-		transform: translate3d(-36px, -24px, 0);
+		transform: translate3d(0, 0, 0);
 	}
 
 	to {
-		transform: translate3d(52px, 38px, 0);
+		transform: translate3d(-50%, -50%, 0);
 	}
 }
 
 @keyframes starfield-drift-medium {
 	from {
-		transform: translate3d(44px, -32px, 0);
+		transform: translate3d(0, 0, 0);
 	}
 
 	to {
-		transform: translate3d(-58px, 46px, 0);
+		transform: translate3d(-50%, -50%, 0);
 	}
 }
 
 @keyframes starfield-drift-small {
 	from {
-		transform: translate3d(-28px, 20px, 0);
+		transform: translate3d(0, 0, 0);
 	}
 
 	to {
-		transform: translate3d(64px, -48px, 0);
+		transform: translate3d(-50%, -50%, 0);
 	}
 }
 
