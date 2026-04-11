@@ -1,12 +1,13 @@
 {
 	"name": "battlecontrol",
 	"private": true,
-	"version": "0.1.8",
+	"version": "0.1.9",
 	"type": "module",
 	"scripts": {
 		"sync:version": "node scripts/sync-version.js",
 		"build:wasm": "wasm-pack build game-logic-wasm --target web --out-dir ../pkg",
 		"dev": "npm run sync:version && npm run build:wasm && cd frontend && npm run dev",
+		"dev:tmux": "bash scripts/dev-tmux.sh",
 		"dev:server": "cargo watch -x 'run -p server'",
 		"dev:all": "npm run sync:version && npm run build:wasm && (npm run dev:server & cd frontend && npm run dev)",
 		"build": "npm run sync:version && npm run build:wasm && cd frontend && npm run build",

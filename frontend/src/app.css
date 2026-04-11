@@ -87,18 +87,6 @@ body {
 	top: 50%;
 }
 
-.starfield-layer-big {
-	animation: starfield-drift-big 24s linear infinite;
-}
-
-.starfield-layer-medium {
-	animation: starfield-drift-medium 34s linear infinite;
-}
-
-.starfield-layer-small {
-	animation: starfield-drift-small 44s linear infinite;
-}
-
 .starfield-star {
 	position: absolute;
 	display: block;
@@ -126,36 +114,6 @@ body {
 	left: auto;
 	right: -18%;
 	animation-name: starfield-flyby-right;
-}
-
-@keyframes starfield-drift-big {
-	from {
-		transform: translate3d(0, 0, 0);
-	}
-
-	to {
-		transform: translate3d(-50%, -50%, 0);
-	}
-}
-
-@keyframes starfield-drift-medium {
-	from {
-		transform: translate3d(0, 0, 0);
-	}
-
-	to {
-		transform: translate3d(-50%, -50%, 0);
-	}
-}
-
-@keyframes starfield-drift-small {
-	from {
-		transform: translate3d(0, 0, 0);
-	}
-
-	to {
-		transform: translate3d(-50%, -50%, 0);
-	}
 }
 
 @keyframes nebula-drift {

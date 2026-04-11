@@ -29,7 +29,7 @@
 		<div class="mb-12 text-center">
 			<div class="mx-auto inline-flex flex-col items-stretch">
 
-				<p class="mt-4 text-[17px] leading-7 text-[#a7bacf]">
+				<p class="mt-4 whitespace-nowrap text-[16px] leading-7 text-[#a7bacf]">
 					{t('HOME_SUBTITLE', $currentLanguage)}
 				</p>
 				<div class="mt-8">
