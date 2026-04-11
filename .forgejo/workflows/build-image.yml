@@ -15,8 +15,9 @@ jobs:
 
       - name: Compute image tag
         run: |
+          echo "BASE_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
           echo "IMAGE_TAG=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
-          echo "VERSION_TAG=v$(cat VERSION)" >> "$GITHUB_ENV"
+          echo "VERSION_TAG=v$(cat VERSION)-build.${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Log in to Forgejo registry
         env:
