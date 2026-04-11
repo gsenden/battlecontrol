@@ -32,3 +32,13 @@ jobs:
       - name: Publish main image
         if: github.ref == 'refs/heads/main'
         run: ./scripts/publish-image.sh "$IMAGE_NAME" "$IMAGE_TAG" latest "$VERSION_TAG"
+
+      - name: Update homelab deployment tag
+        if: github.ref == 'refs/heads/main'
+        env:
+          UPDATE_EXECUTOR_URL: ${{ secrets.UPDATE_EXECUTOR_URL }}
+          UPDATE_EXECUTOR_TOKEN: ${{ secrets.UPDATE_EXECUTOR_TOKEN }}
+        run: |
+          curl -fsS -X POST \
+            -H "X-Webhook-Token: ${UPDATE_EXECUTOR_TOKEN}" \
+            "${UPDATE_EXECUTOR_URL}/update/image?image=${IMAGE_NAME}&tag=${VERSION_TAG}"
