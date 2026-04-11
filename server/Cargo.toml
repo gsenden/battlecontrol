@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2024"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 tower-http = { version = "0.6", features = ["fs"] }
 common = { path = "../common" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -17,6 +17,8 @@ serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 tower = { version = "0.5", features = ["util"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+cookie = "0.18"
 
 [dev-dependencies]
 http-body-util = "0.1"

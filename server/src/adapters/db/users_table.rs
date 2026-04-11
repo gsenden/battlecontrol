@@ -12,7 +12,7 @@ impl TableEntity for UsersTable {
     }
 
     fn schema_version() -> u32 {
-        2
+        3
     }
 
     fn create_table_sql() -> String {
@@ -20,7 +20,8 @@ impl TableEntity for UsersTable {
             "CREATE TABLE IF NOT EXISTS {} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                user_handle TEXT NOT NULL UNIQUE
+                user_handle TEXT NOT NULL UNIQUE,
+                profile_image_url TEXT
             )",
             Self::table_name()
         )
@@ -30,6 +31,7 @@ impl TableEntity for UsersTable {
         Ok(UserDto {
             id: row.get("id")?,
             name: row.get("name")?,
+            profile_image_url: row.get("profile_image_url").ok(),
         })
     }
 }

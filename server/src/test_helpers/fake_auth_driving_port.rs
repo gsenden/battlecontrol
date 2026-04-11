@@ -4,7 +4,7 @@ use common::domain::Error;
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
-    RegistrationRequestDto, UserDto,
+    RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
 };
 use crate::ports::AuthDrivingPort;
 use super::sample_data::test_user;
@@ -78,5 +78,33 @@ impl AuthDrivingPort for FakeAuthDrivingPort {
 
     async fn finish_passkey_login(&self, _request: PasskeyFinishLoginRequestDto) -> Result<UserDto, Error> {
         Ok(test_user())
+    }
+
+    async fn update_user_profile(&self, _current_user_name: String, request: UpdateUserProfileRequestDto) -> Result<UserDto, Error> {
+        Ok(UserDto {
+            id: test_user().id,
+            name: request.name,
+            profile_image_url: if request.profile_image_url.is_empty() {
+                None
+            } else {
+                Some(request.profile_image_url)
+            },
+        })
+    }
+
+    async fn get_user_settings(&self, _user_name: String) -> Result<UserSettingsDto, Error> {
+        Ok(UserSettingsDto {
+            turn_left_key: "A".to_string(),
+            turn_right_key: "D".to_string(),
+            thrust_key: "W".to_string(),
+            music_enabled: true,
+            music_volume: 45,
+            sound_effects_enabled: true,
+            sound_effects_volume: 60,
+        })
+    }
+
+    async fn save_user_settings(&self, _user_name: String, settings: UserSettingsDto) -> Result<UserSettingsDto, Error> {
+        Ok(settings)
     }
 }

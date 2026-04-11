@@ -47,6 +47,7 @@ import {
   isDebugUiEnabled,
   setDebugStatus,
 } from '../debug-overlay.js';
+import type { UserSettingsDto } from '$lib/auth/auth.js';
 
 const shipModules = import.meta.glob('../assets/ships/*/*-big-*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const battleModules = import.meta.glob('../assets/battle/*.png', { eager: true, import: 'default' }) as Record<string, string>;
@@ -81,6 +82,15 @@ const ROTATE_ENEMY_KEY = 106;
 const FIRE_ENEMY_WEAPON_KEY = Phaser.Input.Keyboard.KeyCodes.ONE;
 const CHMMR_PREFIX = 'chmmr-avatar';
 const SYREEN_PREFIX = 'syreen-penetrator';
+const DEFAULT_USER_SETTINGS: UserSettingsDto = {
+  turn_left_key: 'A',
+  turn_right_key: 'D',
+  thrust_key: 'W',
+  music_enabled: true,
+  music_volume: 45,
+  sound_effects_enabled: true,
+  sound_effects_volume: 60,
+};
 
 export class BattleScene extends Phaser.Scene {
   private gameLogic!: GameLogic;
@@ -190,6 +200,7 @@ export class BattleScene extends Phaser.Scene {
     this.gameLogic = getGameLogic();
     this.shipPresets = buildShipPresets(this.gameLogic);
     this.selectedShipIndex = this.loadSelectedShipIndex();
+    const userSettings = (this.game.registry.get('userSettings') as UserSettingsDto | undefined) ?? DEFAULT_USER_SETTINGS;
 
     // Stars
     this.createStarLayer(
@@ -250,7 +261,7 @@ export class BattleScene extends Phaser.Scene {
     });
     this.battleMusic = new Audio(battleMusic);
     this.battleMusic.loop = true;
-    this.battleMusic.volume = 0.45;
+    this.battleMusic.volume = userSettings.music_enabled ? userSettings.music_volume / 100 : 0;
     this.battleMusic.preload = 'auto';
     window.addEventListener('battlecontrol:start-game', this.startBattleMusic);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -274,9 +285,9 @@ export class BattleScene extends Phaser.Scene {
     this.syncHudWithSelectedShip();
 
     // Input
-    this.moveLeftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    this.moveRightKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    this.thrustKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    this.moveLeftKey = this.input.keyboard!.addKey(this.keyCodeFor(userSettings.turn_left_key, Phaser.Input.Keyboard.KeyCodes.A));
+    this.moveRightKey = this.input.keyboard!.addKey(this.keyCodeFor(userSettings.turn_right_key, Phaser.Input.Keyboard.KeyCodes.D));
+    this.thrustKey = this.input.keyboard!.addKey(this.keyCodeFor(userSettings.thrust_key, Phaser.Input.Keyboard.KeyCodes.W));
     this.plusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
     this.minusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.MINUS);
     this.shiftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
@@ -495,40 +506,47 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private playAudioEvents(snapshot: BattleSnapshot) {
+    const userSettings = (this.game.registry.get('userSettings') as UserSettingsDto | undefined) ?? DEFAULT_USER_SETTINGS;
+    if (!userSettings.sound_effects_enabled || userSettings.sound_effects_volume === 0) {
+      return;
+    }
+
+    const soundEffectsVolumeMultiplier = userSettings.sound_effects_volume / 100;
+
     for (const event of snapshot.audioEvents) {
       switch (event.key) {
         case 'androsynth-primary':
-          this.sound.play(event.key, { volume: 0.55 });
+          this.sound.play(event.key, { volume: 0.55 * soundEffectsVolumeMultiplier });
           break;
         case 'androsynth-special':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
           break;
         case 'arilou-primary':
-          this.sound.play(event.key, { volume: 0.55 });
+          this.sound.play(event.key, { volume: 0.55 * soundEffectsVolumeMultiplier });
           break;
         case 'arilou-special':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
           break;
         case 'arilou-victory':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
           break;
         case 'human-primary':
-          this.sound.play(event.key, { volume: 0.5 });
+          this.sound.play(event.key, { volume: 0.5 * soundEffectsVolumeMultiplier });
           break;
         case 'human-special':
-          this.sound.play(event.key, { volume: 0.6 });
+          this.sound.play(event.key, { volume: 0.6 * soundEffectsVolumeMultiplier });
           break;
         case 'human-victory':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
           break;
         case 'battle-shipdies':
-          this.sound.play(event.key, { volume: 0.75 });
+          this.sound.play(event.key, { volume: 0.75 * soundEffectsVolumeMultiplier });
           break;
         case 'battle-boom-23':
-          this.sound.play(event.key, { volume: 0.5 });
+          this.sound.play(event.key, { volume: 0.5 * soundEffectsVolumeMultiplier });
           break;
         case 'battle-boom-45':
-          this.sound.play(event.key, { volume: 0.55 });
+          this.sound.play(event.key, { volume: 0.55 * soundEffectsVolumeMultiplier });
           break;
         default:
           break;
@@ -906,5 +924,10 @@ export class BattleScene extends Phaser.Scene {
     } catch {
       // Ignore storage failures and keep the current in-memory selection.
     }
+  }
+
+  private keyCodeFor(keyName: string, fallback: number) {
+    const normalized = keyName.trim().toUpperCase();
+    return Phaser.Input.Keyboard.KeyCodes[normalized as keyof typeof Phaser.Input.Keyboard.KeyCodes] ?? fallback;
   }
 }

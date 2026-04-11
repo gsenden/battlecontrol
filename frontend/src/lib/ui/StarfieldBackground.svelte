@@ -20,6 +20,7 @@
 		y: number;
 		scale: number;
 		opacity: number;
+		filter: string;
 	};
 
 	type Flyby = {
@@ -39,6 +40,16 @@
 	const BIG_STAR_COUNT = 34;
 	const MED_STAR_COUNT = 58;
 	const SMALL_STAR_COUNT = 96;
+	const BIG_SCROLL_FACTOR = 0.25;
+	const MED_SCROLL_FACTOR = 0.125;
+	const SMALL_SCROLL_FACTOR = 0.0625;
+	const STAR_TONES = [
+		'brightness(1.05)',
+		'brightness(1.08) sepia(0.12) saturate(1.1)',
+		'brightness(1.1) sepia(0.18) saturate(1.18) hue-rotate(12deg)',
+		'brightness(1.08) sepia(0.14) saturate(1.14) hue-rotate(-18deg)',
+		'brightness(1.06) sepia(0.16) saturate(1.16) hue-rotate(28deg)',
+	];
 
 	const bigStars = createStars(BIG_TEXTURES, BIG_STAR_COUNT, Math.floor(Math.random() * 100000), 0.72, 1.15, 0.42, 0.9);
 	const medStars = createStars(MED_TEXTURES, MED_STAR_COUNT, Math.floor(Math.random() * 100000), 0.55, 0.95, 0.28, 0.72);
@@ -84,6 +95,7 @@
 			y: rand() * 100,
 			scale: minScale + (rand() * (maxScale - minScale)),
 			opacity: minOpacity + (rand() * (maxOpacity - minOpacity)),
+			filter: STAR_TONES[Math.floor(rand() * STAR_TONES.length)],
 		}));
 	}
 
@@ -126,12 +138,12 @@
 			const viewportWidth = window.innerWidth;
 			const viewportHeight = window.innerHeight;
 
-			const bigX = wrapOffset(driftX * 0.16, viewportWidth);
-			const bigY = wrapOffset(driftY * 0.16, viewportHeight);
-			const medX = wrapOffset(driftX * 0.28, viewportWidth);
-			const medY = wrapOffset(driftY * 0.28, viewportHeight);
-			const smallX = wrapOffset(driftX * 0.42, viewportWidth);
-			const smallY = wrapOffset(driftY * 0.42, viewportHeight);
+			const bigX = wrapOffset(driftX * BIG_SCROLL_FACTOR, viewportWidth);
+			const bigY = wrapOffset(driftY * BIG_SCROLL_FACTOR, viewportHeight);
+			const medX = wrapOffset(driftX * MED_SCROLL_FACTOR, viewportWidth);
+			const medY = wrapOffset(driftY * MED_SCROLL_FACTOR, viewportHeight);
+			const smallX = wrapOffset(driftX * SMALL_SCROLL_FACTOR, viewportWidth);
+			const smallY = wrapOffset(driftY * SMALL_SCROLL_FACTOR, viewportHeight);
 
 			bigDriftStyle = `transform: translate3d(${bigX}px, ${bigY}px, 0);`;
 			medDriftStyle = `transform: translate3d(${medX}px, ${medY}px, 0);`;
@@ -163,6 +175,7 @@
 							style:left={`${star.x}%`};
 							style:top={`${star.y}%`};
 							style:opacity={star.opacity};
+							style:filter={star.filter}
 							style:transform={`translate(-50%, -50%) scale(${star.scale})`}
 						/>
 					{/each}
@@ -184,6 +197,7 @@
 							style:left={`${star.x}%`};
 							style:top={`${star.y}%`};
 							style:opacity={star.opacity};
+							style:filter={star.filter}
 							style:transform={`translate(-50%, -50%) scale(${star.scale})`}
 						/>
 					{/each}
@@ -205,6 +219,7 @@
 							style:left={`${star.x}%`};
 							style:top={`${star.y}%`};
 							style:opacity={star.opacity};
+							style:filter={star.filter}
 							style:transform={`translate(-50%, -50%) scale(${star.scale})`}
 						/>
 					{/each}

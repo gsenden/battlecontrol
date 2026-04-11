@@ -40,6 +40,8 @@ jobs:
           UPDATE_EXECUTOR_URL: ${{ secrets.UPDATE_EXECUTOR_URL }}
           UPDATE_EXECUTOR_TOKEN: ${{ secrets.UPDATE_EXECUTOR_TOKEN }}
         run: |
+          test -n "${UPDATE_EXECUTOR_URL}" || { echo "Missing secret: UPDATE_EXECUTOR_URL"; exit 1; }
+          test -n "${UPDATE_EXECUTOR_TOKEN}" || { echo "Missing secret: UPDATE_EXECUTOR_TOKEN"; exit 1; }
           curl -fsS -X POST \
             -H "X-Webhook-Token: ${UPDATE_EXECUTOR_TOKEN}" \
             "${UPDATE_EXECUTOR_URL}/update/image?image=${IMAGE_NAME}&tag=${VERSION_TAG}"

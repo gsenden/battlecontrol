@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use common::domain::Error;
 use common::domain::error::DatabaseErrorError;
-use common::dto::UserDto;
+use common::dto::{UserDto, UserSettingsDto};
 use crate::ports::UserRepositoryDrivenPort;
-use super::db::{PasskeysTable, SqliteAdapter, TableEntity, UsersTable};
+use super::db::{PasskeysTable, SqliteAdapter, TableEntity, UserSettingsTable, UsersTable};
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
@@ -20,7 +20,9 @@ impl SqliteUserRepository {
     pub fn new(sqlite: SqliteAdapter) -> Result<Self, String> {
         sqlite.ensure_table::<UsersTable>()?;
         sqlite.ensure_table::<PasskeysTable>()?;
+        sqlite.ensure_table::<UserSettingsTable>()?;
         Self::migrate_users_table(&sqlite)?;
+        Self::migrate_user_settings_table(&sqlite)?;
         Ok(Self { sqlite })
     }
 
@@ -55,6 +57,47 @@ impl SqliteUserRepository {
                     &[&user_handle as &dyn rusqlite::types::ToSql, &user_id],
                 )?;
             }
+        }
+
+        let has_profile_image_url = rows.iter().any(|row| {
+            row.get::<String>("name")
+                .map(|column_name| column_name == "profile_image_url")
+                .unwrap_or(false)
+        });
+
+        if !has_profile_image_url {
+            sqlite.execute(&format!(
+                "ALTER TABLE {} ADD COLUMN profile_image_url TEXT",
+                UsersTable::table_name()
+            ))?;
+        }
+
+        Ok(())
+    }
+
+    fn migrate_user_settings_table(sqlite: &SqliteAdapter) -> Result<(), String> {
+        Self::ensure_user_settings_column(sqlite, "music_enabled", "INTEGER NOT NULL DEFAULT 1")?;
+        Self::ensure_user_settings_column(sqlite, "music_volume", "INTEGER NOT NULL DEFAULT 45")?;
+        Self::ensure_user_settings_column(sqlite, "sound_effects_enabled", "INTEGER NOT NULL DEFAULT 1")?;
+        Self::ensure_user_settings_column(sqlite, "sound_effects_volume", "INTEGER NOT NULL DEFAULT 60")?;
+        Ok(())
+    }
+
+    fn ensure_user_settings_column(sqlite: &SqliteAdapter, column_name: &str, column_sql: &str) -> Result<(), String> {
+        let rows = sqlite.query(&format!("PRAGMA table_info({})", UserSettingsTable::table_name()))?;
+        let has_column = rows.iter().any(|row| {
+            row.get::<String>("name")
+                .map(|existing_column_name| existing_column_name == column_name)
+                .unwrap_or(false)
+        });
+
+        if !has_column {
+            sqlite.execute(&format!(
+                "ALTER TABLE {} ADD COLUMN {} {}",
+                UserSettingsTable::table_name(),
+                column_name,
+                column_sql
+            ))?;
         }
 
         Ok(())
@@ -104,6 +147,7 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
         Ok(UserDto {
             id,
             name: name.to_string(),
+            profile_image_url: None,
         })
     }
 
@@ -146,15 +190,89 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
         ).map_err(|_| db_error())?;
         Ok(())
     }
+
+    async fn update_user_profile(&self, current_name: &str, name: &str, profile_image_url: &str) -> Result<UserDto, Error> {
+        self.sqlite.execute_with_params(
+            &format!(
+                "UPDATE {} SET name = ?, profile_image_url = ? WHERE name = ?",
+                UsersTable::table_name()
+            ),
+            &[&name as &dyn rusqlite::types::ToSql, &profile_image_url, &current_name],
+        ).map_err(|_| db_error())?;
+
+        self.find_by_name(name).await?
+            .ok_or_else(db_error)
+    }
+
+    async fn find_settings_by_name(&self, name: &str) -> Result<Option<UserSettingsDto>, Error> {
+        let rows = self.sqlite.query_with_params(
+            &format!("SELECT * FROM {} WHERE user_name = ?", UserSettingsTable::table_name()),
+            &[&name as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())?;
+
+        match rows.first() {
+            Some(row) => Ok(Some(UserSettingsTable::from_row(row).map_err(|_| db_error())?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn save_settings(&self, name: &str, settings: &UserSettingsDto) -> Result<UserSettingsDto, Error> {
+        self.sqlite.execute_with_params(
+            &format!(
+                "INSERT INTO {} (
+                    user_name,
+                    turn_left_key,
+                    turn_right_key,
+                    thrust_key,
+                    music_enabled,
+                    music_volume,
+                    sound_effects_enabled,
+                    sound_effects_volume
+                 )
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(user_name) DO UPDATE SET
+                 turn_left_key = excluded.turn_left_key,
+                 turn_right_key = excluded.turn_right_key,
+                 thrust_key = excluded.thrust_key,
+                 music_enabled = excluded.music_enabled,
+                 music_volume = excluded.music_volume,
+                 sound_effects_enabled = excluded.sound_effects_enabled,
+                 sound_effects_volume = excluded.sound_effects_volume",
+                UserSettingsTable::table_name()
+            ),
+            &[
+                &name as &dyn rusqlite::types::ToSql,
+                &settings.turn_left_key,
+                &settings.turn_right_key,
+                &settings.thrust_key,
+                &if settings.music_enabled { 1 } else { 0 },
+                &settings.music_volume,
+                &if settings.sound_effects_enabled { 1 } else { 0 },
+                &settings.sound_effects_volume,
+            ],
+        ).map_err(|_| db_error())?;
+
+        Ok(settings.clone())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::sample_data::{test_user_settings, TEST_PLAYER_NAME};
 
     fn repo_in_memory() -> SqliteUserRepository {
         let sqlite = SqliteAdapter::new(":memory:").unwrap();
         SqliteUserRepository::new(sqlite).unwrap()
+    }
+
+    #[tokio::test]
+    async fn save_settings_can_be_found_by_name() {
+        let repo = repo_in_memory();
+        let expected_settings = test_user_settings();
+        repo.save_settings(TEST_PLAYER_NAME, &expected_settings).await.unwrap();
+        let found = repo.find_settings_by_name(TEST_PLAYER_NAME).await.unwrap();
+        assert_eq!(found.unwrap().music_volume, expected_settings.music_volume);
     }
 
     #[test]

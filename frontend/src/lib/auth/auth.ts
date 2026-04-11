@@ -6,6 +6,17 @@ const AUTH_SERVER_LABEL = '127.0.0.1:3000';
 export interface UserDto {
 	id: number;
 	name: string;
+	profile_image_url?: string | null;
+}
+
+export interface UserSettingsDto {
+	turn_left_key: string;
+	turn_right_key: string;
+	thrust_key: string;
+	music_enabled: boolean;
+	music_volume: number;
+	sound_effects_enabled: boolean;
+	sound_effects_volume: number;
 }
 
 interface LoginRequestDto {
@@ -23,6 +34,15 @@ interface PasskeyStartRequestDto {
 interface PasskeyFinishRequestDto {
 	name: string;
 	credential: unknown;
+}
+
+interface UpdateUserProfileRequestDto {
+	name: string;
+	profile_image_url: string;
+}
+
+interface ProfileImageUploadDto {
+	profile_image_url: string;
 }
 
 interface ApiError {
@@ -179,6 +199,74 @@ export async function logoutUser(): Promise<void> {
 	if (!response.ok) {
 		throw await parseApiError(response);
 	}
+}
+
+export async function updateUserProfile(name: string, profileImageUrl: string): Promise<UserDto> {
+	const response = await fetch('/auth/profile', {
+		method: 'PUT',
+		credentials: 'same-origin',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify({
+			name,
+			profile_image_url: profileImageUrl,
+		} satisfies UpdateUserProfileRequestDto),
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
+
+	return response.json() as Promise<UserDto>;
+}
+
+export async function uploadProfileImage(image: Blob): Promise<string> {
+	const formData = new FormData();
+	formData.append('image', image, 'profile-image.webp');
+
+	const response = await fetch('/auth/profile-image', {
+		method: 'POST',
+		credentials: 'same-origin',
+		body: formData,
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
+
+	const body = await response.json() as ProfileImageUploadDto;
+	return body.profile_image_url;
+}
+
+export async function getUserSettings(): Promise<UserSettingsDto> {
+	const response = await fetch('/auth/settings', {
+		method: 'GET',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
+
+	return response.json() as Promise<UserSettingsDto>;
+}
+
+export async function saveUserSettings(settings: UserSettingsDto): Promise<UserSettingsDto> {
+	const response = await fetch('/auth/settings', {
+		method: 'PUT',
+		credentials: 'same-origin',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify(settings),
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
+
+	return response.json() as Promise<UserSettingsDto>;
 }
 
 export function toReadableErrorMessage(error: unknown): string {

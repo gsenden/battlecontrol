@@ -18,10 +18,10 @@
 	});
 
 async function loadCurrentUser() {
-		try {
+	try {
 			const currentUser = await getCurrentUser();
 			if (currentUser) {
-				window.location.assign('/lobby');
+				window.location.assign('/menu');
 			}
 		} catch {
 			// The page should still be usable even if the session probe fails.
@@ -36,7 +36,7 @@ async function loadCurrentUser() {
 			const trimmedName = name.trim();
 			const user = await registerWithPasskey(trimmedName);
 			registeredUser = user;
-			window.location.assign('/lobby');
+			window.location.assign('/menu');
 		} catch (error) {
 			errorMessage = toReadableErrorMessage(error);
 		} finally {

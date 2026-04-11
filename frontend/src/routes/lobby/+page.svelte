@@ -22,7 +22,6 @@
 
 	let currentUser = $state<UserDto | null>(null);
 	let errorMessage = $state('');
-	let isLoggingOut = $state(false);
 
 	const fallbackPlayers: LobbyPlayer[] = [
 		{ id: 101, name: 'Zoq-Fot-Pik Ace', status: 'In lobby' },
@@ -44,20 +43,6 @@
 			currentUser = await getCurrentUser();
 		} catch (error) {
 			errorMessage = toReadableErrorMessage(error);
-		}
-	}
-
-	async function signOut() {
-		errorMessage = '';
-		isLoggingOut = true;
-
-		try {
-			await logoutUser();
-			await goto('/');
-		} catch (error) {
-			errorMessage = toReadableErrorMessage(error);
-		} finally {
-			isLoggingOut = false;
 		}
 	}
 
@@ -83,15 +68,6 @@
 		<div class="flex items-start gap-6">
 			<AppTitle className="origin-top-left scale-[0.25] uppercase" title={t('APP_NAME', $currentLanguage)} />
 		</div>
-
-		<button
-			class="rounded-[12px] border border-[#7d7d7d] bg-[rgb(15_23_38/28%)] px-5 py-3 text-[16px] font-[700] text-[#f4f8fc] transition hover:border-[#d7d7d7] hover:bg-[rgb(40_52_72/40%)] disabled:opacity-50"
-			disabled={isLoggingOut}
-			onclick={() => void signOut()}
-			type="button"
-		>
-			{t('LOGOUT', $currentLanguage)}
-		</button>
 	</div>
 
 	<div class="mb-8 flex justify-center text-center">

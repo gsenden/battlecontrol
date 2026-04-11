@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { getUserSettings, type UserSettingsDto } from '$lib/auth/auth.js';
 
 	let gameContainer: HTMLDivElement;
 	let hudContainer: HTMLDivElement;
@@ -9,13 +10,20 @@
 
 	onMount(async () => {
 		const { createBattleGame } = await import('$lib/game/boot.js');
+		let userSettings: UserSettingsDto | null = null;
 
 		const onReady = () => {
 			sceneReady = true;
 		};
 		window.addEventListener('battlecontrol:scene-ready', onReady, { once: true });
 
-		game = await createBattleGame(gameContainer, hudContainer);
+		try {
+			userSettings = await getUserSettings();
+		} catch {
+			userSettings = null;
+		}
+
+		game = await createBattleGame(gameContainer, hudContainer, userSettings ?? undefined);
 	});
 
 	onDestroy(() => {

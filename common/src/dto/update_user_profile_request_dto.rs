@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct UserDto {
-    pub id: i64,
+pub struct UpdateUserProfileRequestDto {
     pub name: String,
-    pub profile_image_url: Option<String>,
+    pub profile_image_url: String,
 }

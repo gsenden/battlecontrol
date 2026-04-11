@@ -92,7 +92,6 @@ body {
 	display: block;
 	user-select: none;
 	-webkit-user-drag: none;
-	filter: drop-shadow(0 0 8px rgb(180 215 255 / 0.15));
 }
 
 .starfield-flyby {

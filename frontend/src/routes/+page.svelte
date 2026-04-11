@@ -16,7 +16,7 @@
 		try {
 			const currentUser = await getCurrentUser();
 			if (currentUser) {
-				window.location.assign('/lobby');
+				window.location.assign('/menu');
 			}
 		} catch {
 			// The landing page should remain usable when the session probe fails.

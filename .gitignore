@@ -13,6 +13,7 @@ dist-ssr
 *.local
 frontend/build
 frontend/.svelte-kit
+uploads/
 *.db
 
 # Editor directories and files

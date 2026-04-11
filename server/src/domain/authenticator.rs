@@ -5,7 +5,7 @@ use common::domain::error::{AuthenticationFailedError, UserNotFoundError};
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
-    RegistrationRequestDto, UserDto,
+    RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
 };
 use crate::ports::{AuthDrivingPort, UserRepositoryDrivenPort};
 use std::collections::HashMap;
@@ -46,6 +46,18 @@ impl<DP: AuthenticatorDrivenPorts> Authenticator<DP> {
             webauthn,
             pending_passkey_registrations: Mutex::new(HashMap::new()),
             pending_passkey_authentications: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn default_user_settings() -> UserSettingsDto {
+        UserSettingsDto {
+            turn_left_key: "A".to_string(),
+            turn_right_key: "D".to_string(),
+            thrust_key: "W".to_string(),
+            music_enabled: true,
+            music_volume: 45,
+            sound_effects_enabled: true,
+            sound_effects_volume: 60,
         }
     }
 }
@@ -169,6 +181,31 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
             .find_by_name(&request.name)
             .await?
             .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(request.name)))
+    }
+
+    async fn update_user_profile(&self, current_user_name: String, request: UpdateUserProfileRequestDto) -> Result<UserDto, Error> {
+        if request.name != current_user_name
+            && self.user_repo.find_by_name(&request.name).await?.is_some()
+        {
+            return Err(Error::UserAlreadyExists(
+                common::domain::error::UserAlreadyExistsError::new(request.name),
+            ));
+        }
+
+        self.user_repo
+            .update_user_profile(&current_user_name, &request.name, &request.profile_image_url)
+            .await
+    }
+
+    async fn get_user_settings(&self, user_name: String) -> Result<UserSettingsDto, Error> {
+        Ok(self.user_repo
+            .find_settings_by_name(&user_name)
+            .await?
+            .unwrap_or_else(Self::default_user_settings))
+    }
+
+    async fn save_user_settings(&self, user_name: String, settings: UserSettingsDto) -> Result<UserSettingsDto, Error> {
+        self.user_repo.save_settings(&user_name, &settings).await
     }
 }
 

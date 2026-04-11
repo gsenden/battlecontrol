@@ -4,10 +4,12 @@ import { MatterScene } from './scenes/MatterScene.js';
 import { assertVersionSync, initGameLogic } from './game-logic.js';
 import { APP_VERSION } from './version.js';
 import { mountDebugOverlay, toggleDebugUi } from './debug-overlay.js';
+import type { UserSettingsDto } from '$lib/auth/auth.js';
 
 export async function createBattleGame(
 	gameEl: HTMLDivElement,
 	hudEl: HTMLDivElement,
+	userSettings?: UserSettingsDto,
 ): Promise<Phaser.Game> {
 	await initGameLogic();
 	assertVersionSync();
@@ -49,5 +51,8 @@ export async function createBattleGame(
 
 	const game = new Phaser.Game(config);
 	game.registry.set('hudElement', hudEl);
+	if (userSettings) {
+		game.registry.set('userSettings', userSettings);
+	}
 	return game;
 }

@@ -10,7 +10,7 @@
 >
 	{#each words as word, index}
 		<span class={`flex items-start ${index > 0 ? 'ml-[1.28em]' : ''}`.trim()}>
-			<span class="text-[114px] leading-none -mt-[4px]">{word[0] ?? ''}</span>
+			<span class="text-[114px] leading-none -mt-[8px]">{word[0] ?? ''}</span>
 			<span class="text-[84px] leading-none">{word.slice(1)}</span>
 		</span>
 	{/each}

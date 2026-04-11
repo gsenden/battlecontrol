@@ -8,9 +8,19 @@ mod test_helpers;
 use adapters::{AuthApiAdapter, AxumAdapter, SqliteUserRepository, TracingLoggerAdapter};
 use adapters::db::SqliteAdapter;
 use domain::{Authenticator, AuthenticatorDrivenPorts};
+use std::path::{Path, PathBuf};
 
 fn database_path() -> String {
     common::domain::EnvVar::ServerDatabasePath.value()
+}
+
+fn uploads_path() -> String {
+    let database_path = PathBuf::from(database_path());
+    let base_dir = database_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    base_dir.join("uploads").to_string_lossy().to_string()
 }
 
 struct ProductionDrivenPorts;
@@ -22,13 +32,14 @@ impl AuthenticatorDrivenPorts for ProductionDrivenPorts {
 async fn main() {
     let sqlite = SqliteAdapter::new(&database_path())
         .expect("Failed to open database");
-    let user_repo = SqliteUserRepository::new(sqlite)
+    let user_repo = SqliteUserRepository::new(sqlite.clone())
         .expect("Failed to initialize user repository");
     let authenticator = Authenticator::<ProductionDrivenPorts>::new(user_repo);
     let logger = TracingLoggerAdapter;
 
     AxumAdapter::new()
-        .register(AuthApiAdapter::new(authenticator, logger))
+        .register(AuthApiAdapter::new(authenticator, logger, sqlite))
+        .serve_directory("/uploads", &uploads_path())
         .serve_spa("frontend/build")
         .serve()
         .await;

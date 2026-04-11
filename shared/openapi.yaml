@@ -31,6 +31,49 @@ paths:
       responses:
         "204":
           description: Logout successful
+  /auth/profile:
+    put:
+      summary: Save the current player's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserProfileRequest"
+      responses:
+        "200":
+          description: Profile saved
+        "401":
+          description: No active session
+  /auth/profile-image:
+    post:
+      summary: Upload the current player's profile image
+      responses:
+        "200":
+          description: Profile image uploaded
+        "401":
+          description: No active session
+  /auth/settings:
+    get:
+      summary: Get the current player's settings
+      responses:
+        "200":
+          description: Current user settings
+        "401":
+          description: No active session
+    put:
+      summary: Save the current player's settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSettings"
+      responses:
+        "200":
+          description: Settings saved
+        "401":
+          description: No active session
   /auth/passkey/register/start:
     post:
       summary: Start passkey registration for a new player
@@ -142,3 +185,45 @@ components:
           type: string
         credential:
           type: object
+    UpdateUserProfileRequest:
+      type: object
+      required:
+        - name
+        - profile_image_url
+      properties:
+        name:
+          type: string
+        profile_image_url:
+          type: string
+    ProfileImageUpload:
+      type: object
+      required:
+        - profile_image_url
+      properties:
+        profile_image_url:
+          type: string
+    UserSettings:
+      type: object
+      required:
+        - turn_left_key
+        - turn_right_key
+        - thrust_key
+        - music_enabled
+        - music_volume
+        - sound_effects_enabled
+        - sound_effects_volume
+      properties:
+        turn_left_key:
+          type: string
+        turn_right_key:
+          type: string
+        thrust_key:
+          type: string
+        music_enabled:
+          type: boolean
+        music_volume:
+          type: integer
+        sound_effects_enabled:
+          type: boolean
+        sound_effects_volume:
+          type: integer

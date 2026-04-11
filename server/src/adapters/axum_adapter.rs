@@ -22,6 +22,12 @@ impl AxumAdapter {
         self
     }
 
+    pub fn serve_directory(self, route_path: &str, static_dir: &str) -> Self {
+        AxumAdapter {
+            router: self.router.nest_service(route_path, ServeDir::new(static_dir)),
+        }
+    }
+
     pub fn serve_spa(self, static_dir: &str) -> Self {
         let fallback = ServeFile::new(format!("{static_dir}/index.html"));
         let serve_dir = ServeDir::new(static_dir).fallback(fallback);
@@ -69,6 +75,7 @@ mod tests {
     use axum::body::to_bytes;
     use tower::ServiceExt;
     use crate::adapters::AuthApiAdapter;
+    use crate::adapters::db::SqliteAdapter;
     use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
 
     #[test]
@@ -92,7 +99,11 @@ mod tests {
     #[tokio::test]
     async fn serve_spa_does_not_handle_auth_paths() {
         let app = AxumAdapter::new()
-            .register(AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new()))
+            .register(AuthApiAdapter::new(
+                FakeAuthDrivingPort::new(),
+                FakeLoggerDrivingPort::new(),
+                SqliteAdapter::new(":memory:").unwrap(),
+            ))
             .serve_spa("frontend/build")
             .router;
 
@@ -114,7 +125,11 @@ mod tests {
     #[tokio::test]
     async fn serve_spa_keeps_auth_me_route_active() {
         let app = AxumAdapter::new()
-            .register(AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new()))
+            .register(AuthApiAdapter::new(
+                FakeAuthDrivingPort::new(),
+                FakeLoggerDrivingPort::new(),
+                SqliteAdapter::new(":memory:").unwrap(),
+            ))
             .serve_spa("frontend/build")
             .router;
 
