@@ -12,7 +12,7 @@ impl TableEntity for GamesTable {
     }
 
     fn schema_version() -> u32 {
-        1
+        2
     }
 
     fn create_table_sql() -> String {
@@ -27,7 +27,8 @@ impl TableEntity for GamesTable {
                 creator_name TEXT NOT NULL,
                 creator_id INTEGER NOT NULL DEFAULT 0,
                 creator_profile_image_url TEXT,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                last_activity_at INTEGER NOT NULL
             )",
             Self::table_name()
         )

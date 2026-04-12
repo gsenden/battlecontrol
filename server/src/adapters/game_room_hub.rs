@@ -11,6 +11,7 @@ use crate::ports::GameRoomDrivenPort;
 #[derive(Clone)]
 pub struct GameRoomHub {
     rooms: Arc<Mutex<HashMap<String, RoomEntry>>>,
+    global_sender: broadcast::Sender<GameRoomEvent>,
 }
 
 #[derive(Clone)]
@@ -38,8 +39,10 @@ pub enum GameRoomEventKind {
 
 impl GameRoomHub {
     pub fn new() -> Self {
+        let (global_sender, _) = broadcast::channel(64);
         Self {
             rooms: Arc::new(Mutex::new(HashMap::new())),
+            global_sender,
         }
     }
 
@@ -76,6 +79,10 @@ impl GameRoomHub {
         entry.current_game.clone().or_else(|| entry.started_game.clone())
     }
 
+    pub fn subscribe_all(&self) -> broadcast::Receiver<GameRoomEvent> {
+        self.global_sender.subscribe()
+    }
+
     fn new_room_entry() -> RoomEntry {
         let (sender, _) = broadcast::channel(32);
         RoomEntry {
@@ -92,6 +99,10 @@ impl GameRoomHub {
     fn broadcast(entry: &RoomEntry, event: GameRoomEvent) {
         let _ = entry.sender.send(event);
     }
+
+    fn broadcast_global(&self, event: GameRoomEvent) {
+        let _ = self.global_sender.send(event);
+    }
 }
 
 impl GameRoomDrivenPort for GameRoomHub {
@@ -102,14 +113,13 @@ impl GameRoomDrivenPort for GameRoomHub {
             .or_insert_with(Self::new_room_entry);
         entry.current_game = Some(game.clone());
         entry.started_game = None;
-        Self::broadcast(
-            entry,
-            GameRoomEvent {
-                kind: GameRoomEventKind::Snapshot,
-                game_id: game.id.clone(),
-                game: Some(game.clone()),
-            },
-        );
+        let event = GameRoomEvent {
+            kind: GameRoomEventKind::Snapshot,
+            game_id: game.id.clone(),
+            game: Some(game.clone()),
+        };
+        Self::broadcast(entry, event.clone());
+        self.broadcast_global(event);
     }
 
     fn update_room(&self, game: &GameDto) {
@@ -123,27 +133,25 @@ impl GameRoomDrivenPort for GameRoomHub {
             .or_insert_with(Self::new_room_entry);
         entry.current_game = None;
         entry.started_game = Some(game.clone());
-        Self::broadcast(
-            entry,
-            GameRoomEvent {
-                kind: GameRoomEventKind::Started,
-                game_id: game.id.clone(),
-                game: Some(game.clone()),
-            },
-        );
+        let event = GameRoomEvent {
+            kind: GameRoomEventKind::Started,
+            game_id: game.id.clone(),
+            game: Some(game.clone()),
+        };
+        Self::broadcast(entry, event.clone());
+        self.broadcast_global(event);
     }
 
     fn cancel_room(&self, game_id: &str) {
         let mut rooms = self.rooms.lock().expect("game rooms lock poisoned");
         if let Some(entry) = rooms.remove(game_id) {
-            Self::broadcast(
-                &entry,
-                GameRoomEvent {
-                    kind: GameRoomEventKind::Cancelled,
-                    game_id: game_id.to_string(),
-                    game: None,
-                },
-            );
+            let event = GameRoomEvent {
+                kind: GameRoomEventKind::Cancelled,
+                game_id: game_id.to_string(),
+                game: None,
+            };
+            Self::broadcast(&entry, event.clone());
+            self.broadcast_global(event);
         }
     }
 

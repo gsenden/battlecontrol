@@ -48,6 +48,7 @@ where
     fn routes(self) -> axum::Router {
         axum::Router::new()
             .route("/games", post(create_game::<GamePort, Logger>).get(list_games::<GamePort, Logger>))
+            .route("/games/events", get(connect_lobby_events::<GamePort, Logger>))
             .route("/games/{game_id}", get(find_game::<GamePort, Logger>))
             .route("/games/{game_id}/instance", get(find_game_instance::<GamePort, Logger>))
             .route("/games/{game_id}/events", get(connect_game_events::<GamePort, Logger>))
@@ -99,6 +100,21 @@ async fn connect_game_events<GamePort: GameDrivingPort, Logger: LoggerDrivingPor
     let game_rooms = state.game_rooms.clone();
 
     ws.on_upgrade(move |socket| game_events_socket(socket, game_rooms, game_id))
+        .into_response()
+}
+
+async fn connect_lobby_events<GamePort: GameDrivingPort, Logger: LoggerDrivingPort>(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState<GamePort, Logger>>>,
+    jar: CookieJar,
+) -> Response {
+    if session_user(&state, &jar).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let game_rooms = state.game_rooms.clone();
+
+    ws.on_upgrade(move |socket| lobby_events_socket(socket, game_rooms))
         .into_response()
 }
 
@@ -338,6 +354,38 @@ async fn game_events_socket(socket: WebSocket, game_rooms: GameRoomHub, game_id:
             return;
         }
     }
+
+    loop {
+        tokio::select! {
+            maybe_event = receiver.recv() => {
+                let Ok(event) = maybe_event else {
+                    break;
+                };
+
+                let message = axum::extract::ws::Message::Text(
+                    serde_json::to_string(&event)
+                        .expect("Failed to serialize game room event")
+                        .into(),
+                );
+
+                if socket.send(message).await.is_err() {
+                    break;
+                }
+            }
+            maybe_message = socket.recv() => {
+                match maybe_message {
+                    Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
+                    Some(Err(_)) => break,
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+async fn lobby_events_socket(socket: WebSocket, game_rooms: GameRoomHub) {
+    let mut socket = socket;
+    let mut receiver = game_rooms.subscribe_all();
 
     loop {
         tokio::select! {

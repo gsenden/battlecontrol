@@ -27,6 +27,7 @@ impl SqliteUserRepository {
         sqlite.ensure_table::<GamePlayersTable>()?;
         sqlite.ensure_table::<UserSettingsTable>()?;
         Self::migrate_users_table(&sqlite)?;
+        Self::migrate_games_table(&sqlite)?;
         Self::migrate_user_settings_table(&sqlite)?;
         Ok(Self { sqlite })
     }
@@ -85,6 +86,28 @@ impl SqliteUserRepository {
         Self::ensure_user_settings_column(sqlite, "music_volume", "INTEGER NOT NULL DEFAULT 45")?;
         Self::ensure_user_settings_column(sqlite, "sound_effects_enabled", "INTEGER NOT NULL DEFAULT 1")?;
         Self::ensure_user_settings_column(sqlite, "sound_effects_volume", "INTEGER NOT NULL DEFAULT 60")?;
+        Ok(())
+    }
+
+    fn migrate_games_table(sqlite: &SqliteAdapter) -> Result<(), String> {
+        let rows = sqlite.query(&format!("PRAGMA table_info({})", GamesTable::table_name()))?;
+        let has_last_activity_at = rows.iter().any(|row| {
+            row.get::<String>("name")
+                .map(|existing_column_name| existing_column_name == "last_activity_at")
+                .unwrap_or(false)
+        });
+
+        if !has_last_activity_at {
+            sqlite.execute(&format!(
+                "ALTER TABLE {} ADD COLUMN last_activity_at INTEGER NOT NULL DEFAULT 0",
+                GamesTable::table_name()
+            ))?;
+            sqlite.execute(&format!(
+                "UPDATE {} SET last_activity_at = created_at WHERE last_activity_at = 0",
+                GamesTable::table_name()
+            ))?;
+        }
+
         Ok(())
     }
 
@@ -155,6 +178,15 @@ impl SqliteUserRepository {
             &format!("DELETE FROM {} WHERE id = ?", GamesTable::table_name()),
             &[&game_id as &dyn rusqlite::types::ToSql],
         ).map_err(|_| db_error())
+    }
+
+    fn touch_game_activity(&self, game_id: &str, timestamp: i64) -> Result<(), Error> {
+        self.sqlite.execute_with_params(
+            &format!("UPDATE {} SET last_activity_at = ? WHERE id = ?", GamesTable::table_name()),
+            &[&timestamp as &dyn rusqlite::types::ToSql, &game_id],
+        ).map_err(|_| db_error())?;
+
+        Ok(())
     }
 }
 
@@ -315,7 +347,7 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
     async fn delete_stale_games(&self) -> Result<Vec<String>, Error> {
         let stale_before = Self::current_timestamp()? - STALE_GAME_TIMEOUT_SECONDS;
         let stale_rows = self.sqlite.query_with_params(
-            &format!("SELECT id FROM {} WHERE created_at < ?", GamesTable::table_name()),
+            &format!("SELECT id FROM {} WHERE last_activity_at < ?", GamesTable::table_name()),
             &[&stale_before as &dyn rusqlite::types::ToSql],
         ).map_err(|_| db_error())?;
 
@@ -348,8 +380,9 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
                     creator_name,
                     creator_id,
                     creator_profile_image_url,
-                    created_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    created_at,
+                    last_activity_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 GamesTable::table_name()
             ),
             &[
@@ -362,6 +395,7 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
                 &creator.name,
                 &creator.id,
                 &creator.profile_image_url,
+                &now,
                 &now,
             ],
         ).map_err(|_| db_error())?;
@@ -429,6 +463,8 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
             ).map_err(|_| db_error())?;
         }
 
+        self.touch_game_activity(game_id, Self::current_timestamp()?)?;
+
         self.find_game(game_id).await
     }
 
@@ -449,6 +485,8 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
                 ..game
             }));
         }
+
+        self.touch_game_activity(game_id, Self::current_timestamp()?)?;
 
         self.find_game(game_id).await
     }
@@ -504,6 +542,8 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
             &[&request.selected_race as &dyn rusqlite::types::ToSql, &game_id, &player_name],
         ).map_err(|_| db_error())?;
 
+        self.touch_game_activity(game_id, Self::current_timestamp()?)?;
+
         self.find_game(game_id).await
     }
 }
@@ -530,7 +570,7 @@ mod tests {
             password: None,
         }).await.unwrap();
         repo.sqlite.execute_with_params(
-            &format!("UPDATE {} SET created_at = ? WHERE id = ?", GamesTable::table_name()),
+            &format!("UPDATE {} SET last_activity_at = ? WHERE id = ?", GamesTable::table_name()),
             &[&0i64 as &dyn rusqlite::types::ToSql, &game.id],
         ).unwrap();
 

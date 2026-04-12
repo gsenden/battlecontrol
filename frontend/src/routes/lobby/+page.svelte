@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { getCurrentUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
-	import { joinGame, listGames, type GameDto } from '$lib/games/games.js';
+	import { joinGame, listGames, type GameDto, type GameRoomEventDto } from '$lib/games/games.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
@@ -10,9 +10,14 @@
 	let currentUser = $state<UserDto | null>(null);
 	let errorMessage = $state('');
 	let lobbyGames = $state<GameDto[]>([]);
+	let lobbySocket: WebSocket | null = null;
 
 	onMount(() => {
 		void loadCurrentUser();
+	});
+
+	onDestroy(() => {
+		lobbySocket?.close();
 	});
 
 	async function loadCurrentUser() {
@@ -23,9 +28,37 @@
 				return;
 			}
 			lobbyGames = await listGames();
+			connectLobbyEvents();
 		} catch (error) {
 			errorMessage = toReadableErrorMessage(error);
 		}
+	}
+
+	function connectLobbyEvents() {
+		lobbySocket?.close();
+		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+		lobbySocket = new WebSocket(`${protocol}//${window.location.host}/games/events`);
+		lobbySocket.onmessage = (event) => {
+			try {
+				handleLobbyEvent(JSON.parse(event.data) as GameRoomEventDto);
+			} catch (error) {
+				errorMessage = toReadableErrorMessage(error);
+			}
+		};
+	}
+
+	function handleLobbyEvent(event: GameRoomEventDto) {
+		if (event.kind === 'cancelled' || event.kind === 'started') {
+			lobbyGames = lobbyGames.filter((game) => game.id !== event.game_id);
+			return;
+		}
+
+		if (!event.game) {
+			return;
+		}
+
+		const nextGames = lobbyGames.filter((game) => game.id !== event.game_id);
+		lobbyGames = [event.game, ...nextGames];
 	}
 
 	async function openGame(game: GameDto) {
