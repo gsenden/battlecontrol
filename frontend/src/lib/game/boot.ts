@@ -6,10 +6,23 @@ import { APP_VERSION } from './version.js';
 import { mountDebugOverlay, toggleDebugUi } from './debug-overlay.js';
 import type { UserSettingsDto } from '$lib/auth/auth.js';
 
+export interface BattleSetup {
+	playerShipType: string;
+	targetShipType: string;
+	playerCaptainName?: string;
+	gameId?: string;
+	opponents?: Array<{
+		id: string;
+		shipType: string;
+		captainName: string;
+	}>;
+}
+
 export async function createBattleGame(
 	gameEl: HTMLDivElement,
 	hudEl: HTMLDivElement,
 	userSettings?: UserSettingsDto,
+	battleSetup?: BattleSetup,
 ): Promise<Phaser.Game> {
 	await initGameLogic();
 	assertVersionSync();
@@ -47,12 +60,18 @@ export async function createBattleGame(
 				debug: false,
 			},
 		},
+		callbacks: {
+			preBoot: (game) => {
+				game.registry.set('hudElement', hudEl);
+				if (userSettings) {
+					game.registry.set('userSettings', userSettings);
+				}
+				if (battleSetup) {
+					game.registry.set('battleSetup', battleSetup);
+				}
+			},
+		},
 	};
 
-	const game = new Phaser.Game(config);
-	game.registry.set('hudElement', hudEl);
-	if (userSettings) {
-		game.registry.set('userSettings', userSettings);
-	}
-	return game;
+	return new Phaser.Game(config);
 }

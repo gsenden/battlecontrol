@@ -23,6 +23,7 @@ export interface OtherShipHudState {
   portraitUrl: string;
   portraitHeight: number;
   renderScale: number;
+  isActiveTarget: boolean;
   captainName: string;
   shipName: string;
   crew: number;

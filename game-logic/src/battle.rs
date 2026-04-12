@@ -189,7 +189,9 @@ pub struct Battle {
     target_input: ShipInput,
     queued_target_weapon: bool,
     player_weapon_target: ProjectileTarget,
+    target_weapon_target: ProjectileTarget,
     player_special_target: SpecialTarget,
+    target_special_target: SpecialTarget,
     bubble_rng_state: u32,
     planet_x: f64,
     planet_y: f64,
@@ -284,7 +286,9 @@ impl Battle {
             },
             queued_target_weapon: false,
             player_weapon_target: ProjectileTarget::None,
+            target_weapon_target: ProjectileTarget::None,
             player_special_target: SpecialTarget::None,
+            target_special_target: SpecialTarget::None,
             bubble_rng_state: ANDROSYNTH_BUBBLE_RANDOM_SEED,
             planet_x,
             planet_y,
@@ -340,12 +344,32 @@ impl Battle {
         self.player_weapon_target = ProjectileTarget::None;
     }
 
+    pub fn set_target_weapon_target_point(&mut self, x: f64, y: f64) {
+        self.target_weapon_target = ProjectileTarget::Point { x, y };
+    }
+
+    pub fn set_target_weapon_target_ship(&mut self) {
+        self.target_weapon_target = ProjectileTarget::PlayerShip;
+    }
+
+    pub fn clear_target_weapon_target(&mut self) {
+        self.target_weapon_target = ProjectileTarget::None;
+    }
+
     pub fn set_player_special_target_point(&mut self, x: f64, y: f64) {
         self.player_special_target = SpecialTarget::Point { x, y };
     }
 
     pub fn clear_player_special_target(&mut self) {
         self.player_special_target = SpecialTarget::None;
+    }
+
+    pub fn set_target_special_target_point(&mut self, x: f64, y: f64) {
+        self.target_special_target = SpecialTarget::Point { x, y };
+    }
+
+    pub fn clear_target_special_target(&mut self) {
+        self.target_special_target = SpecialTarget::None;
     }
 
     pub fn switch_player_ship(&mut self, ship_type: &str) -> Result<(), String> {
@@ -1024,7 +1048,13 @@ impl Battle {
                         self.player_weapon_target
                     }
                 } else {
-                    self.default_enemy_target_for(false)
+                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
+                        && !self.ship_is_targetable(true)
+                    {
+                        ProjectileTarget::None
+                    } else {
+                        self.target_weapon_target
+                    }
                 }
             }
             ProjectileTargetMode::EnemyShip => self.default_enemy_target_for(is_player),
@@ -1039,6 +1069,14 @@ impl Battle {
                     }
                 } else if is_player {
                     self.default_enemy_target_for(true)
+                } else if !matches!(self.target_weapon_target, ProjectileTarget::None) {
+                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
+                        && !self.ship_is_targetable(true)
+                    {
+                        ProjectileTarget::None
+                    } else {
+                        self.target_weapon_target
+                    }
                 } else {
                     self.default_enemy_target_for(false)
                 }
@@ -1050,7 +1088,10 @@ impl Battle {
                         _ => ProjectileTarget::None,
                     }
                 } else {
-                    ProjectileTarget::None
+                    match self.target_weapon_target {
+                        ProjectileTarget::Point { .. } => self.target_weapon_target,
+                        _ => ProjectileTarget::None,
+                    }
                 }
             }
         }
@@ -1068,7 +1109,13 @@ impl Battle {
                         self.player_weapon_target
                     }
                 } else {
-                    self.default_enemy_target_for(false)
+                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
+                        && !self.ship_is_targetable(true)
+                    {
+                        ProjectileTarget::None
+                    } else {
+                        self.target_weapon_target
+                    }
                 }
             }
             ProjectileTargetMode::EnemyShip => self.default_enemy_target_for(is_player),
@@ -1083,6 +1130,14 @@ impl Battle {
                     }
                 } else if is_player {
                     self.default_enemy_target_for(true)
+                } else if !matches!(self.target_weapon_target, ProjectileTarget::None) {
+                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
+                        && !self.ship_is_targetable(true)
+                    {
+                        ProjectileTarget::None
+                    } else {
+                        self.target_weapon_target
+                    }
                 } else {
                     self.default_enemy_target_for(false)
                 }
@@ -1094,7 +1149,10 @@ impl Battle {
                         _ => ProjectileTarget::None,
                     }
                 } else {
-                    ProjectileTarget::None
+                    match self.target_weapon_target {
+                        ProjectileTarget::Point { .. } => self.target_weapon_target,
+                        _ => ProjectileTarget::None,
+                    }
                 }
             }
         }
@@ -1544,7 +1602,7 @@ impl Battle {
         if is_player {
             self.player_special_target
         } else {
-            SpecialTarget::None
+            self.target_special_target
         }
     }
 
@@ -2575,6 +2633,49 @@ mod tests {
     use crate::ship_input::ShipInput;
     use crate::ships::{AnyShip, HumanCruiser};
     use crate::traits::ship_trait::Ship;
+
+    fn target_androsynth_bubble_hit_damages_player_for_two_crew() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "androsynth-guardian",
+            5000.0,
+            4300.0,
+            5000.0,
+            5000.0,
+            500.0,
+            600.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+
+        battle.set_target_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        let player_body = battle
+            .matter_world
+            .body_state(battle.player.body_id)
+            .expect("player body");
+        battle.projectiles[0].x = player_body.x;
+        battle.projectiles[0].y = player_body.y;
+
+        battle.set_target_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().player.crew, 16);
+    }
 
     #[test]
     fn arilou_primary_instant_laser_adds_audio_event() {

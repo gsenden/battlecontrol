@@ -5,7 +5,7 @@ mod domain;
 #[cfg(test)]
 mod test_helpers;
 
-use adapters::{AuthApiAdapter, AxumAdapter, GameApiAdapter, SqliteUserRepository, TracingLoggerAdapter};
+use adapters::{AuthApiAdapter, AxumAdapter, BattleSessionHub, GameApiAdapter, GameRoomHub, SqliteUserRepository, TracingLoggerAdapter};
 use adapters::db::SqliteAdapter;
 use domain::{Authenticator, AuthenticatorDrivenPorts, GameLobby, GameLobbyDrivenPorts};
 use std::path::{Path, PathBuf};
@@ -31,6 +31,7 @@ impl AuthenticatorDrivenPorts for ProductionDrivenPorts {
 struct ProductionGameDrivenPorts;
 impl GameLobbyDrivenPorts for ProductionGameDrivenPorts {
     type GameRepo = SqliteUserRepository;
+    type GameRooms = GameRoomHub;
 }
 
 #[tokio::main]
@@ -39,13 +40,15 @@ async fn main() {
         .expect("Failed to open database");
     let user_repo = SqliteUserRepository::new(sqlite.clone())
         .expect("Failed to initialize user repository");
+    let game_rooms = GameRoomHub::new();
+    let battle_sessions = BattleSessionHub::new();
     let authenticator = Authenticator::<ProductionDrivenPorts>::new(user_repo.clone());
-    let game_lobby = GameLobby::<ProductionGameDrivenPorts>::new(user_repo);
+    let game_lobby = GameLobby::<ProductionGameDrivenPorts>::new(user_repo, game_rooms.clone());
     let logger = TracingLoggerAdapter;
 
     AxumAdapter::new()
         .register(AuthApiAdapter::new(authenticator, logger.clone(), sqlite.clone()))
-        .register(GameApiAdapter::new(game_lobby, logger, sqlite))
+        .register(GameApiAdapter::new(game_lobby, game_rooms, battle_sessions, logger, sqlite))
         .serve_directory("/uploads", &uploads_path())
         .serve_spa("frontend/build")
         .serve()

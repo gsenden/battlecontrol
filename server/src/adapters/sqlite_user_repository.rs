@@ -11,6 +11,8 @@ fn db_error() -> Error {
     Error::DatabaseError(DatabaseErrorError::new())
 }
 
+const STALE_GAME_TIMEOUT_SECONDS: i64 = 10 * 60;
+
 #[derive(Clone)]
 pub struct SqliteUserRepository {
     sqlite: SqliteAdapter,
@@ -133,6 +135,25 @@ impl SqliteUserRepository {
                 })
             })
             .collect()
+    }
+
+    fn current_timestamp() -> Result<i64, Error> {
+        Ok(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| db_error())?
+            .as_secs() as i64)
+    }
+
+    fn delete_game_rows(&self, game_id: &str) -> Result<(), Error> {
+        self.sqlite.execute_with_params(
+            &format!("DELETE FROM {} WHERE game_id = ?", GamePlayersTable::table_name()),
+            &[&game_id as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())?;
+
+        self.sqlite.execute_with_params(
+            &format!("DELETE FROM {} WHERE id = ?", GamesTable::table_name()),
+            &[&game_id as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())
     }
 }
 
@@ -290,13 +311,29 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
 
 #[async_trait]
 impl GameRepositoryDrivenPort for SqliteUserRepository {
+    async fn delete_stale_games(&self) -> Result<Vec<String>, Error> {
+        let stale_before = Self::current_timestamp()? - STALE_GAME_TIMEOUT_SECONDS;
+        let stale_rows = self.sqlite.query_with_params(
+            &format!("SELECT id FROM {} WHERE created_at < ?", GamesTable::table_name()),
+            &[&stale_before as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())?;
+
+        let stale_game_ids = stale_rows
+            .iter()
+            .map(|row| row.get::<String>("id").map_err(|_| db_error()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for game_id in &stale_game_ids {
+            self.delete_game_rows(game_id)?;
+        }
+
+        Ok(stale_game_ids)
+    }
+
     async fn save_game(&self, creator_name: &str, request: &CreateGameRequestDto) -> Result<GameDto, Error> {
         let creator = self.find_by_name(creator_name).await?.ok_or_else(db_error)?;
         let game_id = Uuid::new_v4().to_string();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| db_error())?
-            .as_secs() as i64;
+        let now = Self::current_timestamp()?;
 
         self.sqlite.execute_with_params(
             &format!(
@@ -394,6 +431,57 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
         self.find_game(game_id).await
     }
 
+    async fn leave_game(&self, game_id: &str, player_name: &str) -> Result<Option<GameDto>, Error> {
+        let Some(game) = self.find_game(game_id).await? else {
+            return Ok(None);
+        };
+
+        self.sqlite.execute_with_params(
+            &format!("DELETE FROM {} WHERE game_id = ? AND user_name = ?", GamePlayersTable::table_name()),
+            &[&game_id as &dyn rusqlite::types::ToSql, &player_name],
+        ).map_err(|_| db_error())?;
+
+        if game.creator.name == player_name {
+            self.delete_game_rows(game_id)?;
+            return Ok(Some(GameDto {
+                players: Vec::new(),
+                ..game
+            }));
+        }
+
+        self.find_game(game_id).await
+    }
+
+    async fn cancel_game(&self, game_id: &str, player_name: &str) -> Result<Option<GameDto>, Error> {
+        let Some(game) = self.find_game(game_id).await? else {
+            return Ok(None);
+        };
+
+        if game.creator.name != player_name {
+            return Err(common::domain::Error::AuthenticationFailed(
+                common::domain::error::AuthenticationFailedError::new(),
+            ));
+        }
+
+        self.delete_game_rows(game_id)?;
+        Ok(Some(game))
+    }
+
+    async fn start_game(&self, game_id: &str, player_name: &str) -> Result<Option<GameDto>, Error> {
+        let Some(game) = self.find_game(game_id).await? else {
+            return Ok(None);
+        };
+
+        if game.creator.name != player_name {
+            return Err(common::domain::Error::AuthenticationFailed(
+                common::domain::error::AuthenticationFailedError::new(),
+            ));
+        }
+
+        self.delete_game_rows(game_id)?;
+        Ok(Some(game))
+    }
+
     async fn save_selected_race(&self, game_id: &str, player_name: &str, request: &SaveSelectedRaceRequestDto) -> Result<Option<GameDto>, Error> {
         let player_exists = self.sqlite.query_with_params(
             &format!(
@@ -427,6 +515,45 @@ mod tests {
     fn repo_in_memory() -> SqliteUserRepository {
         let sqlite = SqliteAdapter::new(":memory:").unwrap();
         SqliteUserRepository::new(sqlite).unwrap()
+    }
+
+    #[tokio::test]
+    async fn list_games_removes_stale_games() {
+        let repo = repo_in_memory();
+        repo.save_user("Host", Uuid::new_v4()).await.unwrap();
+        let game = repo.save_game("Host", &CreateGameRequestDto {
+            name: "Stale".to_string(),
+            game_type: "free_for_all".to_string(),
+            max_players: 4,
+            is_private: false,
+            password: None,
+        }).await.unwrap();
+        repo.sqlite.execute_with_params(
+            &format!("UPDATE {} SET created_at = ? WHERE id = ?", GamesTable::table_name()),
+            &[&0i64 as &dyn rusqlite::types::ToSql, &game.id],
+        ).unwrap();
+
+        let games = repo.delete_stale_games().await.unwrap();
+
+        assert_eq!(games, vec![game.id]);
+    }
+
+    #[tokio::test]
+    async fn start_game_removes_game_from_repository() {
+        let repo = repo_in_memory();
+        repo.save_user("Host", Uuid::new_v4()).await.unwrap();
+        let game = repo.save_game("Host", &CreateGameRequestDto {
+            name: "Ready".to_string(),
+            game_type: "free_for_all".to_string(),
+            max_players: 4,
+            is_private: false,
+            password: None,
+        }).await.unwrap();
+
+        repo.start_game(&game.id, "Host").await.unwrap();
+        let found = repo.find_game(&game.id).await.unwrap();
+
+        assert!(found.is_none());
     }
 
     #[tokio::test]

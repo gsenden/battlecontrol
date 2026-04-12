@@ -34,7 +34,7 @@ impl AxumAdapter {
         let static_service = tower::service_fn(move |request: Request<Body>| {
             let serve_dir = serve_dir.clone();
             async move {
-                if request.uri().path().starts_with("/auth") {
+                if request.uri().path().starts_with("/auth") || request.uri().path().starts_with("/games") {
                     return Ok::<_, Infallible>(StatusCode::NOT_FOUND.into_response());
                 }
 

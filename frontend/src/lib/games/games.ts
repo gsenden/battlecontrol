@@ -32,6 +32,12 @@ export interface SaveSelectedRaceRequestDto {
 	selected_race: string;
 }
 
+export interface GameRoomEventDto {
+	kind: 'snapshot' | 'started' | 'cancelled';
+	game_id: string;
+	game?: GameDto | null;
+}
+
 export async function createGame(game: CreateGameRequestDto): Promise<GameDto> {
 	const response = await fetch('/games', {
 		method: 'POST',
@@ -75,6 +81,19 @@ export async function getGame(gameId: string): Promise<GameDto> {
 	return response.json() as Promise<GameDto>;
 }
 
+export async function getGameInstance(gameId: string): Promise<GameDto> {
+	const response = await fetch(`/games/${gameId}/instance`, {
+		method: 'GET',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseGameError(response);
+	}
+
+	return response.json() as Promise<GameDto>;
+}
+
 export async function joinGame(gameId: string, request: JoinGameRequestDto): Promise<GameDto> {
 	const response = await fetch(`/games/${gameId}/join`, {
 		method: 'POST',
@@ -107,6 +126,52 @@ export async function saveSelectedRace(gameId: string, request: SaveSelectedRace
 	}
 
 	return response.json() as Promise<GameDto>;
+}
+
+export async function leaveGame(gameId: string): Promise<void> {
+	const response = await fetch(`/games/${gameId}/leave`, {
+		method: 'POST',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseGameError(response);
+	}
+}
+
+export async function cancelGame(gameId: string): Promise<void> {
+	const response = await fetch(`/games/${gameId}/cancel`, {
+		method: 'POST',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseGameError(response);
+	}
+}
+
+export async function startGame(gameId: string): Promise<GameDto> {
+	const response = await fetch(`/games/${gameId}/start`, {
+		method: 'POST',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseGameError(response);
+	}
+
+	return response.json() as Promise<GameDto>;
+}
+
+export async function completeGame(gameId: string): Promise<void> {
+	const response = await fetch(`/games/${gameId}/complete`, {
+		method: 'POST',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseGameError(response);
+	}
 }
 
 async function parseGameError(response: Response): Promise<Error> {

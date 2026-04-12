@@ -4,10 +4,11 @@ version.workspace = true
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart", "ws"] }
 tower-http = { version = "0.6", features = ["fs"] }
 common = { path = "../common" }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+game-logic = { path = "../game-logic" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 async-trait = "0.1.89"
 rusqlite = { version = "0.34", features = ["bundled"] }
 tracing = "0.1"

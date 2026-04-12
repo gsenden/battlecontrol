@@ -4,12 +4,18 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import wasm from 'vite-plugin-wasm';
 import { defineConfig } from 'vite';
+import { parse } from 'yaml';
 import { generateI18n, getI18nWatchFiles } from './scripts/i18n-generator.js';
 
 const appVersion = readFileSync(
 	fileURLToPath(new URL('../VERSION', import.meta.url)),
 	'utf-8',
 ).trim();
+const envDefaults = parse(
+	readFileSync(fileURLToPath(new URL('../shared/environment_variables_defaults.yaml', import.meta.url)), 'utf-8'),
+);
+const serverHost = process.env.MATTER_SERVER_HOST ?? envDefaults.SERVER.HOST.default;
+const serverPort = process.env.MATTER_SERVER_PORT ?? envDefaults.SERVER.PORT.default;
 
 function sharedI18nPlugin() {
 	let generatedOnce = false;
@@ -53,6 +59,8 @@ function sharedI18nPlugin() {
 export default defineConfig({
 	define: {
 		__APP_VERSION__: JSON.stringify(appVersion),
+		__SERVER_HOST__: JSON.stringify(serverHost),
+		__SERVER_PORT__: JSON.stringify(serverPort),
 	},
 	plugins: [sharedI18nPlugin(), tailwindcss(), sveltekit(), wasm()],
 	resolve: {
@@ -72,7 +80,10 @@ export default defineConfig({
 		},
 		proxy: {
 			'/auth': 'http://127.0.0.1:3000',
-			'/games': 'http://127.0.0.1:3000',
+			'/games': {
+				target: 'http://127.0.0.1:3000',
+				ws: true,
+			},
 			'/uploads': 'http://127.0.0.1:3000',
 		},
 	},

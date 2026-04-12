@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { getCurrentUser, toReadableErrorMessage, type UserDto } from '$lib/auth/auth.js';
-	import { getGame, saveSelectedRace, type GameDto } from '$lib/games/games.js';
+	import { cancelGame, getGame, leaveGame, saveSelectedRace, startGame, type GameDto, type GameRoomEventDto } from '$lib/games/games.js';
 	import { initGameLogic } from '$lib/game/game-logic.js';
 	import { buildShipPresets, type ShipPreset } from '$lib/game/ships/ship-presets.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
@@ -19,9 +19,14 @@
 	let selectedRace = $state('');
 	let shipPresets = $state<ShipPreset[]>([]);
 	let raceMenuOpen = $state(false);
+	let gameSocket: WebSocket | null = null;
 
 	onMount(() => {
 		void loadBriefingRoom();
+	});
+
+	onDestroy(() => {
+		gameSocket?.close();
 	});
 
 	async function loadBriefingRoom() {
@@ -39,8 +44,42 @@
 			selectedRace = game.players.find((player) => player.user.name === currentUser.name)?.selected_race
 				?? shipPresets[0]?.stats.spritePrefix
 				?? '';
+			connectGameRoom();
 		} catch (error) {
 			errorMessage = toReadableErrorMessage(error);
+		}
+	}
+
+	function connectGameRoom() {
+		gameSocket?.close();
+		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+		gameSocket = new WebSocket(`${protocol}//${window.location.host}/games/${data.gameId}/events`);
+		gameSocket.onmessage = (event) => {
+			try {
+				handleGameRoomEvent(JSON.parse(event.data) as GameRoomEventDto);
+			} catch (error) {
+				errorMessage = toReadableErrorMessage(error);
+			}
+		};
+	}
+
+	function handleGameRoomEvent(event: GameRoomEventDto) {
+		if (event.kind === 'cancelled') {
+			window.location.assign('/lobby');
+			return;
+		}
+
+		if (event.kind === 'started') {
+			window.location.assign(`/battle?gameId=${event.game_id}`);
+			return;
+		}
+
+		if (event.game) {
+			game = event.game;
+			const currentPlayer = event.game.players.find((player) => player.user.name === currentUser?.name);
+			if (currentPlayer?.selected_race) {
+				selectedRace = currentPlayer.selected_race;
+			}
 		}
 	}
 
@@ -74,6 +113,31 @@
 		}
 
 		return shipPresets.find((preset) => preset.stats.spritePrefix === spritePrefix) ?? null;
+	}
+
+	function currentUserIsHost(): boolean {
+		return game?.creator.name === currentUser?.name;
+	}
+
+	async function cancelOrLeaveGame() {
+		try {
+			if (currentUserIsHost()) {
+				await cancelGame(data.gameId);
+			} else {
+				await leaveGame(data.gameId);
+			}
+			window.location.assign('/lobby');
+		} catch (error) {
+			errorMessage = toReadableErrorMessage(error);
+		}
+	}
+
+	async function startCurrentGame() {
+		try {
+			await startGame(data.gameId);
+		} catch (error) {
+			errorMessage = toReadableErrorMessage(error);
+		}
 	}
 </script>
 
@@ -121,16 +185,18 @@
 						</div>
 					</div>
 					<div class="flex flex-col items-center justify-center">
-						<button
-							aria-label={t('START_GAME', $currentLanguage)}
-							class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#3f8f63] bg-[#102819] text-[#d9ffe7] shadow-[0_10px_24px_rgb(10_32_18/22%)] transition hover:border-[#6fe49c] hover:bg-[#173922] hover:text-white active:translate-y-[33px] active:border-[#2f6c4a] active:bg-[#0c1e13] active:shadow-[0_4px_10px_rgb(10_32_18/18%)]"
-							onclick={() => goto('/battle')}
-							type="button"
-						>
-							<svg aria-hidden="true" class="h-4 w-4 translate-x-[1px]" fill="currentColor" viewBox="0 0 24 24">
-								<path d="M8 6v12l10-6-10-6Z" />
-							</svg>
-						</button>
+						{#if currentUserIsHost()}
+							<button
+								aria-label={t('START_GAME', $currentLanguage)}
+								class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#3f8f63] bg-[#102819] text-[#d9ffe7] shadow-[0_10px_24px_rgb(10_32_18/22%)] transition hover:border-[#6fe49c] hover:bg-[#173922] hover:text-white active:border-[#2f6c4a] active:bg-[#0c1e13] active:shadow-[0_4px_10px_rgb(10_32_18/18%)]"
+								onclick={() => void startCurrentGame()}
+								type="button"
+							>
+								<svg aria-hidden="true" class="h-4 w-4 translate-x-[1px]" fill="currentColor" viewBox="0 0 24 24">
+									<path d="M8 6v12l10-6-10-6Z" />
+								</svg>
+							</button>
+						{/if}
 						
 					</div>
 				</div>
@@ -260,5 +326,5 @@
 			</div>
 		</div>
 	{/if}
-	<LandingTextLink className="mt-2" label={t('CANCEL', $currentLanguage)} onclick={() => goto('/lobby')} />
+	<LandingTextLink className={currentUserIsHost() ? 'mt-2' : 'mt-0'} label={t('CANCEL', $currentLanguage)} onclick={() => void cancelOrLeaveGame()} />
 </div>

@@ -62,7 +62,17 @@
 
 	<div class="mx-auto flex min-h-0 w-full max-w-[920px] flex-1 justify-center">
 		<section class="flex min-h-0 w-full flex-col">
-			<div class="mb-5 flex justify-end">
+			<div class="mb-5 flex items-center justify-between">
+				<button
+					aria-label={t('OK', $currentLanguage)}
+					class="inline-flex h-9 w-12 items-center justify-center rounded-[12px] border border-[#435269] bg-[#101923] text-[#d9e3ef] shadow-[0_10px_24px_rgb(5_10_18/18%)] transition hover:border-[#6f839b] hover:bg-[#162233] hover:text-white active:translate-y-[1px] active:border-[#38485d] active:bg-[#0d1520] active:shadow-[0_4px_10px_rgb(5_10_18/14%)]"
+					onclick={() => goto('/menu')}
+					type="button"
+				>
+					<svg aria-hidden="true" class="h-4 w-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" viewBox="0 0 24 24">
+						<path d="m15 18-6-6 6-6" />
+					</svg>
+				</button>
 				<button
 					aria-label={t('NEW_GAME', $currentLanguage)}
 					class="inline-flex h-9 w-12 items-center justify-center rounded-[12px] border border-[#3f8f63] bg-[#102819] text-[#d9ffe7] shadow-[0_10px_24px_rgb(10_32_18/22%)] transition hover:border-[#6fe49c] hover:bg-[#173922] hover:text-white active:translate-y-[1px] active:border-[#2f6c4a] active:bg-[#0c1e13] active:shadow-[0_4px_10px_rgb(10_32_18/18%)]"

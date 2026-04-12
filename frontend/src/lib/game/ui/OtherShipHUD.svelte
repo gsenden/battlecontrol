@@ -20,11 +20,13 @@
       <div class="font-[StarCon] text-[14px] leading-none tracking-[0.08em] text-black">
         R.I.P.
       </div>
-    {:else}
+    {:else if ship.isActiveTarget}
       <div class="flex w-[56px] flex-col gap-0.5">
         <OtherShipStatBar type="crew" current={ship.crew} max={ship.maxCrew} barMax={ship.crewBarMax} />
         <OtherShipStatBar type="batt" current={ship.energy} max={ship.maxEnergy} barMax={ship.energyBarMax} />
       </div>
+    {:else}
+      <div class="h-[18px] w-[56px]"></div>
     {/if}
   </div>
 

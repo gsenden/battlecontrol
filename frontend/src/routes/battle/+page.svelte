@@ -1,29 +1,54 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { getUserSettings, type UserSettingsDto } from '$lib/auth/auth.js';
+	import { goto } from '$app/navigation';
+	import { getCurrentUser, getUserSettings, type UserSettingsDto } from '$lib/auth/auth.js';
+	import { completeGame, getGameInstance } from '$lib/games/games.js';
+	import { currentLanguage } from '$lib/i18n/i18n.js';
+	import { t } from '$lib/i18n/translations.js';
+	import type { BattleSetup } from '$lib/game/boot.js';
 
 	let gameContainer: HTMLDivElement;
 	let hudContainer: HTMLDivElement;
 	let game: import('phaser').Game | null = null;
 	let sceneReady = $state(false);
 	let started = $state(false);
+	let errorMessage = $state('');
+	let activeGameId = $state<string | null>(null);
+	let battleSetup = $state<BattleSetup | undefined>(undefined);
+	let battleStarted = $state(false);
+	let resultWinner = $state('');
 
-	onMount(async () => {
-		const { createBattleGame } = await import('$lib/game/boot.js');
-		let userSettings: UserSettingsDto | null = null;
-
+	onMount(() => {
 		const onReady = () => {
 			sceneReady = true;
+			if (activeGameId) {
+				triggerBattleStart();
+			}
+		};
+		const onBattleFinished = () => {
+			if (!activeGameId) {
+				return;
+			}
+
+			const phaserGame = game;
+			const battleScene = phaserGame?.scene.getScene('BattleScene') as { playerShip?: { dead?: boolean } } | undefined;
+			const playerLost = Boolean(battleScene?.playerShip?.dead);
+			resultWinner = playerLost
+				? battleSetup?.opponents?.[0]?.captainName ?? ''
+				: battleSetup?.playerCaptainName ?? '';
+
+			window.setTimeout(() => {
+				void completeGame(activeGameId).catch(() => {});
+				void goto(`/battle-result?winner=${encodeURIComponent(resultWinner)}`);
+			}, 2500);
 		};
 		window.addEventListener('battlecontrol:scene-ready', onReady, { once: true });
-
-		try {
-			userSettings = await getUserSettings();
-		} catch {
-			userSettings = null;
-		}
-
-		game = await createBattleGame(gameContainer, hudContainer, userSettings ?? undefined);
+		window.addEventListener('battlecontrol:battle-finished', onBattleFinished);
+		void loadBattle();
+		return () => {
+			window.removeEventListener('battlecontrol:scene-ready', onReady);
+			window.removeEventListener('battlecontrol:battle-finished', onBattleFinished);
+		};
 	});
 
 	onDestroy(() => {
@@ -32,12 +57,74 @@
 	});
 
 	function startGame() {
+		if (started) {
+			return;
+		}
 		started = true;
+		triggerBattleStart();
+	}
+
+	function triggerBattleStart() {
+		if (battleStarted) {
+			return;
+		}
+		battleStarted = true;
 		window.dispatchEvent(new Event('battlecontrol:start-game'));
+	}
+
+	async function loadBattle() {
+		const { createBattleGame } = await import('$lib/game/boot.js');
+		let userSettings: UserSettingsDto | null = null;
+		try {
+			userSettings = await getUserSettings();
+		} catch {
+			userSettings = null;
+		}
+
+		try {
+			const gameId = new URL(window.location.href).searchParams.get('gameId');
+			if (gameId) {
+				activeGameId = gameId;
+				started = true;
+				const [currentUser, gameInstance] = await Promise.all([
+					getCurrentUser(),
+					getGameInstance(gameId),
+				]);
+				const currentPlayer = gameInstance.players.find((player) => player.user.name === currentUser?.name);
+				const opponents = gameInstance.players
+					.filter((player) => player.user.name !== currentUser?.name)
+					.map((player) => ({
+						id: player.user.id,
+						shipType: player.selected_race ?? 'human-cruiser',
+						captainName: player.user.name,
+					}));
+				battleSetup = {
+					playerShipType: currentPlayer?.selected_race ?? 'human-cruiser',
+					targetShipType: opponents[0]?.shipType ?? 'human-cruiser',
+					playerCaptainName: currentUser?.name ?? currentPlayer?.user.name ?? '',
+					gameId,
+					opponents,
+				};
+			}
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Battle setup failed';
+		}
+
+		try {
+			game = await createBattleGame(gameContainer, hudContainer, userSettings ?? undefined, battleSetup);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Battle startup failed';
+		}
 	}
 </script>
 
-{#if !started}
+{#if errorMessage}
+	<div class="fixed left-1/2 top-4 z-[110] -translate-x-1/2 rounded-[12px] border border-[#8f3e45] bg-[#2a1115] px-4 py-3 text-[14px] text-[#ffbcc2]">
+		{errorMessage}
+	</div>
+{/if}
+
+{#if !started && !activeGameId}
 	<div
 		class="fixed inset-0 z-[100] flex items-center justify-center
 			bg-[radial-gradient(circle_at_center,rgb(10_18_34/55%),rgb(0_0_0/88%))]"

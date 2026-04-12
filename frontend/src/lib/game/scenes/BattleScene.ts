@@ -48,6 +48,7 @@ import {
   setDebugStatus,
 } from '../debug-overlay.js';
 import type { UserSettingsDto } from '$lib/auth/auth.js';
+import type { BattleSetup } from '../boot.js';
 
 const shipModules = import.meta.glob('../assets/ships/*/*-big-*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const battleModules = import.meta.glob('../assets/battle/*.png', { eager: true, import: 'default' }) as Record<string, string>;
@@ -112,7 +113,8 @@ export class BattleScene extends Phaser.Scene {
   private fireEnemyWeaponKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
-  private battleWorker!: Worker;
+  private battleWorker?: Worker;
+  private battleSocket: WebSocket | null = null;
   private planetBase!: string;
   private planetX = BATTLE_WIDTH / 2;
   private planetY = BATTLE_HEIGHT / 2;
@@ -137,11 +139,13 @@ export class BattleScene extends Phaser.Scene {
   private currentAllies: OtherShipHudState[] = [];
   private currentOpponents: OtherShipHudState[] = [];
   private targetCaptainName = '';
+  private playerCaptainName = '';
   private projectileHitPolygons: Phaser.GameObjects.Graphics[] = [];
   private loggedExplosionKeys = new Set<string>();
   private projectileTraceFrame = 0;
   private projectileTraceStopped = false;
   private lastWeaponDown = false;
+  private finishedEventSent = false;
 
   constructor() {
     super('BattleScene');
@@ -228,9 +232,15 @@ export class BattleScene extends Phaser.Scene {
     gfx.destroy();
 
     // Ship — spawn offset from center so it's not on the planet
-    const selectedPreset = this.shipPresets[this.selectedShipIndex];
-    const targetPreset = this.getPresetBySpritePrefix('human-cruiser');
-    this.targetCaptainName = Phaser.Utils.Array.GetRandom(targetPreset.stats.captainNames);
+    const battleSetup = this.game.registry.get('battleSetup') as BattleSetup | undefined;
+    const selectedPreset = battleSetup
+      ? this.getPresetBySpritePrefix(battleSetup.playerShipType)
+      : this.shipPresets[this.selectedShipIndex];
+    const targetPreset = this.getPresetBySpritePrefix(battleSetup?.targetShipType ?? 'human-cruiser');
+    this.playerCaptainName = battleSetup?.playerCaptainName
+      ?? selectedPreset.stats.captainNames[Math.floor(Math.random() * selectedPreset.stats.captainNames.length)];
+    this.targetCaptainName = battleSetup?.opponents?.[0]?.captainName
+      ?? Phaser.Utils.Array.GetRandom(targetPreset.stats.captainNames);
     this.playerShip = new Ship(this, this.planetX + 800, this.planetY, selectedPreset.stats);
     this.targetShip = new Ship(this, this.planetX + 2600, this.planetY - 500, targetPreset.stats);
     this.targetShip.setTint(0xff8866);
@@ -238,34 +248,39 @@ export class BattleScene extends Phaser.Scene {
     this.playerHitPolygon.setDepth(20);
     this.targetHitPolygon = this.add.graphics();
     this.targetHitPolygon.setDepth(20);
-    this.battleWorker = new Worker(new URL('../workers/battle-worker.ts', import.meta.url), { type: 'module' });
-    this.battleWorker.onmessage = (event: MessageEvent<BattleWorkerResponse>) => {
-      if (event.data.type !== 'snapshot') {
-        return;
-      }
+    if (battleSetup?.gameId) {
+      this.connectBattleSocket(battleSetup.gameId);
+    } else {
+      this.battleWorker = new Worker(new URL('../workers/battle-worker.ts', import.meta.url), { type: 'module' });
+      this.battleWorker.onmessage = (event: MessageEvent<BattleWorkerResponse>) => {
+        if (event.data.type !== 'snapshot') {
+          return;
+        }
 
-      this.applySnapshot(event.data.snapshot);
-    };
-    this.battleWorker.postMessage({
-      type: 'initBattle',
-      playerShipType: selectedPreset.stats.spritePrefix,
-      targetShipType: targetPreset.stats.spritePrefix,
-      playerX: this.playerShip.x,
-      playerY: this.playerShip.y,
-      targetX: this.targetShip.x,
-      targetY: this.targetShip.y,
-      planetX: this.planetX,
-      planetY: this.planetY,
-      width: BATTLE_WIDTH,
-      height: BATTLE_HEIGHT,
-    });
+        this.applySnapshot(event.data.snapshot);
+      };
+      this.battleWorker.postMessage({
+        type: 'initBattle',
+        playerShipType: selectedPreset.stats.spritePrefix,
+        targetShipType: targetPreset.stats.spritePrefix,
+        playerX: this.playerShip.x,
+        playerY: this.playerShip.y,
+        targetX: this.targetShip.x,
+        targetY: this.targetShip.y,
+        planetX: this.planetX,
+        planetY: this.planetY,
+        width: BATTLE_WIDTH,
+        height: BATTLE_HEIGHT,
+      });
+    }
     this.battleMusic = new Audio(battleMusic);
     this.battleMusic.loop = true;
     this.battleMusic.volume = userSettings.music_enabled ? userSettings.music_volume / 100 : 0;
     this.battleMusic.preload = 'auto';
     window.addEventListener('battlecontrol:start-game', this.startBattleMusic);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.battleWorker.terminate();
+      this.battleWorker?.terminate();
+      this.battleSocket?.close();
       window.removeEventListener('battlecontrol:start-game', this.startBattleMusic);
       if (this.battleMusic) {
         this.battleMusic.pause();
@@ -305,7 +320,7 @@ export class BattleScene extends Phaser.Scene {
       const x = Math.round(pointer.worldX);
       const y = Math.round(pointer.worldY);
       if (pointer.rightButtonDown()) {
-        this.battleWorker.postMessage({ type: 'setPlayerSpecialTargetPoint', x, y });
+        this.sendBattleMessage({ type: 'setPlayerSpecialTargetPoint', x, y });
         appendDebugLine(`teleport x=${x} y=${y}`);
         return;
       }
@@ -314,9 +329,9 @@ export class BattleScene extends Phaser.Scene {
         ? 'ship'
         : 'point';
       if (targetType === 'ship') {
-        this.battleWorker.postMessage({ type: 'setPlayerWeaponTargetShip' });
+        this.sendBattleMessage({ type: 'setPlayerWeaponTargetShip' });
       } else {
-        this.battleWorker.postMessage({ type: 'setPlayerWeaponTargetPoint', x, y });
+        this.sendBattleMessage({ type: 'setPlayerWeaponTargetPoint', x, y });
       }
       appendDebugLine(`${targetType} x=${x} y=${y}`);
     });
@@ -381,20 +396,24 @@ export class BattleScene extends Phaser.Scene {
     }
 
     if (isDebugUiEnabled() && Phaser.Input.Keyboard.JustDown(this.fireEnemyWeaponKey)) {
-      this.battleWorker.postMessage({ type: 'triggerTargetWeapon' });
+      if (this.battleWorker) {
+        this.battleWorker.postMessage({ type: 'triggerTargetWeapon' });
+      }
     }
 
-    this.battleWorker.postMessage({ type: 'setPlayerInput', input: hudInput });
-    this.battleWorker.postMessage({
-      type: 'setTargetInput',
-      input: {
-        left: false,
-        right: isDebugUiEnabled() && this.rotateEnemyKey.isDown,
-        thrust: false,
-        weapon: false,
-        special: false,
-      },
-    });
+    this.sendBattleMessage({ type: 'setPlayerInput', input: hudInput });
+    if (this.battleWorker) {
+      this.battleWorker.postMessage({
+        type: 'setTargetInput',
+        input: {
+          left: false,
+          right: isDebugUiEnabled() && this.rotateEnemyKey.isDown,
+          thrust: false,
+          weapon: false,
+          special: false,
+        },
+      });
+    }
 
     // Visual update every render frame
     this.updateCamera();
@@ -452,7 +471,9 @@ export class BattleScene extends Phaser.Scene {
     this.playerShip.destroy();
     const preset = this.shipPresets[this.selectedShipIndex];
     this.playerShip = new Ship(this, currentX, currentY, preset.stats);
-    this.battleWorker.postMessage({ type: 'switchPlayerShip', shipType: preset.stats.spritePrefix });
+    if (this.battleWorker) {
+      this.battleWorker.postMessage({ type: 'switchPlayerShip', shipType: preset.stats.spritePrefix });
+    }
     this.cameraTarget.setPosition(this.playerShip.x, this.playerShip.y);
     this.saveSelectedShip();
     this.syncHudWithSelectedShip();
@@ -468,6 +489,10 @@ export class BattleScene extends Phaser.Scene {
     this.syncLasers(snapshot);
     this.syncTargetOpponent(snapshot);
     this.playAudioEvents(snapshot);
+    if ((snapshot.player.dead || snapshot.target.dead) && !this.finishedEventSent) {
+      this.finishedEventSent = true;
+      window.dispatchEvent(new CustomEvent('battlecontrol:battle-finished'));
+    }
     const zoomStatus = `zoom=${this.cameras.main.zoom.toFixed(3)}`;
     setDebugStatus(
       snapshot.projectiles[0]
@@ -764,7 +789,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private syncHudWithSelectedShip() {
-    const preset = this.shipPresets[this.selectedShipIndex];
+    const battleSetup = this.game.registry.get('battleSetup') as BattleSetup | undefined;
+    const preset = battleSetup
+      ? this.getPresetBySpritePrefix(battleSetup.playerShipType)
+      : this.shipPresets[this.selectedShipIndex];
     this.hud.setShip({
       ship: this.playerShip,
       stats: preset.stats,
@@ -772,7 +800,7 @@ export class BattleScene extends Phaser.Scene {
       captainFrameUrls: preset.captainFrameUrls,
       captainFrameStyles: preset.captainFrameStyles,
       captainLayout: preset.captainLayout,
-      captainName: preset.stats.captainNames[Math.floor(Math.random() * preset.stats.captainNames.length)],
+      captainName: this.playerCaptainName,
     } satisfies HUDShipInfo);
     this.syncFleetLayout();
   }
@@ -782,11 +810,27 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private syncFleetLayout() {
-    const [allies, opponents] = this.createRandomFleet(7, 7);
-    const targetPreset = this.getPresetBySpritePrefix('human-cruiser');
-    const targetOpponent = this.toOtherShipHudState(targetPreset, 'target-0', this.targetCaptainName);
-    this.currentAllies = allies;
-    this.currentOpponents = [targetOpponent, ...opponents];
+    const battleSetup = this.game.registry.get('battleSetup') as BattleSetup | undefined;
+    const targetPreset = this.getPresetBySpritePrefix(battleSetup?.targetShipType ?? 'human-cruiser');
+    const targetOpponent = this.toOtherShipHudState(targetPreset, 'target-0', this.targetCaptainName, true);
+
+    if (battleSetup?.opponents?.length) {
+      this.currentAllies = [];
+      this.currentOpponents = battleSetup.opponents.map((opponent, index) => {
+        const preset = this.getPresetBySpritePrefix(index === 0 ? battleSetup.targetShipType : opponent.shipType);
+        return this.toOtherShipHudState(
+          preset,
+          opponent.id,
+          opponent.captainName,
+          index === 0,
+        );
+      });
+      this.hud.setFleet(this.currentAllies, this.currentOpponents);
+      return;
+    }
+
+    this.currentAllies = [];
+    this.currentOpponents = [targetOpponent];
     this.hud.setFleet(this.currentAllies, this.currentOpponents);
   }
 
@@ -844,15 +888,21 @@ export class BattleScene extends Phaser.Scene {
       usedPrefixes.add(preset.stats.spritePrefix);
     }
 
-    return selected.map((preset, index) => this.toOtherShipHudState(preset, `${side}-${index}`));
+    return selected.map((preset, index) => this.toOtherShipHudState(preset, `${side}-${index}`, undefined, true));
   }
 
-  private toOtherShipHudState(preset: ShipPreset, id: string, captainName = Phaser.Utils.Array.GetRandom(preset.stats.captainNames)): OtherShipHudState {
+  private toOtherShipHudState(
+    preset: ShipPreset,
+    id: string,
+    captainName = Phaser.Utils.Array.GetRandom(preset.stats.captainNames),
+    isActiveTarget = false,
+  ): OtherShipHudState {
     return {
       id,
       portraitUrl: preset.portraitUrl,
       portraitHeight: getOtherShipPortraitHeight(preset.stats.size),
       renderScale: preset.stats.renderScale ?? getShipRenderScale(preset.stats.size),
+      isActiveTarget,
       captainName,
       shipName: preset.stats.raceName,
       crew: preset.stats.maxCrew,
@@ -929,5 +979,52 @@ export class BattleScene extends Phaser.Scene {
   private keyCodeFor(keyName: string, fallback: number) {
     const normalized = keyName.trim().toUpperCase();
     return Phaser.Input.Keyboard.KeyCodes[normalized as keyof typeof Phaser.Input.Keyboard.KeyCodes] ?? fallback;
+  }
+
+  private connectBattleSocket(gameId: string) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.battleSocket = new WebSocket(`${protocol}//${window.location.host}/games/${gameId}/battle`);
+    this.battleSocket.onmessage = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as BattleWorkerResponse;
+      if (payload.type !== 'snapshot') {
+        return;
+      }
+
+      this.applySnapshot(payload.snapshot);
+    };
+  }
+
+  private sendBattleMessage(message: BattleWorkerMessage) {
+    if (this.battleWorker) {
+      this.battleWorker.postMessage(message);
+      return;
+    }
+
+    if (!this.battleSocket || this.battleSocket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    switch (message.type) {
+      case 'setPlayerInput':
+        this.battleSocket.send(JSON.stringify({ type: 'setInput', input: message.input }));
+        break;
+      case 'setPlayerWeaponTargetPoint':
+        this.battleSocket.send(JSON.stringify({ type: 'setWeaponTargetPoint', x: message.x, y: message.y }));
+        break;
+      case 'setPlayerWeaponTargetShip':
+        this.battleSocket.send(JSON.stringify({ type: 'setWeaponTargetShip' }));
+        break;
+      case 'setPlayerSpecialTargetPoint':
+        this.battleSocket.send(JSON.stringify({ type: 'setSpecialTargetPoint', x: message.x, y: message.y }));
+        break;
+      case 'clearPlayerWeaponTarget':
+        this.battleSocket.send(JSON.stringify({ type: 'clearWeaponTarget' }));
+        break;
+      case 'clearPlayerSpecialTarget':
+        this.battleSocket.send(JSON.stringify({ type: 'clearSpecialTarget' }));
+        break;
+      default:
+        break;
+    }
   }
 }
