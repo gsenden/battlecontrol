@@ -76,7 +76,6 @@ impl<DP: GameLobbyDrivenPorts> GameDrivingPort for GameLobby<DP> {
             .start_game(&game_id, &player_name)
             .await?
             .ok_or_else(|| Error::RoomNotFound(RoomNotFoundError::new(game_id.clone())))?;
-        self.game_rooms.start_room(&game);
         Ok(game)
     }
 

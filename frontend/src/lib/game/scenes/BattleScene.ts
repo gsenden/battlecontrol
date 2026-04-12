@@ -115,6 +115,7 @@ export class BattleScene extends Phaser.Scene {
   private planet!: Phaser.GameObjects.Image;
   private battleWorker?: Worker;
   private battleSocket: WebSocket | null = null;
+  private battleSocketFailed = false;
   private planetBase!: string;
   private planetX = BATTLE_WIDTH / 2;
   private planetY = BATTLE_HEIGHT / 2;
@@ -129,11 +130,12 @@ export class BattleScene extends Phaser.Scene {
   private battleMusic?: HTMLAudioElement;
   private started = false;
   private readonly startBattleMusic = () => {
+    this.started = true;
+
     if (!this.battleMusic || !this.battleMusic.paused || this.battleMusic.volume <= 0) {
       return;
     }
 
-    this.started = true;
     void this.battleMusic.play().catch(() => {});
   };
   private currentAllies: OtherShipHudState[] = [];
@@ -249,6 +251,7 @@ export class BattleScene extends Phaser.Scene {
     this.targetHitPolygon = this.add.graphics();
     this.targetHitPolygon.setDepth(20);
     if (battleSetup?.gameId) {
+      this.started = true;
       this.connectBattleSocket(battleSetup.gameId);
     } else {
       this.battleWorker = new Worker(new URL('../workers/battle-worker.ts', import.meta.url), { type: 'module' });
@@ -978,13 +981,47 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private keyCodeFor(keyName: string, fallback: number) {
-    const normalized = keyName.trim().toUpperCase();
-    return Phaser.Input.Keyboard.KeyCodes[normalized as keyof typeof Phaser.Input.Keyboard.KeyCodes] ?? fallback;
+    const normalized = keyName.trim();
+    const legacyNormalized = normalized.toUpperCase();
+
+    const explicitMappings: Record<string, number> = {
+      Space: Phaser.Input.Keyboard.KeyCodes.SPACE,
+      ArrowLeft: Phaser.Input.Keyboard.KeyCodes.LEFT,
+      ArrowRight: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      ArrowUp: Phaser.Input.Keyboard.KeyCodes.UP,
+      ArrowDown: Phaser.Input.Keyboard.KeyCodes.DOWN,
+    };
+
+    if (explicitMappings[normalized]) {
+      return explicitMappings[normalized];
+    }
+
+    if (normalized.startsWith('Key') && normalized.length === 4) {
+      const letter = normalized.slice(3).toUpperCase();
+      return Phaser.Input.Keyboard.KeyCodes[letter as keyof typeof Phaser.Input.Keyboard.KeyCodes] ?? fallback;
+    }
+
+    return Phaser.Input.Keyboard.KeyCodes[legacyNormalized as keyof typeof Phaser.Input.Keyboard.KeyCodes] ?? fallback;
   }
 
   private connectBattleSocket(gameId: string) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     this.battleSocket = new WebSocket(`${protocol}//${window.location.host}/games/${gameId}/battle`);
+    const notifyFailure = (message: string) => {
+      if (this.battleSocketFailed) {
+        return;
+      }
+      this.battleSocketFailed = true;
+      window.dispatchEvent(new CustomEvent('battlecontrol:battle-connection-failed', {
+        detail: { message },
+      }));
+    };
+    this.battleSocket.onerror = () => {
+      notifyFailure('Battle connection failed');
+    };
+    this.battleSocket.onclose = () => {
+      notifyFailure('Battle connection lost');
+    };
     this.battleSocket.onmessage = (event: MessageEvent<string>) => {
       const payload = JSON.parse(event.data) as BattleWorkerResponse;
       if (payload.type !== 'snapshot') {

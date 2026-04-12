@@ -12,6 +12,7 @@ fn db_error() -> Error {
 }
 
 const STALE_GAME_TIMEOUT_SECONDS: i64 = 10 * 60;
+const DEFAULT_SELECTED_RACE: &str = "human-cruiser";
 
 #[derive(Clone)]
 pub struct SqliteUserRepository {
@@ -367,10 +368,10 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
 
         self.sqlite.execute_with_params(
             &format!(
-                "INSERT INTO {} (game_id, user_name) VALUES (?, ?)",
+                "INSERT INTO {} (game_id, user_name, selected_race) VALUES (?, ?, ?)",
                 GamePlayersTable::table_name()
             ),
-            &[&game_id as &dyn rusqlite::types::ToSql, &creator.name],
+            &[&game_id as &dyn rusqlite::types::ToSql, &creator.name, &DEFAULT_SELECTED_RACE],
         ).map_err(|_| db_error())?;
 
         self.find_game(&game_id).await?.ok_or_else(db_error)
@@ -421,10 +422,10 @@ impl GameRepositoryDrivenPort for SqliteUserRepository {
         if player_exists.is_empty() {
             self.sqlite.execute_with_params(
                 &format!(
-                    "INSERT INTO {} (game_id, user_name) VALUES (?, ?)",
+                    "INSERT INTO {} (game_id, user_name, selected_race) VALUES (?, ?, ?)",
                     GamePlayersTable::table_name()
                 ),
-                &[&game_id as &dyn rusqlite::types::ToSql, &player_name],
+                &[&game_id as &dyn rusqlite::types::ToSql, &player_name, &DEFAULT_SELECTED_RACE],
             ).map_err(|_| db_error())?;
         }
 

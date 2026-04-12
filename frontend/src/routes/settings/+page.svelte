@@ -73,34 +73,24 @@
 		successMessage = '';
 		settings = {
 			...settings,
-			[settingKey]: normalizeKey(event.key),
+			[settingKey]: normalizeKey(event),
 		};
 	}
 
-	function normalizeKey(key: string): string {
-		const normalizedKey = key.trim().toUpperCase();
-
-		if (normalizedKey === ' ') {
-			return 'SPACE';
+	function normalizeKey(event: KeyboardEvent): string {
+		if (event.code === 'Space') {
+			return 'Space';
 		}
 
-		if (normalizedKey === 'ARROWLEFT') {
-			return 'LEFT';
+		if (event.code.startsWith('Arrow')) {
+			return event.code;
 		}
 
-		if (normalizedKey === 'ARROWRIGHT') {
-			return 'RIGHT';
+		if (event.code.startsWith('Key')) {
+			return event.code;
 		}
 
-		if (normalizedKey === 'ARROWUP') {
-			return 'UP';
-		}
-
-		if (normalizedKey === 'ARROWDOWN') {
-			return 'DOWN';
-		}
-
-		return normalizedKey;
+		return event.code || event.key;
 	}
 
 	function toggleSetting(settingKey: 'music_enabled' | 'sound_effects_enabled') {

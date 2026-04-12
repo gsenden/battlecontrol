@@ -12,6 +12,7 @@
 
 	const { data } = $props<{ data: { gameId: string } }>();
 	const AVAILABLE_SHIP_PREFIXES = ['human-cruiser', 'arilou-skiff', 'androsynth-guardian'];
+	const DEFAULT_SELECTED_RACE = 'human-cruiser';
 
 	let currentUser = $state<UserDto | null>(null);
 	let game = $state<GameDto | null>(null);
@@ -42,7 +43,7 @@
 				AVAILABLE_SHIP_PREFIXES.includes(preset.stats.spritePrefix),
 			);
 			selectedRace = game.players.find((player) => player.user.name === currentUser.name)?.selected_race
-				?? shipPresets[0]?.stats.spritePrefix
+				?? DEFAULT_SELECTED_RACE
 				?? '';
 			connectGameRoom();
 		} catch (error) {
@@ -119,6 +120,10 @@
 		return game?.creator.name === currentUser?.name;
 	}
 
+	function canStartGame(): boolean {
+		return (game?.players.length ?? 0) === 2;
+	}
+
 	async function cancelOrLeaveGame() {
 		try {
 			if (currentUserIsHost()) {
@@ -189,6 +194,9 @@
 							<button
 								aria-label={t('START_GAME', $currentLanguage)}
 								class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#3f8f63] bg-[#102819] text-[#d9ffe7] shadow-[0_10px_24px_rgb(10_32_18/22%)] transition hover:border-[#6fe49c] hover:bg-[#173922] hover:text-white active:border-[#2f6c4a] active:bg-[#0c1e13] active:shadow-[0_4px_10px_rgb(10_32_18/18%)]"
+								class:cursor-not-allowed={!canStartGame()}
+								class:opacity-45={!canStartGame()}
+								disabled={!canStartGame()}
 								onclick={() => void startCurrentGame()}
 								type="button"
 							>

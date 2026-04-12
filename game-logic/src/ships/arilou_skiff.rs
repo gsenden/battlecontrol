@@ -1,6 +1,7 @@
 use crate::ship::Ship;
 use crate::traits::ship_trait::{
-    InstantLaserSpec, ProjectileTargetMode, SpecialAbilitySpec, TeleportSpecialSpec,
+    HitPolygonPoint, InstantLaserSpec, ProjectileTargetMode, SpecialAbilitySpec,
+    TeleportSpecialSpec,
 };
 use crate::velocity_vector::VelocityVector;
 
@@ -74,6 +75,31 @@ impl Ship for ArilouSkiff {
     fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
     fn energy_counter(&self) -> i32 { self.energy_counter }
     fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+
+    fn hit_polygon(&self, facing: i32, center_x: f64, center_y: f64) -> Vec<HitPolygonPoint> {
+        const BASE_POLYGON: [HitPolygonPoint; 12] = [
+            HitPolygonPoint { x: 0.0, y: -33.0 },
+            HitPolygonPoint { x: 17.0, y: -29.0 },
+            HitPolygonPoint { x: 29.0, y: -17.0 },
+            HitPolygonPoint { x: 33.0, y: 0.0 },
+            HitPolygonPoint { x: 29.0, y: 17.0 },
+            HitPolygonPoint { x: 17.0, y: 29.0 },
+            HitPolygonPoint { x: 0.0, y: 33.0 },
+            HitPolygonPoint { x: -17.0, y: 29.0 },
+            HitPolygonPoint { x: -29.0, y: 17.0 },
+            HitPolygonPoint { x: -33.0, y: 0.0 },
+            HitPolygonPoint { x: -29.0, y: -17.0 },
+            HitPolygonPoint { x: -17.0, y: -29.0 },
+        ];
+        let rotation = (facing.rem_euclid(16) as f64) * ((2.0 * std::f64::consts::PI) / 16.0);
+        BASE_POLYGON
+            .iter()
+            .map(|point| HitPolygonPoint {
+                x: center_x + ((point.x * rotation.cos()) - (point.y * rotation.sin())),
+                y: center_y + ((point.x * rotation.sin()) + (point.y * rotation.cos())),
+            })
+            .collect()
+    }
 
     fn primary_instant_laser_spec(&self) -> Option<InstantLaserSpec> {
         Some(InstantLaserSpec {

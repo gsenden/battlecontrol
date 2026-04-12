@@ -29,6 +29,7 @@ const METEOR_FRAME_COUNT: i32 = 21;
 const METEOR_HIT_RADIUS: f64 = 44.0;
 const METEOR_IMPACT_PUSH: f64 = 2.5;
 const METEOR_TEXTURE_PREFIX: &str = "battle-asteroid";
+const PROJECTILE_HIT_FALLBACK_PADDING: f64 = 64.0;
 const PROJECTILE_FACINGS: f64 = 16.0;
 const EXPLOSION_TEXTURE_BATTLE_BOOM: &str = "battle-boom";
 const AUDIO_SHIP_DEATH: &str = "battle-shipdies";
@@ -1804,7 +1805,25 @@ impl Battle {
             let projectile_polygon =
                 projectile_hit_polygon(projectile.collision, projectile.facing_index, projectile.x, projectile.y);
             if !projectile_polygon.is_empty() {
-                return polygons_intersect(&projectile_polygon, &hit_polygon).then_some(is_player);
+                if polygons_intersect(&projectile_polygon, &hit_polygon) {
+                    return Some(is_player);
+                }
+
+                let hit_radius = projectile_hit_radius(projectile.collision);
+                if hit_radius > 0.0 {
+                    if polygon_intersects_circle(&hit_polygon, projectile.x, projectile.y, hit_radius) {
+                        return Some(is_player);
+                    }
+
+                    let ship_radius = ship_hit_radius(&hit_polygon, body.x, body.y);
+                    let dx = shortest_wrapped_delta(projectile.x, body.x, self.width);
+                    let dy = shortest_wrapped_delta(projectile.y, body.y, self.height);
+                    let distance = ((dx * dx) + (dy * dy)).sqrt();
+                    return (distance <= (hit_radius + ship_radius + PROJECTILE_HIT_FALLBACK_PADDING))
+                        .then_some(is_player);
+                }
+
+                return None;
             }
             return point_in_polygon(projectile.x, projectile.y, &hit_polygon).then_some(is_player);
         }
@@ -2059,6 +2078,27 @@ fn projectile_hit_polygon(
         ProjectileCollisionSpec::Polygon(points) => points,
     };
     rotate_polygon_points(base_polygon, facing, center_x, center_y)
+}
+
+fn projectile_hit_radius(collision: ProjectileCollisionSpec) -> f64 {
+    match collision {
+        ProjectileCollisionSpec::None => 0.0,
+        ProjectileCollisionSpec::Polygon(points) => points
+            .iter()
+            .map(|point| ((point.x * point.x) + (point.y * point.y)).sqrt())
+            .fold(0.0, f64::max),
+    }
+}
+
+fn ship_hit_radius(polygon: &[HitPolygonPoint], center_x: f64, center_y: f64) -> f64 {
+    polygon
+        .iter()
+        .map(|point| {
+            let dx = point.x - center_x;
+            let dy = point.y - center_y;
+            ((dx * dx) + (dy * dy)).sqrt()
+        })
+        .fold(0.0, f64::max)
 }
 
 impl GameObject for BattleShipState {

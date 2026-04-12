@@ -17,6 +17,7 @@
 	let battleSetup = $state<BattleSetup | undefined>(undefined);
 	let battleStarted = $state(false);
 	let resultWinner = $state('');
+	let battleCompleted = $state(false);
 
 	onMount(() => {
 		const onReady = () => {
@@ -25,10 +26,22 @@
 				triggerBattleStart();
 			}
 		};
+		const onConnectionFailed = (event: Event) => {
+			if (battleCompleted) {
+				return;
+			}
+			if (activeGameId) {
+				void goto('/lobby');
+				return;
+			}
+			const customEvent = event as CustomEvent<{ message?: string }>;
+			errorMessage = customEvent.detail?.message ?? 'Battle connection failed';
+		};
 		const onBattleFinished = () => {
 			if (!activeGameId) {
 				return;
 			}
+			battleCompleted = true;
 
 			const phaserGame = game;
 			const battleScene = phaserGame?.scene.getScene('BattleScene') as { playerShip?: { dead?: boolean } } | undefined;
@@ -42,12 +55,26 @@
 				void goto(`/battle-result?winner=${encodeURIComponent(resultWinner)}`);
 			}, 2500);
 		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape' || !activeGameId || battleCompleted) {
+				return;
+			}
+			event.preventDefault();
+			if (!window.confirm('Weet je zeker dat je het spel wilt stoppen?')) {
+				return;
+			}
+			void stopBattle();
+		};
 		window.addEventListener('battlecontrol:scene-ready', onReady, { once: true });
+		window.addEventListener('battlecontrol:battle-connection-failed', onConnectionFailed as EventListener);
 		window.addEventListener('battlecontrol:battle-finished', onBattleFinished);
+		window.addEventListener('keydown', onKeyDown);
 		void loadBattle();
 		return () => {
 			window.removeEventListener('battlecontrol:scene-ready', onReady);
+			window.removeEventListener('battlecontrol:battle-connection-failed', onConnectionFailed as EventListener);
 			window.removeEventListener('battlecontrol:battle-finished', onBattleFinished);
+			window.removeEventListener('keydown', onKeyDown);
 		};
 	});
 
@@ -70,6 +97,15 @@
 		}
 		battleStarted = true;
 		window.dispatchEvent(new Event('battlecontrol:start-game'));
+	}
+
+	async function stopBattle() {
+		if (!activeGameId) {
+			return;
+		}
+		battleCompleted = true;
+		await completeGame(activeGameId);
+		window.location.assign('/lobby');
 	}
 
 	async function loadBattle() {
@@ -108,6 +144,9 @@
 			}
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'Battle setup failed';
+			if (activeGameId) {
+				return;
+			}
 		}
 
 		try {

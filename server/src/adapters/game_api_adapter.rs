@@ -238,8 +238,9 @@ async fn start_game<GamePort: GameDrivingPort, Logger: LoggerDrivingPort>(
     match state.game.start_game(game_id, user.name).await {
         Ok(game) => {
             if let Err(error) = state.battle_sessions.start_battle(&game) {
-                return (StatusCode::INTERNAL_SERVER_ERROR, error).into_response();
+                return (StatusCode::BAD_REQUEST, Json(error)).into_response();
             }
+            state.game_rooms.start_room(&game);
             Json(game).into_response()
         }
         Err(error) => {
