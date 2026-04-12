@@ -48,3 +48,17 @@ The root scripts are the standard entrypoints:
 
 - `/` landing / app shell
 - `/battle` Phaser battle scene
+- `/credits` credits and licensing
+
+## Credits And Licensing
+
+BattleControl is a fan-made open source project inspired by The Ur-Quan Masters and the UQM HD MegaMod.
+
+I have been a devoted fan of The Ur-Quan Masters since the 1990s, and the game gave me and my friends unforgettable memories. BattleControl is a tribute to that experience.
+
+The Ur-Quan Masters project distinguishes between code and content:
+
+- UQM code: GPLv2
+- UQM content such as voice, dialogue, graphics, sounds, and music: CC BY-NC-SA 2.5
+
+See [CREDITS.md](./CREDITS.md) for attribution and licensing notes.

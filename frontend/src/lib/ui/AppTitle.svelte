@@ -6,6 +6,7 @@
 
 <h1
 	aria-label={title}
+	dir="ltr"
 	class={`mx-auto flex max-w-full items-start justify-center whitespace-nowrap font-[900] font-sans tracking-wider [filter:drop-shadow(0_8px_0_#7d7d7d)] text-[#f4f8fc] ${className}`.trim()}
 >
 	{#each words as word, index}

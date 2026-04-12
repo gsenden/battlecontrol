@@ -129,7 +129,7 @@ export class BattleScene extends Phaser.Scene {
   private battleMusic?: HTMLAudioElement;
   private started = false;
   private readonly startBattleMusic = () => {
-    if (!this.battleMusic || !this.battleMusic.paused) {
+    if (!this.battleMusic || !this.battleMusic.paused || this.battleMusic.volume <= 0) {
       return;
     }
 
@@ -298,6 +298,9 @@ export class BattleScene extends Phaser.Scene {
     const hudElement = this.game.registry.get('hudElement') as HTMLElement;
     this.hud = new BattleHUD(hudElement);
     this.syncHudWithSelectedShip();
+
+    this.sound.mute = !userSettings.sound_effects_enabled || userSettings.sound_effects_volume === 0;
+    this.sound.volume = userSettings.sound_effects_enabled ? userSettings.sound_effects_volume / 100 : 0;
 
     // Input
     this.moveLeftKey = this.input.keyboard!.addKey(this.keyCodeFor(userSettings.turn_left_key, Phaser.Input.Keyboard.KeyCodes.A));
@@ -536,42 +539,40 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    const soundEffectsVolumeMultiplier = userSettings.sound_effects_volume / 100;
-
     for (const event of snapshot.audioEvents) {
       switch (event.key) {
         case 'androsynth-primary':
-          this.sound.play(event.key, { volume: 0.55 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.55 });
           break;
         case 'androsynth-special':
-          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.65 });
           break;
         case 'arilou-primary':
-          this.sound.play(event.key, { volume: 0.55 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.55 });
           break;
         case 'arilou-special':
-          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.65 });
           break;
         case 'arilou-victory':
-          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.65 });
           break;
         case 'human-primary':
-          this.sound.play(event.key, { volume: 0.5 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.5 });
           break;
         case 'human-special':
-          this.sound.play(event.key, { volume: 0.6 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.6 });
           break;
         case 'human-victory':
-          this.sound.play(event.key, { volume: 0.65 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.65 });
           break;
         case 'battle-shipdies':
-          this.sound.play(event.key, { volume: 0.75 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.75 });
           break;
         case 'battle-boom-23':
-          this.sound.play(event.key, { volume: 0.5 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.5 });
           break;
         case 'battle-boom-45':
-          this.sound.play(event.key, { volume: 0.55 * soundEffectsVolumeMultiplier });
+          this.sound.play(event.key, { volume: 0.55 });
           break;
         default:
           break;

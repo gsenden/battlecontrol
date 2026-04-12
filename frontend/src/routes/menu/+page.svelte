@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
 	import LandingActionButton from '$lib/ui/LandingActionButton.svelte';
+	import LandingTextLink from '$lib/ui/LandingTextLink.svelte';
 
 	let errorMessage = $state('');
 
@@ -53,6 +54,12 @@
 			<LandingActionButton
 				label={t('START_GAME', $currentLanguage)}
 				onclick={() => goto('/lobby')}
+			/>
+
+			<LandingTextLink
+				className="text-[13px] uppercase tracking-[0.16em] text-[#9cb2c9] no-underline hover:text-[#d6e7ff]"
+				label={t('CREDITS_AND_LICENSES', $currentLanguage)}
+				onclick={() => goto('/credits')}
 			/>
 		</div>
 	</div>

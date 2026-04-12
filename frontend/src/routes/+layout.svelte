@@ -15,6 +15,7 @@
 	let profileMenuOpen = $state(false);
 	let profileMenuElement = $state<HTMLDivElement | null>(null);
 	const showGlobalChrome = $derived(!page.url.pathname.startsWith('/battle'));
+	const isRtlLanguage = $derived($currentLanguage === 'ar-SA');
 
 	function handleLanguageChange(event: Event) {
 		const target = event.currentTarget as HTMLSelectElement;
@@ -67,7 +68,7 @@
 	<title>{pageTitle}</title>
 </svelte:head>
 
-<div class="app-shell">
+<div class="app-shell" dir={isRtlLanguage ? 'rtl' : 'ltr'} lang={$currentLanguage}>
 	<StarfieldBackground />
 	{#if showGlobalChrome}
 		<div class="absolute right-6 top-6 z-20 flex items-center gap-3">

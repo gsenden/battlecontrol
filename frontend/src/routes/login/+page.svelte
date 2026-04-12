@@ -86,16 +86,20 @@ async function loadCurrentUser() {
 				</div>
 			{/if}
 
-			<div class="flex flex-col items-center pt-2">
+			<div class="mt-20 flex flex-col items-center pt-2">
 				<LandingActionButton
 					label={t('LOGIN', $currentLanguage)}
 					disabled={isSubmitting}
 					type="submit"
 				/>
-				<LandingTextLink
-					label={t('CANCEL', $currentLanguage)}
-					onclick={() => goto('/')}
-				/>
+				<div class="mt-4">
+					<LandingTextLink
+						label={t('CANCEL', $currentLanguage)}
+						onclick={() => goto('/')}
+					/>
+
+				</div>
+				
 			</div>
 		</form>
 	</div>

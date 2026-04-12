@@ -557,6 +557,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn save_settings_persists_mute_flags() {
+        let repo = repo_in_memory();
+        let mut expected_settings = test_user_settings();
+        expected_settings.music_enabled = false;
+        expected_settings.sound_effects_enabled = false;
+        repo.save_settings(TEST_PLAYER_NAME, &expected_settings).await.unwrap();
+        let found = repo.find_settings_by_name(TEST_PLAYER_NAME).await.unwrap().unwrap();
+        assert_eq!(
+            (found.music_enabled, found.sound_effects_enabled),
+            (false, false),
+        );
+    }
+
+    #[tokio::test]
     async fn save_settings_can_be_found_by_name() {
         let repo = repo_in_memory();
         let expected_settings = test_user_settings();

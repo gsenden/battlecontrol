@@ -24,7 +24,7 @@
 	}
 </script>
 
-<div class="flex h-full items-start justify-center px-6 pt-[18vh]">
+<div class="relative flex h-full items-start justify-center px-6 pt-[18vh]">
 	<div class="w-full max-w-[760px] text-[#ecf1f7]">
 		<div class="mb-12 text-center">
 			<div class="mx-auto inline-flex flex-col items-stretch">
@@ -52,8 +52,35 @@
 				/>
 			</div>
 
+			<div class="mt-4">
+				<LandingTextLink
+					label={t('LOGIN_WITH_ONE_TIME_CODE', $currentLanguage)}
+				/>
+
+			</div>
+
+			
+		</div>
+	</div>
+
+	<div class="absolute bottom-8 left-1/2 -translate-x-1/2">
+		<div class="flex flex-col items-center gap-3 text-center">
+			<p class="max-w-[980px] text-[12px] leading-6 text-[#8ea3ba]">
+				{t('CREDITS_THANKS_PREFIX', $currentLanguage)}
+				<a
+					class="underline underline-offset-4 transition hover:text-[#d6e7ff]"
+					href="https://www.kickstarter.com/projects/pistolshrimp/free-stars-children-of-infinity"
+					rel="noreferrer"
+					target="_blank"
+				>
+					{t('FREE_STARS_PROJECT', $currentLanguage)}
+				</a>
+				{t('CREDITS_THANKS_SUFFIX', $currentLanguage)}
+			</p>
 			<LandingTextLink
-				label={t('LOGIN_WITH_ONE_TIME_CODE', $currentLanguage)}
+				className="text-[13px] uppercase tracking-[0.16em] text-[#9cb2c9] no-underline hover:text-[#d6e7ff]"
+				label={t('CREDITS_AND_LICENSES', $currentLanguage)}
+				onclick={() => goto('/credits')}
 			/>
 		</div>
 	</div>

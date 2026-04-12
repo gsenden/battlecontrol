@@ -1553,7 +1553,13 @@ impl Battle {
                     .and_then(|(x, y)| point_along_range(start_x, start_y, x, y, laser_spec.range, self.width, self.height))
                     .unwrap_or(default_end)
                 } else {
-                    default_end
+                    projectile_target_position(
+                        self.target_weapon_target,
+                        self.matter_world.body_state(self.player.body_id),
+                        self.matter_world.body_state(self.target.body_id),
+                    )
+                    .and_then(|(x, y)| point_along_range(start_x, start_y, x, y, laser_spec.range, self.width, self.height))
+                    .unwrap_or(default_end)
                 }
             }
         }
@@ -2634,6 +2640,35 @@ mod tests {
     use crate::ships::{AnyShip, HumanCruiser};
     use crate::traits::ship_trait::Ship;
 
+    #[test]
+    fn target_arilou_primary_instant_laser_aims_at_player_selected_point() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "arilou-skiff",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        ).expect("battle should build");
+
+        battle.set_target_weapon_target_point(6500.0, 5600.0);
+        battle.set_target_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().lasers[0].end_y > 5000.0, true);
+    }
+
+    #[test]
     fn target_androsynth_bubble_hit_damages_player_for_two_crew() {
         let mut battle = Battle::new(
             "human-cruiser",
