@@ -1,3 +1,7 @@
+mod create_game_request_dto;
+mod game_dto;
+mod game_player_dto;
+mod join_game_request_dto;
 mod login_request_dto;
 mod passkey_finish_login_request_dto;
 mod passkey_finish_registration_request_dto;
@@ -8,8 +12,13 @@ mod profile_image_upload_dto;
 mod user_dto;
 mod user_settings_dto;
 mod registration_request_dto;
+mod save_selected_race_request_dto;
 mod update_user_profile_request_dto;
 
+pub use create_game_request_dto::CreateGameRequestDto;
+pub use game_dto::GameDto;
+pub use game_player_dto::GamePlayerDto;
+pub use join_game_request_dto::JoinGameRequestDto;
 pub use login_request_dto::LoginRequestDto;
 pub use passkey_finish_login_request_dto::PasskeyFinishLoginRequestDto;
 pub use passkey_finish_registration_request_dto::PasskeyFinishRegistrationRequestDto;
@@ -20,4 +29,5 @@ pub use profile_image_upload_dto::ProfileImageUploadDto;
 pub use user_dto::UserDto;
 pub use user_settings_dto::UserSettingsDto;
 pub use registration_request_dto::RegistrationRequestDto;
+pub use save_selected_race_request_dto::SaveSelectedRaceRequestDto;
 pub use update_user_profile_request_dto::UpdateUserProfileRequestDto;

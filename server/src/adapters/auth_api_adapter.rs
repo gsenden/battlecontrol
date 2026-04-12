@@ -18,7 +18,7 @@ use image::codecs::webp::WebPEncoder;
 use image::{ExtendedColorType, ImageEncoder};
 use uuid::Uuid;
 use super::ApiAdapter;
-use crate::adapters::db::{SessionsTable, SqliteAdapter, StoredSession, TableEntity};
+use crate::adapters::db::{SessionsTable, SqliteAdapter, TableEntity};
 use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
 
 const SESSION_INACTIVITY_TIMEOUT_SECONDS: i64 = 8 * 24 * 60 * 60;

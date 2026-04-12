@@ -7,10 +7,12 @@ import type { ShipStats } from './ship-stats.js';
 const CAPTAIN_FRAME_MODULES = import.meta.glob('../assets/ships/*/*-cap-*.png', { eager: true, import: 'default' }) as Record<string, string>;
 const CAPTAIN_ANI_MODULES = import.meta.glob('../assets/ships/*/*-cap.ani', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
 const PORTRAIT_MODULES = import.meta.glob('../assets/ships/*/*-icons-001.png', { eager: true, import: 'default' }) as Record<string, string>;
+const SELECTION_PORTRAIT_MODULES = import.meta.glob('../assets/ships/*/*-med-000.png', { eager: true, import: 'default' }) as Record<string, string>;
 
 export interface ShipPreset {
   stats: ShipStats;
   portraitUrl: string;
+  selectionPortraitUrl: string;
   captainFrameUrls: string[];
   captainFrameStyles: string[];
   captainLayout: CaptainHudLayout;
@@ -43,6 +45,7 @@ function buildShipPreset(stats: ShipStats): ShipPreset {
   };
   const { folder, base } = parseSpritePrefix(stats.spritePrefix);
   const portraitUrl = requireSingleModule(PORTRAIT_MODULES, `/${folder}/${base}-icons-001.png`);
+  const selectionPortraitUrl = requireSingleModule(SELECTION_PORTRAIT_MODULES, `/${folder}/${base}-med-000.png`);
   const captainAni = requireSingleModule(CAPTAIN_ANI_MODULES, `/${folder}/${base}-cap.ani`);
   const captainFrameEntries = parseCaptainFrameFiles(captainAni);
   const frameUrlsByFile = new Map(readMatchingEntries(CAPTAIN_FRAME_MODULES, `/${folder}/${base}-cap-`).map(([path, url]) => [
@@ -62,6 +65,7 @@ function buildShipPreset(stats: ShipStats): ShipPreset {
   return {
     stats: enrichedStats,
     portraitUrl,
+    selectionPortraitUrl,
     captainFrameUrls,
     captainFrameStyles,
     captainLayout: parseCaptainLayout(captainAni),

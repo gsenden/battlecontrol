@@ -2,6 +2,7 @@ use common::domain::Error;
 use common::domain::ErrorTrait;
 use crate::ports::LoggerDrivingPort;
 
+#[derive(Clone, Copy)]
 pub struct TracingLoggerAdapter;
 
 impl LoggerDrivingPort for TracingLoggerAdapter {
