@@ -161,3 +161,59 @@ impl GameRoomDrivenPort for GameRoomHub {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::extract::ws::Message;
+
+    use super::*;
+    use crate::ports::GameRoomDrivenPort;
+    use crate::test_helpers::sample_data::test_game;
+
+    #[test]
+    fn create_room_sets_current_message() {
+        let hub = GameRoomHub::new();
+        let game = test_game();
+
+        hub.create_room(&game);
+
+        assert!(hub.current_message(&game.id).is_some());
+    }
+
+    #[test]
+    fn cancel_room_clears_current_message() {
+        let hub = GameRoomHub::new();
+        let game = test_game();
+        hub.create_room(&game);
+
+        hub.cancel_room(&game.id);
+
+        assert!(hub.current_message(&game.id).is_none());
+    }
+
+    #[test]
+    fn start_room_broadcasts_started_kind() {
+        let hub = GameRoomHub::new();
+        let game = test_game();
+
+        hub.start_room(&game);
+        let message = hub.current_message(&game.id).expect("room message");
+        let Message::Text(payload) = message else {
+            panic!("expected text message");
+        };
+
+        assert!(payload.contains("\"kind\":\"started\""));
+    }
+
+    #[tokio::test]
+    async fn subscribe_all_receives_snapshot_event() {
+        let hub = GameRoomHub::new();
+        let mut receiver = hub.subscribe_all();
+        let game = test_game();
+
+        hub.create_room(&game);
+        let event = receiver.recv().await.expect("global event");
+
+        assert!(matches!(event.kind, GameRoomEventKind::Snapshot));
+    }
+}

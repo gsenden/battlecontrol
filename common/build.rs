@@ -345,6 +345,11 @@ fn generate_error_enum(codes: &[String], i18n_dir: &Path, out_dir: &Path) {
                  \x20   pub fn new() -> Self {{\n\
                  \x20       {struct_name} {{ params: std::collections::HashMap::new() }}\n\
                  \x20   }}\n\
+                 }}\n\n\
+                 impl Default for {struct_name} {{\n\
+                 \x20   fn default() -> Self {{\n\
+                 \x20       Self::new()\n\
+                 \x20   }}\n\
                  }}\n\n"
             ));
         } else {

@@ -205,6 +205,7 @@ impl GameLogic {
     }
 
     #[wasm_bindgen(js_name = "updateShip")]
+    #[allow(clippy::too_many_arguments)]
     pub fn update_ship(
         &mut self,
         ship_id: usize,
@@ -263,6 +264,7 @@ impl GameLogic {
     }
 
     #[wasm_bindgen(js_name = "applyGravityFromPlanet")]
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_gravity_from_planet(
         &self,
         ship_id: usize,
@@ -341,9 +343,16 @@ impl GameLogic {
     }
 }
 
+impl Default for GameLogic {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen]
 impl Battle {
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         player_ship_type: &str,
         target_ship_type: &str,
@@ -525,6 +534,12 @@ impl MatterWorld {
     }
 }
 
+impl Default for MatterWorld {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn to_matter_step_dto(result: MatterStepResult) -> MatterStepDto {
     MatterStepDto {
         bodies: result.bodies.into_iter().map(|body| MatterBodyStateDto {
@@ -609,5 +624,47 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
         audio_events: snapshot.audio_events.into_iter().map(|event| AudioEventSnapshotDto {
             key: event.key.to_string(),
         }).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Battle, GameLogic, get_version};
+
+    #[test]
+    fn get_version_returns_non_empty_value() {
+        assert!(!get_version().is_empty());
+    }
+
+    #[test]
+    fn create_ship_returns_first_index() {
+        let mut logic = GameLogic::new();
+        let ship_id = logic.create_ship("human-cruiser").expect("ship id");
+        assert_eq!(ship_id, 0);
+    }
+
+    #[test]
+    fn create_ship_returns_second_index_for_second_ship() {
+        let mut logic = GameLogic::new();
+        let _first = logic.create_ship("human-cruiser").expect("first ship");
+        let second = logic.create_ship("arilou-skiff").expect("second ship");
+        assert_eq!(second, 1);
+    }
+
+    #[test]
+    fn battle_constructor_accepts_valid_ship_types() {
+        let result = Battle::new(
+            "human-cruiser",
+            "arilou-skiff",
+            100.0,
+            100.0,
+            300.0,
+            100.0,
+            200.0,
+            200.0,
+            1000.0,
+            800.0,
+        );
+        assert!(result.is_ok());
     }
 }

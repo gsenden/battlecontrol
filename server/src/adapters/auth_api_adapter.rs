@@ -422,14 +422,6 @@ fn persist_profile_image(bytes: &[u8]) -> Result<String, common::domain::Error> 
     Ok(format!("/uploads/{relative_path}"))
 }
 
-fn login_response<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
-    jar: CookieJar,
-    state: &AppState<AuthPort, Logger>,
-    user: UserDto,
-) -> Response {
-    login_response_with_browser(jar, state, user, &Uuid::new_v4().to_string())
-}
-
 fn login_response_with_browser<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     jar: CookieJar,
     state: &AppState<AuthPort, Logger>,

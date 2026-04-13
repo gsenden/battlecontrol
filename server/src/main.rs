@@ -5,10 +5,22 @@ mod domain;
 #[cfg(test)]
 mod test_helpers;
 
-use adapters::{AuthApiAdapter, AxumAdapter, BattleSessionHub, GameApiAdapter, GameRoomHub, SqliteUserRepository, TracingLoggerAdapter};
+use adapters::{
+    AuthApiAdapter,
+    AxumAdapter,
+    BattleSessionHub,
+    GameApiAdapter,
+    GameRoomHub,
+    SqliteGameRepository,
+    SqliteSessionRepository,
+    SqliteUserRepository,
+    TracingLoggerAdapter,
+};
 use adapters::db::SqliteAdapter;
 use domain::{Authenticator, AuthenticatorDrivenPorts, GameLobby, GameLobbyDrivenPorts};
+use ports::{GameRepositoryDrivenPort, GameRoomDrivenPort};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 fn database_path() -> String {
     common::domain::EnvVar::ServerDatabasePath.value()
@@ -30,8 +42,21 @@ impl AuthenticatorDrivenPorts for ProductionDrivenPorts {
 
 struct ProductionGameDrivenPorts;
 impl GameLobbyDrivenPorts for ProductionGameDrivenPorts {
-    type GameRepo = SqliteUserRepository;
+    type GameRepo = SqliteGameRepository;
     type GameRooms = GameRoomHub;
+}
+
+fn spawn_stale_game_cleanup(game_repo: SqliteGameRepository, game_rooms: GameRoomHub) {
+    tokio::spawn(async move {
+        loop {
+            if let Ok(stale_game_ids) = game_repo.delete_stale_games().await
+                && !stale_game_ids.is_empty()
+            {
+                game_rooms.remove_rooms(&stale_game_ids);
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+    });
 }
 
 #[tokio::main]
@@ -40,15 +65,27 @@ async fn main() {
         .expect("Failed to open database");
     let user_repo = SqliteUserRepository::new(sqlite.clone())
         .expect("Failed to initialize user repository");
+    let game_repo = SqliteGameRepository::new(sqlite.clone())
+        .expect("Failed to initialize game repository");
+    let session_repo = SqliteSessionRepository::new(sqlite.clone())
+        .expect("Failed to initialize session repository");
     let game_rooms = GameRoomHub::new();
     let battle_sessions = BattleSessionHub::new();
     let authenticator = Authenticator::<ProductionDrivenPorts>::new(user_repo.clone());
-    let game_lobby = GameLobby::<ProductionGameDrivenPorts>::new(user_repo, game_rooms.clone());
+    let cleanup_game_repo = game_repo.clone();
+    let game_lobby = GameLobby::<ProductionGameDrivenPorts>::new(game_repo, game_rooms.clone());
     let logger = TracingLoggerAdapter;
+    spawn_stale_game_cleanup(cleanup_game_repo, game_rooms.clone());
 
     AxumAdapter::new()
-        .register(AuthApiAdapter::new(authenticator, logger.clone(), sqlite.clone()))
-        .register(GameApiAdapter::new(game_lobby, game_rooms, battle_sessions, logger, sqlite))
+        .register(AuthApiAdapter::new(authenticator, logger, sqlite.clone()))
+        .register(GameApiAdapter::new(
+            game_lobby,
+            game_rooms,
+            battle_sessions,
+            session_repo,
+            logger,
+        ))
         .serve_directory("/uploads", &uploads_path())
         .serve_spa("frontend/build")
         .serve()

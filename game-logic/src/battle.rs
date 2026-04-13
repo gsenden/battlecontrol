@@ -164,6 +164,46 @@ enum SpecialTarget {
     Point { x: f64, y: f64 },
 }
 
+struct LaserRay {
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+}
+
+struct PhysicsCollisionContext<'a> {
+    player_blazer_spec: Option<crate::traits::ship_trait::BlazerSpecialSpec>,
+    target_blazer_spec: Option<crate::traits::ship_trait::BlazerSpecialSpec>,
+    player_body_before: Option<MatterBodyState>,
+    target_body_before: Option<MatterBodyState>,
+    player_blazer_hit: BlazerHitResult,
+    target_blazer_hit: BlazerHitResult,
+    bodies_after: &'a [MatterBodyState],
+}
+
+#[derive(Clone, Copy, Default)]
+struct BlazerHitResult {
+    hits: bool,
+    applied: bool,
+}
+
+struct BlazerCollisionInput<'a> {
+    blazer_mass: f64,
+    blazer_body_id: usize,
+    victim_body_id: usize,
+    blazer_before: &'a MatterBodyState,
+    victim_before: &'a MatterBodyState,
+    victim_mass: f64,
+}
+
+#[derive(Default)]
+struct BattleOutcome {
+    player_died: bool,
+    target_died: bool,
+    player_won: bool,
+    target_won: bool,
+}
+
 struct BattleShipState {
     id: u64,
     ship_id: usize,
@@ -201,7 +241,25 @@ pub struct Battle {
     next_game_object_id: u64,
 }
 
+#[derive(Clone, Copy)]
+struct Segment {
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+}
+
+#[derive(Clone, Copy)]
+struct CollisionBody {
+    x: f64,
+    y: f64,
+    vx: f64,
+    vy: f64,
+    mass: f64,
+}
+
 impl Battle {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         player_ship_type: &str,
         target_ship_type: &str,
@@ -398,66 +456,49 @@ impl Battle {
         self.audio_events.clear();
         self.lasers.clear();
 
+        self.tick_explosions();
+        self.tick_projectiles();
+        self.step_meteors();
+        let target_input = self.step_ships();
+        self.handle_point_defense(target_input);
+
+        let mut outcome = BattleOutcome::default();
+        self.resolve_projectile_hits(&mut outcome);
+        self.handle_meteor_collisions();
+        self.resolve_ship_collisions(delta, &mut outcome);
+        self.resolve_death_and_victory(&outcome);
+
+        self.wrap_bodies();
+    }
+
+    fn tick_explosions(&mut self) {
         for explosion in &mut self.explosions {
             explosion.frame_index += 1;
         }
         self.explosions
             .retain(|explosion| explosion.frame_index <= explosion.end_frame);
-        self.step_meteors();
+    }
 
-        let player_target_body = self.matter_world.body_state(self.player.body_id);
-        let target_target_body = self.matter_world.body_state(self.target.body_id);
+    fn tick_projectiles(&mut self) {
+        let player_body = self.matter_world.body_state(self.player.body_id);
+        let target_body = self.matter_world.body_state(self.target.body_id);
 
         for projectile in &mut self.projectiles {
             if matches!(projectile.behavior, ProjectileBehaviorSpec::WobbleTracking { .. }) {
-                step_wobble_tracking_projectile(projectile, player_target_body, target_target_body);
+                step_wobble_tracking_projectile(projectile, player_body, target_body);
                 continue;
             }
 
-            match projectile.target {
-                ProjectileTarget::None => {}
-                ProjectileTarget::Point { x, y } => {
-                    if projectile.turn_wait > 0 {
-                        projectile.turn_wait -= 1;
-                    } else {
-                        projectile.facing_index = turn_projectile_toward_target(
-                            projectile.facing_index,
-                            projectile.x,
-                            projectile.y,
-                            x,
-                            y,
-                        );
-                        projectile.facing = facing_index_to_radians(projectile.facing_index);
-                        projectile.turn_wait = projectile.track_wait;
-                    }
-                }
-                ProjectileTarget::PlayerShip | ProjectileTarget::TargetShip => {
-                    if projectile.turn_wait > 0 {
-                        projectile.turn_wait -= 1;
-                    } else if let Some(target) = match projectile.target {
-                        ProjectileTarget::PlayerShip => player_target_body,
-                        ProjectileTarget::TargetShip => target_target_body,
-                        ProjectileTarget::None | ProjectileTarget::Point { .. } => None,
-                    } {
-                        projectile.facing_index = turn_projectile_toward_target(
-                            projectile.facing_index,
-                            projectile.x,
-                            projectile.y,
-                            target.x,
-                            target.y,
-                        );
-                        projectile.facing = facing_index_to_radians(projectile.facing_index);
-                        projectile.turn_wait = projectile.track_wait;
-                    }
-                }
-            }
+            track_projectile(projectile, player_body, target_body);
             projectile.speed = (projectile.speed + projectile.acceleration as i32).min(projectile.max_speed as i32);
             let (raw_vx, raw_vy) = projectile_velocity_for_facing(projectile.facing_index, projectile.speed);
             set_projectile_velocity_components(projectile, raw_vx, raw_vy);
             advance_projectile_position(projectile);
             projectile.life -= 1;
         }
+    }
 
+    fn step_ships(&mut self) -> ShipInput {
         self.step_ship(self.player.ship_id, self.player.body_id, self.player_input, true);
         let target_input = ShipInput {
             weapon: self.target_input.weapon || self.queued_target_weapon,
@@ -470,16 +511,22 @@ impl Battle {
             false,
         );
         self.queued_target_weapon = false;
+        target_input
+    }
 
+    fn handle_point_defense(&mut self, target_input: ShipInput) {
         self.handle_human_point_defense(true, self.player_input);
         self.handle_human_point_defense(false, target_input);
+    }
 
+    fn wrap_bodies(&mut self) {
+        let _ = self.matter_world.wrap_body(self.player.body_id, self.width, self.height);
+        let _ = self.matter_world.wrap_body(self.target.body_id, self.width, self.height);
+    }
+
+    fn resolve_projectile_hits(&mut self, outcome: &mut BattleOutcome) {
         let mut hit_projectile_indexes = Vec::new();
         let mut hit_explosions = Vec::new();
-        let mut player_died = false;
-        let mut target_died = false;
-        let mut player_won = false;
-        let mut target_won = false;
 
         for (index, projectile) in self.projectiles.iter().enumerate() {
             let Some(is_player) = self.projectile_hit_target(projectile) else {
@@ -490,12 +537,12 @@ impl Battle {
                 let damage = projectile.damage;
                 if is_player {
                     let died = self.ships[self.player.ship_id].take_damage(damage);
-                    player_died |= died;
-                    target_won |= died && !projectile.owner_is_player;
+                    outcome.player_died |= died;
+                    outcome.target_won |= died && !projectile.owner_is_player;
                 } else {
                     let died = self.ships[self.target.ship_id].take_damage(damage);
-                    target_died |= died;
-                    player_won |= died && projectile.owner_is_player;
+                    outcome.target_died |= died;
+                    outcome.player_won |= died && projectile.owner_is_player;
                 }
             }
             hit_explosions.push(ExplosionSnapshot {
@@ -516,74 +563,31 @@ impl Battle {
             self.projectiles.remove(index);
         }
 
-        self.handle_meteor_collisions();
-
         for mut explosion in hit_explosions {
             explosion.id = self.next_game_object_id();
             self.explosions.push(explosion);
         }
 
         self.projectiles.retain(|projectile| projectile.life >= 0);
+    }
 
-        let player_body_before_step = self.matter_world.body_state(self.player.body_id);
-        let target_body_before_step = self.matter_world.body_state(self.target.body_id);
+    fn resolve_ship_collisions(&mut self, delta: f64, outcome: &mut BattleOutcome) {
+        let player_body_before = self.matter_world.body_state(self.player.body_id);
+        let target_body_before = self.matter_world.body_state(self.target.body_id);
         let state = self.matter_world.step(delta);
-        let mut player_blazer_hit_applied = false;
-        let mut target_blazer_hit_applied = false;
 
         let player_blazer_spec = self.blazer_spec_for(true);
         let target_blazer_spec = self.blazer_spec_for(false);
-        let player_blazer_hits = player_blazer_spec.is_some()
-            && self.player.special_active
-            && !self.target.dead
-            && self.androsynth_blazer_hits_other_ship(true);
-        if player_blazer_hits && !self.player.special_contacting {
-            if let (Some(pb), Some(tb)) = (player_body_before_step, target_body_before_step) {
-                self.apply_blazer_collision_velocity(
-                    player_blazer_spec.expect("blazer hit must have spec").mass,
-                    self.player.body_id, self.target.body_id,
-                    &pb, &tb, self.ships[self.target.ship_id].mass(),
-                );
-            }
-            apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
-            if !self.ship_blocks_damage(false) {
-                let died = self.ships[self.target.ship_id]
-                    .take_damage(player_blazer_spec.expect("blazer hit must have spec").damage);
-                target_died |= died;
-                player_won |= died;
-            }
-            player_blazer_hit_applied = true;
-            self.audio_events.push(AudioEventSnapshot {
-                key: player_blazer_spec.expect("blazer hit must have spec").impact_sound_key,
-            });
-        }
-        self.player.special_contacting = player_blazer_hits;
 
-        let target_blazer_hits = target_blazer_spec.is_some()
-            && self.target.special_active
-            && !self.player.dead
-            && self.androsynth_blazer_hits_other_ship(false);
-        if target_blazer_hits && !self.target.special_contacting {
-            if let (Some(pb), Some(tb)) = (player_body_before_step, target_body_before_step) {
-                self.apply_blazer_collision_velocity(
-                    target_blazer_spec.expect("blazer hit must have spec").mass,
-                    self.target.body_id, self.player.body_id,
-                    &tb, &pb, self.ships[self.player.ship_id].mass(),
-                );
-            }
-            apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
-            if !self.ship_blocks_damage(true) {
-                let died = self.ships[self.player.ship_id]
-                    .take_damage(target_blazer_spec.expect("blazer hit must have spec").damage);
-                player_died |= died;
-                target_won |= died;
-            }
-            target_blazer_hit_applied = true;
-            self.audio_events.push(AudioEventSnapshot {
-                key: target_blazer_spec.expect("blazer hit must have spec").impact_sound_key,
-            });
-        }
-        self.target.special_contacting = target_blazer_hits;
+        let player_blazer_hit = self.resolve_blazer_hit(
+            true, player_blazer_spec, player_body_before, target_body_before, outcome,
+        );
+        self.player.special_contacting = player_blazer_hit.hits;
+
+        let target_blazer_hit = self.resolve_blazer_hit(
+            false, target_blazer_spec, player_body_before, target_body_before, outcome,
+        );
+        self.target.special_contacting = target_blazer_hit.hits;
 
         for collision in state.collisions {
             let ids = [collision.body_a, collision.body_b];
@@ -592,114 +596,170 @@ impl Battle {
             }
 
             apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
-            if self.player.special_active && !self.target.dead && !player_blazer_hit_applied {
-                if let (Some(player_before), Some(target_before)) =
-                    (player_body_before_step, target_body_before_step)
-                {
-                    self.apply_blazer_collision_velocity(
-                        player_blazer_spec.expect("active blazer must have spec").mass,
-                        self.player.body_id,
-                        self.target.body_id,
-                        &player_before,
-                        &target_before,
-                        self.ships[self.target.ship_id].mass(),
-                    );
-                }
-            } else if self.target.special_active && !self.player.dead && !target_blazer_hit_applied {
-                if let (Some(player_before), Some(target_before)) =
-                    (player_body_before_step, target_body_before_step)
-                {
-                    self.apply_blazer_collision_velocity(
-                        target_blazer_spec.expect("active blazer must have spec").mass,
-                        self.target.body_id,
-                        self.player.body_id,
-                        &target_before,
-                        &player_before,
-                        self.ships[self.player.ship_id].mass(),
-                    );
-                }
-            } else if !player_blazer_hits && !target_blazer_hits {
-                if let (Some(player_before), Some(target_before)) =
-                    (player_body_before_step, target_body_before_step)
-                {
-                    let player_after = state
-                        .bodies
-                        .iter()
-                        .find(|body| body.id == self.player.body_id)
-                        .copied()
-                        .unwrap_or(player_before);
-                    let target_after = state
-                        .bodies
-                        .iter()
-                        .find(|body| body.id == self.target.body_id)
-                        .copied()
-                        .unwrap_or(target_before);
-                    let ((player_vx, player_vy), (target_vx, target_vy)) =
-                        resolve_collision_velocity(
-                            player_after.x,
-                            player_after.y,
-                            player_before.vx,
-                            player_before.vy,
-                            self.ships[self.player.ship_id].mass(),
-                            target_after.x,
-                            target_after.y,
-                            target_before.vx,
-                            target_before.vy,
-                            self.ships[self.target.ship_id].mass(),
-                        );
-                    self.matter_world
-                        .set_body_velocity(self.player.body_id, player_vx, player_vy);
-                    self.matter_world
-                        .set_body_velocity(self.target.body_id, target_vx, target_vy);
-                }
-            }
-            if self.player.special_active && !self.target.dead && !player_blazer_hit_applied {
-                let player_blazer_spec = player_blazer_spec.expect("active blazer must have spec");
-                if !self.ship_blocks_damage(false) {
-                    let died = self.ships[self.target.ship_id].take_damage(player_blazer_spec.damage);
-                    target_died |= died;
-                    player_won |= died;
-                }
-                self.audio_events.push(AudioEventSnapshot {
-                    key: player_blazer_spec.impact_sound_key,
-                });
-            }
-            if self.target.special_active && !self.player.dead && !target_blazer_hit_applied {
-                let target_blazer_spec = target_blazer_spec.expect("active blazer must have spec");
-                if !self.ship_blocks_damage(true) {
-                    let died = self.ships[self.player.ship_id].take_damage(target_blazer_spec.damage);
-                    player_died |= died;
-                    target_won |= died;
-                }
-                self.audio_events.push(AudioEventSnapshot {
-                    key: target_blazer_spec.impact_sound_key,
-                });
-            }
+            self.resolve_physics_collision_velocity(&PhysicsCollisionContext {
+                player_blazer_spec,
+                target_blazer_spec,
+                player_body_before,
+                target_body_before,
+                player_blazer_hit,
+                target_blazer_hit,
+                bodies_after: &state.bodies,
+            });
+            self.resolve_physics_collision_blazer_damage(
+                player_blazer_spec, player_blazer_hit.applied, false, outcome,
+            );
+            self.resolve_physics_collision_blazer_damage(
+                target_blazer_spec, target_blazer_hit.applied, true, outcome,
+            );
+        }
+    }
+
+    fn resolve_blazer_hit(
+        &mut self,
+        is_player: bool,
+        blazer_spec: Option<crate::traits::ship_trait::BlazerSpecialSpec>,
+        player_body_before: Option<MatterBodyState>,
+        target_body_before: Option<MatterBodyState>,
+        outcome: &mut BattleOutcome,
+    ) -> BlazerHitResult {
+        let Some(spec) = blazer_spec else {
+            return BlazerHitResult::default();
+        };
+        let (attacker, defender, attacker_before, defender_before) = if is_player {
+            (&self.player, &self.target, player_body_before, target_body_before)
+        } else {
+            (&self.target, &self.player, target_body_before, player_body_before)
+        };
+        let hits = attacker.special_active
+            && !defender.dead
+            && self.androsynth_blazer_hits_other_ship(is_player);
+
+        if !hits || attacker.special_contacting {
+            return BlazerHitResult { hits, applied: false };
         }
 
-        if player_died {
+        if let (Some(ab), Some(db)) = (attacker_before, defender_before) {
+            let (attacker_body_id, defender_body_id) = if is_player {
+                (self.player.body_id, self.target.body_id)
+            } else {
+                (self.target.body_id, self.player.body_id)
+            };
+            let defender_ship_id = if is_player { self.target.ship_id } else { self.player.ship_id };
+            self.apply_blazer_collision_velocity(&BlazerCollisionInput {
+                blazer_mass: spec.mass,
+                blazer_body_id: attacker_body_id,
+                victim_body_id: defender_body_id,
+                blazer_before: &ab,
+                victim_before: &db,
+                victim_mass: self.ships[defender_ship_id].mass(),
+            });
+        }
+        apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
+        let defender_is_player = !is_player;
+        if !self.ship_blocks_damage(defender_is_player) {
+            let defender_ship_id = if is_player { self.target.ship_id } else { self.player.ship_id };
+            let died = self.ships[defender_ship_id].take_damage(spec.damage);
+            if is_player {
+                outcome.target_died |= died;
+                outcome.player_won |= died;
+            } else {
+                outcome.player_died |= died;
+                outcome.target_won |= died;
+            }
+        }
+        self.audio_events.push(AudioEventSnapshot { key: spec.impact_sound_key });
+        BlazerHitResult { hits, applied: true }
+    }
+
+    fn resolve_physics_collision_velocity(&mut self, ctx: &PhysicsCollisionContext) {
+        if self.player.special_active && !self.target.dead && !ctx.player_blazer_hit.applied {
+            if let (Some(spec), Some(pb), Some(tb)) = (ctx.player_blazer_spec, ctx.player_body_before, ctx.target_body_before) {
+                self.apply_blazer_collision_velocity(&BlazerCollisionInput {
+                    blazer_mass: spec.mass,
+                    blazer_body_id: self.player.body_id,
+                    victim_body_id: self.target.body_id,
+                    blazer_before: &pb,
+                    victim_before: &tb,
+                    victim_mass: self.ships[self.target.ship_id].mass(),
+                });
+            }
+        } else if self.target.special_active && !self.player.dead && !ctx.target_blazer_hit.applied {
+            if let (Some(spec), Some(pb), Some(tb)) = (ctx.target_blazer_spec, ctx.player_body_before, ctx.target_body_before) {
+                self.apply_blazer_collision_velocity(&BlazerCollisionInput {
+                    blazer_mass: spec.mass,
+                    blazer_body_id: self.target.body_id,
+                    victim_body_id: self.player.body_id,
+                    blazer_before: &tb,
+                    victim_before: &pb,
+                    victim_mass: self.ships[self.player.ship_id].mass(),
+                });
+            }
+        } else if !ctx.player_blazer_hit.hits && !ctx.target_blazer_hit.hits
+            && let (Some(player_before), Some(target_before)) = (ctx.player_body_before, ctx.target_body_before)
+        {
+            let player_after = ctx.bodies_after.iter()
+                .find(|b| b.id == self.player.body_id).copied().unwrap_or(player_before);
+            let target_after = ctx.bodies_after.iter()
+                .find(|b| b.id == self.target.body_id).copied().unwrap_or(target_before);
+            let ((pvx, pvy), (tvx, tvy)) = resolve_collision_velocity(
+                CollisionBody { x: player_after.x, y: player_after.y, vx: player_before.vx, vy: player_before.vy, mass: self.ships[self.player.ship_id].mass() },
+                CollisionBody { x: target_after.x, y: target_after.y, vx: target_before.vx, vy: target_before.vy, mass: self.ships[self.target.ship_id].mass() },
+            );
+            self.matter_world.set_body_velocity(self.player.body_id, pvx, pvy);
+            self.matter_world.set_body_velocity(self.target.body_id, tvx, tvy);
+        }
+    }
+
+    fn resolve_physics_collision_blazer_damage(
+        &mut self,
+        blazer_spec: Option<crate::traits::ship_trait::BlazerSpecialSpec>,
+        already_applied: bool,
+        defender_is_player: bool,
+        outcome: &mut BattleOutcome,
+    ) {
+        if already_applied {
+            return;
+        }
+        let (attacker, defender) = if defender_is_player {
+            (&self.target, &self.player)
+        } else {
+            (&self.player, &self.target)
+        };
+        if !attacker.special_active || defender.dead {
+            return;
+        }
+        let Some(spec) = blazer_spec else { return };
+        if !self.ship_blocks_damage(defender_is_player) {
+            let defender_ship_id = if defender_is_player { self.player.ship_id } else { self.target.ship_id };
+            let died = self.ships[defender_ship_id].take_damage(spec.damage);
+            if defender_is_player {
+                outcome.player_died |= died;
+                outcome.target_won |= died;
+            } else {
+                outcome.target_died |= died;
+                outcome.player_won |= died;
+            }
+        }
+        self.audio_events.push(AudioEventSnapshot { key: spec.impact_sound_key });
+    }
+
+    fn resolve_death_and_victory(&mut self, outcome: &BattleOutcome) {
+        if outcome.player_died {
             self.mark_ship_dead(true);
         }
-        if target_died {
+        if outcome.target_died {
             self.mark_ship_dead(false);
         }
-        if player_won
+        if outcome.player_won
             && let Some(key) = self.ships[self.player.ship_id].victory_sound_key()
         {
-            self.audio_events.push(AudioEventSnapshot {
-                key,
-            });
+            self.audio_events.push(AudioEventSnapshot { key });
         }
-        if target_won
+        if outcome.target_won
             && let Some(key) = self.ships[self.target.ship_id].victory_sound_key()
         {
-            self.audio_events.push(AudioEventSnapshot {
-                key,
-            });
+            self.audio_events.push(AudioEventSnapshot { key });
         }
-
-        let _ = self.matter_world.wrap_body(self.player.body_id, self.width, self.height);
-        let _ = self.matter_world.wrap_body(self.target.body_id, self.width, self.height);
     }
 
     pub fn snapshot(&self) -> BattleSnapshot {
@@ -732,166 +792,181 @@ impl Battle {
         ship_state.previous_y = body.y;
 
         self.apply_gravity(ship_id, body_id, body);
-        let current = self
-            .matter_world
-            .body_state(body_id)
-            .unwrap_or(body);
+        let current = self.matter_world.body_state(body_id).unwrap_or(body);
         let in_gravity_well = self.in_gravity_well(current.x, current.y);
         let energy_before = self.ships[ship_id].energy();
         let weapon_counter_before = self.ships[ship_id].weapon_counter();
         let special_counter_before = self.ships[ship_id].special_counter();
         let mut commands = self.ships[ship_id].update(
             &input,
-            &VelocityVector {
-                x: current.vx,
-                y: current.vy,
-            },
+            &VelocityVector { x: current.vx, y: current.vy },
             in_gravity_well,
         );
-        if let SpecialAbilitySpec::Blazer(blazer_spec) = self.ships[ship_id].special_ability_spec() {
-            if input.special && self.ships[ship_id].energy() < energy_before {
-                let should_play_special_sound = !self.ship_state(is_player).special_active;
-                if should_play_special_sound {
-                    self.audio_events.push(AudioEventSnapshot {
-                        key: blazer_spec.activation_sound_key,
-                    });
-                }
-                self.matter_world.set_body_mass(body_id, blazer_spec.mass);
-                let ship_state = self.ship_state_mut(is_player);
-                ship_state.special_active = true;
-                let energy_wait = self.ships[ship_id].energy_wait();
-                self.ships[ship_id].set_energy_counter(energy_wait - 1);
-            }
-            if self.ship_state(is_player).special_active {
-                let facing = self.ships[ship_id].facing();
-                commands.push(PhysicsCommand::SetVelocity {
-                    vx: facing.cos() * blazer_spec.speed,
-                    vy: facing.sin() * blazer_spec.speed,
+
+        self.handle_blazer_activation(ship_id, body_id, &input, energy_before, is_player, &mut commands);
+
+        if is_weapon_triggered(&self.ships[ship_id], &input, weapon_counter_before, energy_before) {
+            self.handle_weapon_fire(ship_id, current, is_player, &mut commands);
+        }
+
+        if is_special_triggered(&self.ships[ship_id], &input, special_counter_before, energy_before) {
+            self.handle_special_activation(ship_id, body_id, current, is_player, &mut commands);
+        }
+
+        let thrusting = apply_commands(&mut self.matter_world, body_id, commands);
+        self.expire_special_cooldown(ship_id, is_player);
+        self.ship_state_mut(is_player).thrusting = thrusting;
+        sync_ship_body_angle(&mut self.matter_world, body_id, &self.ships[ship_id]);
+    }
+
+    fn handle_blazer_activation(
+        &mut self,
+        ship_id: usize,
+        body_id: usize,
+        input: &ShipInput,
+        energy_before: i32,
+        is_player: bool,
+        commands: &mut Vec<PhysicsCommand>,
+    ) {
+        let SpecialAbilitySpec::Blazer(blazer_spec) = self.ships[ship_id].special_ability_spec() else {
+            return;
+        };
+        if input.special && self.ships[ship_id].energy() < energy_before {
+            if !self.ship_state(is_player).special_active {
+                self.audio_events.push(AudioEventSnapshot {
+                    key: blazer_spec.activation_sound_key,
                 });
             }
+            self.matter_world.set_body_mass(body_id, blazer_spec.mass);
+            self.ship_state_mut(is_player).special_active = true;
+            let energy_wait = self.ships[ship_id].energy_wait();
+            self.ships[ship_id].set_energy_counter(energy_wait - 1);
         }
-        let weapon_triggered = input.weapon
-            && weapon_counter_before == 0
-            && self.ships[ship_id].weapon_counter() == self.ships[ship_id].weapon_wait()
-            && (self.ships[ship_id].weapon_wait() > 0
-                || self.ships[ship_id].weapon_energy_cost() == 0
-                || self.ships[ship_id].energy() < energy_before);
+        if self.ship_state(is_player).special_active {
+            let facing = self.ships[ship_id].facing();
+            commands.push(PhysicsCommand::SetVelocity {
+                vx: facing.cos() * blazer_spec.speed,
+                vy: facing.sin() * blazer_spec.speed,
+            });
+        }
+    }
+
+    fn handle_weapon_fire(
+        &mut self,
+        ship_id: usize,
+        current: MatterBodyState,
+        is_player: bool,
+        commands: &mut Vec<PhysicsCommand>,
+    ) {
         let special_active = self.ship_state(is_player).special_active;
-        if weapon_triggered {
-            if self.ships[ship_id].is_cloaked(special_active) {
-                self.ship_state_mut(is_player).special_active = false;
-            }
-
-            if let Some(volley_spec) = self.ships[ship_id].primary_volley_spec_for_state(special_active) {
-                self.spawn_projectile_volley(current, is_player, volley_spec);
-            } else if let Some(projectile_spec) = self.ships[ship_id].primary_projectile_spec_for_state(special_active) {
-                self.spawn_projectile_from_spec(
-                    current,
-                    is_player,
-                    projectile_spec,
-                    ProjectileSpawnSpec {
-                        facing_offset: 0,
-                        forward_offset: projectile_spec.offset,
-                        lateral_offset: 0.0,
-                    },
-                    self.projectile_target_for(is_player),
-                );
-                if !projectile_spec.sound_key.is_empty() {
-                    self.audio_events.push(AudioEventSnapshot {
-                        key: projectile_spec.sound_key,
-                    });
-                }
-            } else if let Some(laser_spec) = self.ships[ship_id].primary_instant_laser_spec_for_state(special_active) {
-                self.fire_instant_laser(current, is_player, laser_spec);
-            }
+        if self.ships[ship_id].is_cloaked(special_active) {
+            self.ship_state_mut(is_player).special_active = false;
         }
 
-        let special_triggered = input.special
-            && special_counter_before == 0
-            && self.ships[ship_id].special_counter() == self.ships[ship_id].special_wait()
-            && (self.ships[ship_id].special_wait() > 0
-                || self.ships[ship_id].special_energy_cost() == 0
-                || self.ships[ship_id].energy() < energy_before);
-        if special_triggered {
-            match self.ships[ship_id].special_ability_spec() {
-                SpecialAbilitySpec::Teleport(spec) => {
-                    self.activate_teleport_special(is_player, body_id, spec);
-                    self.ship_state_mut(is_player).special_active = true;
-                }
-                SpecialAbilitySpec::InstantLaser(spec) => {
-                    self.fire_instant_laser(current, is_player, spec);
-                }
-                SpecialAbilitySpec::Shield(spec) => {
-                    if !spec.sound_key.is_empty() {
-                        self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
-                    }
-                    self.ship_state_mut(is_player).special_active = true;
-                }
-                SpecialAbilitySpec::DirectionalThrust(spec) => {
-                    if !spec.sound_key.is_empty() {
-                        self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
-                    }
-                    let facing = self.ships[ship_id].facing() + spec.facing_offset;
-                    commands.push(PhysicsCommand::SetVelocity {
-                        vx: facing.cos() * spec.speed,
-                        vy: facing.sin() * spec.speed,
-                    });
-                }
-                SpecialAbilitySpec::Projectile(SecondaryProjectileSpec { volley }) => {
-                    self.spawn_projectile_volley(current, is_player, volley);
-                }
-                SpecialAbilitySpec::CrewRegeneration(spec) => {
-                    if !spec.sound_key.is_empty() {
-                        self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
-                    }
-                    let max_crew = self.ships[ship_id].max_crew();
-                    let next_crew = (self.ships[ship_id].crew() + spec.amount).min(max_crew);
-                    self.ships[ship_id].set_crew(next_crew);
-                }
-                SpecialAbilitySpec::CrewToEnergy(spec) => {
-                    self.activate_crew_to_energy_special(current, ship_id, spec, &mut commands);
-                }
-                SpecialAbilitySpec::SelfDestruct(spec) => {
-                    self.activate_self_destruct_special(current, is_player, spec);
-                }
-                SpecialAbilitySpec::SoundOnly(spec) => {
-                    self.activate_sound_only_special(spec);
-                }
-                SpecialAbilitySpec::Cloak(spec) => {
-                    self.activate_cloak_special(is_player, spec);
-                }
-                SpecialAbilitySpec::Transform(spec) => {
-                    self.activate_transform_special(is_player, spec);
-                }
-                SpecialAbilitySpec::CrewDrainTransfer(spec) => {
-                    self.activate_crew_drain_special(is_player, spec);
-                }
-                SpecialAbilitySpec::PlanetHarvest(spec) => {
-                    self.activate_planet_harvest_special(current, ship_id, spec);
-                }
-                SpecialAbilitySpec::None
-                | SpecialAbilitySpec::PointDefense(_)
-                | SpecialAbilitySpec::Blazer(_) => {}
+        if let Some(volley_spec) = self.ships[ship_id].primary_volley_spec_for_state(special_active) {
+            self.spawn_projectile_volley(current, is_player, volley_spec);
+        } else if let Some(projectile_spec) = self.ships[ship_id].primary_projectile_spec_for_state(special_active) {
+            self.spawn_projectile_from_spec(
+                current,
+                is_player,
+                projectile_spec,
+                ProjectileSpawnSpec {
+                    facing_offset: 0,
+                    forward_offset: projectile_spec.offset,
+                    lateral_offset: 0.0,
+                },
+                self.projectile_target_for(is_player),
+            );
+            if !projectile_spec.sound_key.is_empty() {
+                self.audio_events.push(AudioEventSnapshot {
+                    key: projectile_spec.sound_key,
+                });
             }
+        } else if let Some(laser_spec) = self.ships[ship_id].primary_instant_laser_spec_for_state(special_active) {
+            self.fire_instant_laser(current, is_player, laser_spec);
         }
-        let thrusting = apply_commands(&mut self.matter_world, body_id, commands);
+        let _ = commands;
+    }
 
-        if !self.ships[ship_id].special_state_persists_after_cooldown()
-            && !matches!(self.ships[ship_id].special_ability_spec(), SpecialAbilitySpec::Blazer(_))
+    fn handle_special_activation(
+        &mut self,
+        ship_id: usize,
+        body_id: usize,
+        current: MatterBodyState,
+        is_player: bool,
+        commands: &mut Vec<PhysicsCommand>,
+    ) {
+        match self.ships[ship_id].special_ability_spec() {
+            SpecialAbilitySpec::Teleport(spec) => {
+                self.activate_teleport_special(is_player, body_id, spec);
+                self.ship_state_mut(is_player).special_active = true;
+            }
+            SpecialAbilitySpec::InstantLaser(spec) => {
+                self.fire_instant_laser(current, is_player, spec);
+            }
+            SpecialAbilitySpec::Shield(spec) => {
+                if !spec.sound_key.is_empty() {
+                    self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
+                }
+                self.ship_state_mut(is_player).special_active = true;
+            }
+            SpecialAbilitySpec::DirectionalThrust(spec) => {
+                if !spec.sound_key.is_empty() {
+                    self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
+                }
+                let facing = self.ships[ship_id].facing() + spec.facing_offset;
+                commands.push(PhysicsCommand::SetVelocity {
+                    vx: facing.cos() * spec.speed,
+                    vy: facing.sin() * spec.speed,
+                });
+            }
+            SpecialAbilitySpec::Projectile(SecondaryProjectileSpec { volley }) => {
+                self.spawn_projectile_volley(current, is_player, volley);
+            }
+            SpecialAbilitySpec::CrewRegeneration(spec) => {
+                if !spec.sound_key.is_empty() {
+                    self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
+                }
+                let max_crew = self.ships[ship_id].max_crew();
+                let next_crew = (self.ships[ship_id].crew() + spec.amount).min(max_crew);
+                self.ships[ship_id].set_crew(next_crew);
+            }
+            SpecialAbilitySpec::CrewToEnergy(spec) => {
+                self.activate_crew_to_energy_special(current, ship_id, spec, commands);
+            }
+            SpecialAbilitySpec::SelfDestruct(spec) => {
+                self.activate_self_destruct_special(current, is_player, spec);
+            }
+            SpecialAbilitySpec::SoundOnly(spec) => {
+                self.activate_sound_only_special(spec);
+            }
+            SpecialAbilitySpec::Cloak(spec) => {
+                self.activate_cloak_special(is_player, spec);
+            }
+            SpecialAbilitySpec::Transform(spec) => {
+                self.activate_transform_special(is_player, spec);
+            }
+            SpecialAbilitySpec::CrewDrainTransfer(spec) => {
+                self.activate_crew_drain_special(is_player, spec);
+            }
+            SpecialAbilitySpec::PlanetHarvest(spec) => {
+                self.activate_planet_harvest_special(current, ship_id, spec);
+            }
+            SpecialAbilitySpec::None
+            | SpecialAbilitySpec::PointDefense(_)
+            | SpecialAbilitySpec::Blazer(_) => {}
+        }
+    }
+
+    fn expire_special_cooldown(&mut self, ship_id: usize, is_player: bool) {
+        if self.ships[ship_id].special_state_persists_after_cooldown()
+            || matches!(self.ships[ship_id].special_ability_spec(), SpecialAbilitySpec::Blazer(_))
         {
-            let special_active = self.ship_state(is_player).special_active;
-            if special_active && self.ships[ship_id].special_counter() == 0 {
-                self.ship_state_mut(is_player).special_active = false;
-            }
+            return;
         }
-
-        if is_player {
-            self.player.thrusting = thrusting;
-        } else {
-            self.target.thrusting = thrusting;
+        if self.ship_state(is_player).special_active && self.ships[ship_id].special_counter() == 0 {
+            self.ship_state_mut(is_player).special_active = false;
         }
-
-        sync_ship_body_angle(&mut self.matter_world, body_id, &self.ships[ship_id]);
     }
 
     fn step_androsynth_blazer(&mut self, ship_id: usize, body_id: usize, input: ShipInput, is_player: bool) {
@@ -1027,135 +1102,60 @@ impl Battle {
                 let dx = shortest_wrapped_delta(ship_x, projectile.x, self.width);
                 let dy = shortest_wrapped_delta(ship_y, projectile.y, self.height);
                 let distance = ((dx * dx) + (dy * dy)).sqrt();
-                (distance <= range).then_some((index, distance))
+                (distance <= range).then_some(index)
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|(index, _)| index)
             .collect()
     }
 
     fn projectile_target_for(&self, is_player: bool) -> ProjectileTarget {
         let ship_id = self.ship_state(is_player).ship_id;
         let special_active = self.ship_state(is_player).special_active;
-        match self.ships[ship_id].primary_projectile_target_mode_for_state(special_active) {
-            ProjectileTargetMode::None => {
-                if is_player {
-                    if matches!(self.player_weapon_target, ProjectileTarget::TargetShip)
-                        && !self.ship_is_targetable(false)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.player_weapon_target
-                    }
-                } else {
-                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
-                        && !self.ship_is_targetable(true)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.target_weapon_target
-                    }
-                }
-            }
+        self.projectile_target_for_mode(
+            is_player,
+            self.ships[ship_id].primary_projectile_target_mode_for_state(special_active),
+        )
+    }
+
+    fn projectile_target_for_mode(&self, is_player: bool, mode: ProjectileTargetMode) -> ProjectileTarget {
+        let selected_target = self.selected_weapon_target(is_player);
+        match mode {
+            ProjectileTargetMode::None => self.normalized_selected_weapon_target(is_player, selected_target),
             ProjectileTargetMode::EnemyShip => self.default_enemy_target_for(is_player),
             ProjectileTargetMode::PlayerSelectedOrEnemyShip => {
-                if is_player && !matches!(self.player_weapon_target, ProjectileTarget::None) {
-                    if matches!(self.player_weapon_target, ProjectileTarget::TargetShip)
-                        && !self.ship_is_targetable(false)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.player_weapon_target
-                    }
-                } else if is_player {
-                    self.default_enemy_target_for(true)
-                } else if !matches!(self.target_weapon_target, ProjectileTarget::None) {
-                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
-                        && !self.ship_is_targetable(true)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.target_weapon_target
-                    }
+                if matches!(selected_target, ProjectileTarget::None) {
+                    self.default_enemy_target_for(is_player)
                 } else {
-                    self.default_enemy_target_for(false)
+                    self.normalized_selected_weapon_target(is_player, selected_target)
                 }
             }
             ProjectileTargetMode::PlayerSelectedPointOrForward => {
-                if is_player {
-                    match self.player_weapon_target {
-                        ProjectileTarget::Point { .. } => self.player_weapon_target,
-                        _ => ProjectileTarget::None,
-                    }
+                if matches!(selected_target, ProjectileTarget::Point { .. }) {
+                    selected_target
                 } else {
-                    match self.target_weapon_target {
-                        ProjectileTarget::Point { .. } => self.target_weapon_target,
-                        _ => ProjectileTarget::None,
-                    }
+                    ProjectileTarget::None
                 }
             }
         }
     }
 
-    fn projectile_target_for_mode(&self, is_player: bool, mode: ProjectileTargetMode) -> ProjectileTarget {
-        match mode {
-            ProjectileTargetMode::None => {
-                if is_player {
-                    if matches!(self.player_weapon_target, ProjectileTarget::TargetShip)
-                        && !self.ship_is_targetable(false)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.player_weapon_target
-                    }
-                } else {
-                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
-                        && !self.ship_is_targetable(true)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.target_weapon_target
-                    }
-                }
-            }
-            ProjectileTargetMode::EnemyShip => self.default_enemy_target_for(is_player),
-            ProjectileTargetMode::PlayerSelectedOrEnemyShip => {
-                if is_player && !matches!(self.player_weapon_target, ProjectileTarget::None) {
-                    if matches!(self.player_weapon_target, ProjectileTarget::TargetShip)
-                        && !self.ship_is_targetable(false)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.player_weapon_target
-                    }
-                } else if is_player {
-                    self.default_enemy_target_for(true)
-                } else if !matches!(self.target_weapon_target, ProjectileTarget::None) {
-                    if matches!(self.target_weapon_target, ProjectileTarget::PlayerShip)
-                        && !self.ship_is_targetable(true)
-                    {
-                        ProjectileTarget::None
-                    } else {
-                        self.target_weapon_target
-                    }
-                } else {
-                    self.default_enemy_target_for(false)
-                }
-            }
-            ProjectileTargetMode::PlayerSelectedPointOrForward => {
-                if is_player {
-                    match self.player_weapon_target {
-                        ProjectileTarget::Point { .. } => self.player_weapon_target,
-                        _ => ProjectileTarget::None,
-                    }
-                } else {
-                    match self.target_weapon_target {
-                        ProjectileTarget::Point { .. } => self.target_weapon_target,
-                        _ => ProjectileTarget::None,
-                    }
-                }
-            }
+    fn selected_weapon_target(&self, is_player: bool) -> ProjectileTarget {
+        if is_player {
+            self.player_weapon_target
+        } else {
+            self.target_weapon_target
+        }
+    }
+
+    fn normalized_selected_weapon_target(&self, is_player: bool, target: ProjectileTarget) -> ProjectileTarget {
+        let targets_enemy_ship = if is_player {
+            matches!(target, ProjectileTarget::TargetShip)
+        } else {
+            matches!(target, ProjectileTarget::PlayerShip)
+        };
+        if targets_enemy_ship && !self.ship_is_targetable(!is_player) {
+            ProjectileTarget::None
+        } else {
+            target
         }
     }
 
@@ -1215,7 +1215,7 @@ impl Battle {
         };
         let lateral_facing = facing + std::f64::consts::FRAC_PI_2;
         let projectile_id = self.next_game_object_id();
-        self.projectiles.push(ProjectileSnapshot {
+        let mut projectile = ProjectileSnapshot {
             id: projectile_id,
             x: current.x
                 + (facing.cos() * spawn.forward_offset)
@@ -1260,9 +1260,9 @@ impl Battle {
             },
             owner_is_player: is_player,
             target,
-        });
-        let projectile = self.projectiles.last_mut().expect("projectile just pushed");
-        set_projectile_velocity_components(projectile, projectile_raw_vx, projectile_raw_vy);
+        };
+        set_projectile_velocity_components(&mut projectile, projectile_raw_vx, projectile_raw_vy);
+        self.projectiles.push(projectile);
     }
 
     fn step_meteors(&mut self) {
@@ -1274,11 +1274,31 @@ impl Battle {
     }
 
     fn handle_meteor_collisions(&mut self) {
-        let mut hit_projectile_indexes = Vec::new();
+        let player_hits: Vec<bool> = self
+            .meteors
+            .iter()
+            .map(|meteor| self.meteor_hits_ship(meteor, true))
+            .collect();
+        let target_hits: Vec<bool> = self
+            .meteors
+            .iter()
+            .map(|meteor| self.meteor_hits_ship(meteor, false))
+            .collect();
+
+        let (player_died, target_died) = self.resolve_meteor_ship_hits(player_hits, target_hits);
+        self.resolve_meteor_projectile_hits();
+
+        if player_died {
+            self.mark_ship_dead(true);
+        }
+        if target_died {
+            self.mark_ship_dead(false);
+        }
+    }
+
+    fn resolve_meteor_ship_hits(&mut self, player_hits: Vec<bool>, target_hits: Vec<bool>) -> (bool, bool) {
         let mut player_died = false;
         let mut target_died = false;
-        let player_hits: Vec<bool> = self.meteors.iter().map(|meteor| self.meteor_hits_ship(meteor, true)).collect();
-        let target_hits: Vec<bool> = self.meteors.iter().map(|meteor| self.meteor_hits_ship(meteor, false)).collect();
 
         for index in 0..self.meteors.len() {
             let player_hit = player_hits[index];
@@ -1286,53 +1306,68 @@ impl Battle {
             let player_contacting = self.meteors[index].player_contacting;
             let target_contacting = self.meteors[index].target_contacting;
 
-            if player_hit && !player_contacting {
-                if !self.ship_blocks_damage(true) {
-                    player_died |= self.ships[self.player.ship_id].take_damage(METEOR_DAMAGE);
-                    let explosion_id = self.next_game_object_id();
-                    self.explosions.push(ExplosionSnapshot {
-                        id: explosion_id,
-                        x: self.meteors[index].x,
-                        y: self.meteors[index].y,
-                        frame_index: 0,
-                        end_frame: 7,
-                        texture_prefix: "battle-blast",
-                    });
-                    self.audio_events.push(AudioEventSnapshot {
-                        key: "battle-boom-23",
-                    });
-                    self.push_ship_from_meteor(true, self.meteors[index].x, self.meteors[index].y);
-                }
-                self.meteors[index].vx = -self.meteors[index].vx;
-                self.meteors[index].vy = -self.meteors[index].vy;
-            }
-
-            if target_hit && !target_contacting {
-                if !self.ship_blocks_damage(false) {
-                    target_died |= self.ships[self.target.ship_id].take_damage(METEOR_DAMAGE);
-                    let explosion_id = self.next_game_object_id();
-                    self.explosions.push(ExplosionSnapshot {
-                        id: explosion_id,
-                        x: self.meteors[index].x,
-                        y: self.meteors[index].y,
-                        frame_index: 0,
-                        end_frame: 7,
-                        texture_prefix: "battle-blast",
-                    });
-                    self.audio_events.push(AudioEventSnapshot {
-                        key: "battle-boom-23",
-                    });
-                    self.push_ship_from_meteor(false, self.meteors[index].x, self.meteors[index].y);
-                }
-                self.meteors[index].vx = -self.meteors[index].vx;
-                self.meteors[index].vy = -self.meteors[index].vy;
-            }
+            player_died |= self.apply_meteor_ship_hit(index, true, player_hit, player_contacting);
+            target_died |= self.apply_meteor_ship_hit(index, false, target_hit, target_contacting);
 
             self.meteors[index].player_contacting = player_hit;
             self.meteors[index].target_contacting = target_hit;
         }
 
-        let projectile_hits: Vec<(usize, f64, f64, i32, i32, &'static str, &'static str)> = self.projectiles
+        (player_died, target_died)
+    }
+
+    fn apply_meteor_ship_hit(
+        &mut self,
+        index: usize,
+        is_player: bool,
+        ship_hit: bool,
+        was_contacting: bool,
+    ) -> bool {
+        if !ship_hit || was_contacting {
+            return false;
+        }
+
+        let meteor_x = self.meteors[index].x;
+        let meteor_y = self.meteors[index].y;
+
+        let died = if self.ship_blocks_damage(is_player) {
+            false
+        } else {
+            let ship_id = if is_player {
+                self.player.ship_id
+            } else {
+                self.target.ship_id
+            };
+            let died = self.ships[ship_id].take_damage(METEOR_DAMAGE);
+            self.spawn_meteor_impact_effect(meteor_x, meteor_y);
+            self.push_ship_from_meteor(is_player, meteor_x, meteor_y);
+            died
+        };
+
+        self.meteors[index].vx = -self.meteors[index].vx;
+        self.meteors[index].vy = -self.meteors[index].vy;
+        died
+    }
+
+    fn spawn_meteor_impact_effect(&mut self, x: f64, y: f64) {
+        let explosion_id = self.next_game_object_id();
+        self.explosions.push(ExplosionSnapshot {
+            id: explosion_id,
+            x,
+            y,
+            frame_index: 0,
+            end_frame: 7,
+            texture_prefix: "battle-blast",
+        });
+        self.audio_events.push(AudioEventSnapshot {
+            key: "battle-boom-23",
+        });
+    }
+
+    fn resolve_meteor_projectile_hits(&mut self) {
+        let mut hit_projectile_indexes = Vec::new();
+        let projectile_hits: Vec<(usize, f64, f64, i32, i32, &'static str, &'static str)> = self
+            .projectiles
             .iter()
             .enumerate()
             .filter_map(|(index, projectile)| {
@@ -1351,33 +1386,35 @@ impl Battle {
             })
             .collect();
 
-        for (index, x, y, impact_start_frame, impact_end_frame, impact_texture_prefix, impact_sound_key) in projectile_hits {
+        for (
+            index,
+            x,
+            y,
+            impact_start_frame,
+            impact_end_frame,
+            impact_texture_prefix,
+            impact_sound_key,
+        ) in projectile_hits
+        {
             let explosion_id = self.next_game_object_id();
-                self.explosions.push(ExplosionSnapshot {
-                    id: explosion_id,
-                    x,
-                    y,
-                    frame_index: impact_start_frame,
-                    end_frame: impact_end_frame,
-                    texture_prefix: impact_texture_prefix,
+            self.explosions.push(ExplosionSnapshot {
+                id: explosion_id,
+                x,
+                y,
+                frame_index: impact_start_frame,
+                end_frame: impact_end_frame,
+                texture_prefix: impact_texture_prefix,
+            });
+            if !impact_sound_key.is_empty() {
+                self.audio_events.push(AudioEventSnapshot {
+                    key: impact_sound_key,
                 });
-                if !impact_sound_key.is_empty() {
-                    self.audio_events.push(AudioEventSnapshot {
-                        key: impact_sound_key,
-                    });
-                }
-                hit_projectile_indexes.push(index);
+            }
+            hit_projectile_indexes.push(index);
         }
 
         for index in hit_projectile_indexes.into_iter().rev() {
             self.projectiles.remove(index);
-        }
-
-        if player_died {
-            self.mark_ship_dead(true);
-        }
-        if target_died {
-            self.mark_ship_dead(false);
         }
     }
 
@@ -1410,63 +1447,10 @@ impl Battle {
         let start_y = current.y + (facing.sin() * laser_spec.offset);
         let (aim_end_x, aim_end_y) =
             self.instant_laser_end_for_mode(start_x, start_y, facing, is_player, laser_spec);
-        let mut end_x = aim_end_x;
-        let mut end_y = aim_end_y;
-        let mut ship_hit = false;
-
-        let ship_candidate = if !defender_dead && self.ship_is_targetable(!is_player) {
-            self.matter_world.body_state(defender_body_id).and_then(|defender_body| {
-                let defender_state = self.ship_state(!is_player);
-                let defender_logic = &self.ships[defender_state.ship_id];
-                let defender_facing = radians_to_facing_index(defender_logic.facing());
-                let defender_hit_polygon = defender_logic.hit_polygon_for_state(
-                    defender_facing,
-                    defender_body.x,
-                    defender_body.y,
-                    defender_state.special_active,
-                );
-                segment_hits_polygon(start_x, start_y, aim_end_x, aim_end_y, &defender_hit_polygon, 0.0)
-                    .then_some((defender_body.x, defender_body.y, segment_distance_squared_to_point(start_x, start_y, defender_body.x, defender_body.y)))
-            })
-        } else {
-            None
-        };
-
-        let meteor_candidate = self
-            .meteors
-            .iter()
-            .filter(|meteor| point_to_segment_distance_squared(meteor.x, meteor.y, start_x, start_y, aim_end_x, aim_end_y) <= meteor.radius * meteor.radius)
-            .map(|meteor| {
-                (
-                    meteor.x,
-                    meteor.y,
-                    segment_distance_squared_to_point(start_x, start_y, meteor.x, meteor.y),
-                )
-            })
-            .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-
-        match (ship_candidate, meteor_candidate) {
-            (Some(ship), Some(meteor)) => {
-                if ship.2 <= meteor.2 {
-                    end_x = ship.0;
-                    end_y = ship.1;
-                    ship_hit = true;
-                } else {
-                    end_x = meteor.0;
-                    end_y = meteor.1;
-                }
-            }
-            (Some(ship), None) => {
-                end_x = ship.0;
-                end_y = ship.1;
-                ship_hit = true;
-            }
-            (None, Some(meteor)) => {
-                end_x = meteor.0;
-                end_y = meteor.1;
-            }
-            (None, None) => {}
-        }
+        let ray = LaserRay { start_x, start_y, end_x: aim_end_x, end_y: aim_end_y };
+        let (end_x, end_y, ship_hit) = self.instant_laser_hit_result(
+            &ray, is_player, defender_body_id, defender_dead,
+        );
 
         let laser_id = self.next_game_object_id();
         self.lasers.push(LaserSnapshot {
@@ -1492,9 +1476,91 @@ impl Battle {
             return;
         }
 
+        self.apply_instant_laser_ship_hit(
+            attacker_ship_id,
+            defender_ship_id,
+            !is_player,
+            end_x,
+            end_y,
+            laser_spec,
+        );
+    }
+
+    fn instant_laser_hit_result(
+        &self,
+        ray: &LaserRay,
+        is_player: bool,
+        defender_body_id: usize,
+        defender_dead: bool,
+    ) -> (f64, f64, bool) {
+        let ship_candidate = self.instant_laser_ship_candidate(ray, is_player, defender_body_id, defender_dead);
+        let meteor_candidate = self.instant_laser_meteor_candidate(ray);
+
+        match (ship_candidate, meteor_candidate) {
+            (Some(ship), Some(meteor)) if ship.2 <= meteor.2 => (ship.0, ship.1, true),
+            (Some(_), Some(meteor)) => (meteor.0, meteor.1, false),
+            (Some(ship), None) => (ship.0, ship.1, true),
+            (None, Some(meteor)) => (meteor.0, meteor.1, false),
+            (None, None) => (ray.end_x, ray.end_y, false),
+        }
+    }
+
+    fn instant_laser_ship_candidate(
+        &self,
+        ray: &LaserRay,
+        is_player: bool,
+        defender_body_id: usize,
+        defender_dead: bool,
+    ) -> Option<(f64, f64, f64)> {
+        if defender_dead || !self.ship_is_targetable(!is_player) {
+            return None;
+        }
+
+        self.matter_world.body_state(defender_body_id).and_then(|defender_body| {
+            let defender_state = self.ship_state(!is_player);
+            let defender_logic = &self.ships[defender_state.ship_id];
+            let defender_facing = radians_to_facing_index(defender_logic.facing());
+            let defender_hit_polygon = defender_logic.hit_polygon_for_state(
+                defender_facing,
+                defender_body.x,
+                defender_body.y,
+                defender_state.special_active,
+            );
+            segment_hits_polygon(ray.start_x, ray.start_y, ray.end_x, ray.end_y, &defender_hit_polygon, 0.0).then_some((
+                defender_body.x,
+                defender_body.y,
+                segment_distance_squared_to_point(ray.start_x, ray.start_y, defender_body.x, defender_body.y),
+            ))
+        })
+    }
+
+    fn instant_laser_meteor_candidate(&self, ray: &LaserRay) -> Option<(f64, f64, f64)> {
+        self.meteors
+            .iter()
+            .filter(|meteor| {
+                point_to_segment_distance_squared(meteor.x, meteor.y, ray.start_x, ray.start_y, ray.end_x, ray.end_y)
+                    <= meteor.radius * meteor.radius
+            })
+            .map(|meteor| {
+                (
+                    meteor.x,
+                    meteor.y,
+                    segment_distance_squared_to_point(ray.start_x, ray.start_y, meteor.x, meteor.y),
+                )
+            })
+            .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    fn apply_instant_laser_ship_hit(
+        &mut self,
+        attacker_ship_id: usize,
+        defender_ship_id: usize,
+        defender_is_player: bool,
+        impact_x: f64,
+        impact_y: f64,
+        laser_spec: InstantLaserSpec,
+    ) {
         let died = self.ships[defender_ship_id].take_damage(laser_spec.damage);
-        let impact_x = end_x;
-        let impact_y = end_y;
         let explosion_id = self.next_game_object_id();
         self.explosions.push(ExplosionSnapshot {
             id: explosion_id,
@@ -1510,7 +1576,7 @@ impl Battle {
             });
         }
         if died {
-            self.mark_ship_dead(!is_player);
+            self.mark_ship_dead(defender_is_player);
             if let Some(key) = self.ships[attacker_ship_id].victory_sound_key() {
                 self.audio_events.push(AudioEventSnapshot { key });
             }
@@ -1749,16 +1815,16 @@ impl Battle {
         let defender_is_player = !is_player;
         if !self.ship_blocks_damage(defender_is_player) {
             let defender_state = self.ship_state(defender_is_player);
-            if !defender_state.dead {
-                if let Some(defender_body) = self.matter_world.body_state(defender_state.body_id) {
-                    let dx = shortest_wrapped_delta(defender_body.x, current.x, self.width);
-                    let dy = shortest_wrapped_delta(defender_body.y, current.y, self.height);
-                    let distance = ((dx * dx) + (dy * dy)).sqrt();
-                    if distance <= spec.radius {
-                        let defender_ship_id = defender_state.ship_id;
-                        if self.ships[defender_ship_id].take_damage(spec.damage) {
-                            self.mark_ship_dead(defender_is_player);
-                        }
+            if !defender_state.dead
+                && let Some(defender_body) = self.matter_world.body_state(defender_state.body_id)
+            {
+                let dx = shortest_wrapped_delta(defender_body.x, current.x, self.width);
+                let dy = shortest_wrapped_delta(defender_body.y, current.y, self.height);
+                let distance = ((dx * dx) + (dy * dy)).sqrt();
+                if distance <= spec.radius {
+                    let defender_ship_id = defender_state.ship_id;
+                    if self.ships[defender_ship_id].take_damage(spec.damage) {
+                        self.mark_ship_dead(defender_is_player);
                     }
                 }
             }
@@ -1968,38 +2034,34 @@ impl Battle {
         }
     }
 
-    fn apply_blazer_collision_velocity(
-        &mut self,
-        blazer_mass: f64,
-        blazer_body_id: usize,
-        victim_body_id: usize,
-        blazer_before: &MatterBodyState,
-        victim_before: &MatterBodyState,
-        victim_mass: f64,
-    ) {
-        let dx = victim_before.x - blazer_before.x;
-        let dy = victim_before.y - blazer_before.y;
+    fn apply_blazer_collision_velocity(&mut self, input: &BlazerCollisionInput) {
+        let dx = input.victim_before.x - input.blazer_before.x;
+        let dy = input.victim_before.y - input.blazer_before.y;
         let distance = (dx * dx + dy * dy).sqrt();
         let (nx, ny) = if distance <= f64::EPSILON {
             (1.0, 0.0)
         } else {
             (dx / distance, dy / distance)
         };
-        let blazer_speed = (blazer_before.vx.powi(2) + blazer_before.vy.powi(2)).sqrt();
+        let blazer_speed = (input.blazer_before.vx.powi(2) + input.blazer_before.vy.powi(2)).sqrt();
         let ((blazer_vx, blazer_vy), (victim_vx, victim_vy)) = resolve_collision_velocity(
-            blazer_before.x,
-            blazer_before.y,
-            nx * blazer_speed,
-            ny * blazer_speed,
-            blazer_mass,
-            victim_before.x,
-            victim_before.y,
-            victim_before.vx,
-            victim_before.vy,
-            victim_mass,
+            CollisionBody {
+                x: input.blazer_before.x,
+                y: input.blazer_before.y,
+                vx: nx * blazer_speed,
+                vy: ny * blazer_speed,
+                mass: input.blazer_mass,
+            },
+            CollisionBody {
+                x: input.victim_before.x,
+                y: input.victim_before.y,
+                vx: input.victim_before.vx,
+                vy: input.victim_before.vy,
+                mass: input.victim_mass,
+            },
         );
-        self.matter_world.set_body_velocity(blazer_body_id, blazer_vx, blazer_vy);
-        self.matter_world.set_body_velocity(victim_body_id, victim_vx, victim_vy);
+        self.matter_world.set_body_velocity(input.blazer_body_id, blazer_vx, blazer_vy);
+        self.matter_world.set_body_velocity(input.victim_body_id, victim_vx, victim_vy);
     }
 
     fn blazer_spec_for(&self, is_player: bool) -> Option<crate::traits::ship_trait::BlazerSpecialSpec> {
@@ -2064,6 +2126,34 @@ impl Battle {
         ship.dead = true;
         ship.thrusting = false;
         self.matter_world.disable_body(body_id);
+    }
+}
+
+fn track_projectile(
+    projectile: &mut ProjectileSnapshot,
+    player_body: Option<MatterBodyState>,
+    target_body: Option<MatterBodyState>,
+) {
+    let target_pos = match projectile.target {
+        ProjectileTarget::None => return,
+        ProjectileTarget::Point { x, y } => Some((x, y)),
+        ProjectileTarget::PlayerShip => player_body.map(|b| (b.x, b.y)),
+        ProjectileTarget::TargetShip => target_body.map(|b| (b.x, b.y)),
+    };
+    if projectile.turn_wait > 0 {
+        projectile.turn_wait -= 1;
+        return;
+    }
+    if let Some((tx, ty)) = target_pos {
+        projectile.facing_index = turn_projectile_toward_target(
+            projectile.facing_index,
+            projectile.x,
+            projectile.y,
+            tx,
+            ty,
+        );
+        projectile.facing = facing_index_to_radians(projectile.facing_index);
+        projectile.turn_wait = projectile.track_wait;
     }
 }
 
@@ -2179,6 +2269,21 @@ fn sync_ship_body_angle(matter_world: &mut MatterWorld, body_id: usize, ship: &A
 
 fn ship_body_angle(ship: &AnyShip) -> f64 {
     ship.facing() + std::f64::consts::FRAC_PI_2
+}
+
+fn is_weapon_triggered(ship: &AnyShip, input: &ShipInput, weapon_counter_before: i32, energy_before: i32) -> bool {
+    let _ = (ship, energy_before);
+    input.weapon && weapon_counter_before == 0
+}
+
+fn is_special_triggered(
+    ship: &AnyShip,
+    input: &ShipInput,
+    special_counter_before: i32,
+    energy_before: i32,
+) -> bool {
+    let _ = (ship, energy_before);
+    input.special && special_counter_before == 0
 }
 
 fn apply_commands(matter_world: &mut MatterWorld, body_id: usize, commands: Vec<PhysicsCommand>) -> bool {
@@ -2431,14 +2536,13 @@ fn segment_hits_polygon(
         let edge_start = polygon[index];
         let edge_end = polygon[(index + 1) % polygon.len()];
         if segment_to_segment_distance_squared(
-            start_x,
-            start_y,
-            end_x,
-            end_y,
-            edge_start.x,
-            edge_start.y,
-            edge_end.x,
-            edge_end.y,
+            Segment { start_x, start_y, end_x, end_y },
+            Segment {
+                start_x: edge_start.x,
+                start_y: edge_start.y,
+                end_x: edge_end.x,
+                end_y: edge_end.y,
+            },
         ) <= radius * radius {
             return true;
         }
@@ -2465,7 +2569,20 @@ fn polygons_intersect(a: &[HitPolygonPoint], b: &[HitPolygonPoint]) -> bool {
         for b_index in 0..b.len() {
             let b_start = b[b_index];
             let b_end = b[(b_index + 1) % b.len()];
-            if segments_intersect(a_start.x, a_start.y, a_end.x, a_end.y, b_start.x, b_start.y, b_end.x, b_end.y) {
+            if segments_intersect(
+                Segment {
+                    start_x: a_start.x,
+                    start_y: a_start.y,
+                    end_x: a_end.x,
+                    end_y: a_end.y,
+                },
+                Segment {
+                    start_x: b_start.x,
+                    start_y: b_start.y,
+                    end_x: b_end.x,
+                    end_y: b_end.y,
+                },
+            ) {
                 return true;
             }
         }
@@ -2516,24 +2633,15 @@ fn point_in_polygon(x: f64, y: f64, polygon: &[HitPolygonPoint]) -> bool {
     inside
 }
 
-fn segment_to_segment_distance_squared(
-    ax: f64,
-    ay: f64,
-    bx: f64,
-    by: f64,
-    cx: f64,
-    cy: f64,
-    dx: f64,
-    dy: f64,
-) -> f64 {
-    if segments_intersect(ax, ay, bx, by, cx, cy, dx, dy) {
+fn segment_to_segment_distance_squared(a: Segment, b: Segment) -> f64 {
+    if segments_intersect(a, b) {
         return 0.0;
     }
 
-    point_to_segment_distance_squared(ax, ay, cx, cy, dx, dy)
-        .min(point_to_segment_distance_squared(bx, by, cx, cy, dx, dy))
-        .min(point_to_segment_distance_squared(cx, cy, ax, ay, bx, by))
-        .min(point_to_segment_distance_squared(dx, dy, ax, ay, bx, by))
+    point_to_segment_distance_squared(a.start_x, a.start_y, b.start_x, b.start_y, b.end_x, b.end_y)
+        .min(point_to_segment_distance_squared(a.end_x, a.end_y, b.start_x, b.start_y, b.end_x, b.end_y))
+        .min(point_to_segment_distance_squared(b.start_x, b.start_y, a.start_x, a.start_y, a.end_x, a.end_y))
+        .min(point_to_segment_distance_squared(b.end_x, b.end_y, a.start_x, a.start_y, a.end_x, a.end_y))
 }
 
 fn segment_distance_squared_to_point(start_x: f64, start_y: f64, point_x: f64, point_y: f64) -> f64 {
@@ -2593,42 +2701,22 @@ fn point_to_segment_distance_squared(
     (closest_dx * closest_dx) + (closest_dy * closest_dy)
 }
 
-fn segments_intersect(
-    ax: f64,
-    ay: f64,
-    bx: f64,
-    by: f64,
-    cx: f64,
-    cy: f64,
-    dx: f64,
-    dy: f64,
-) -> bool {
-    let ab = orientation(ax, ay, bx, by, cx, cy);
-    let ac = orientation(ax, ay, bx, by, dx, dy);
-    let cd = orientation(cx, cy, dx, dy, ax, ay);
-    let ca = orientation(cx, cy, dx, dy, bx, by);
+fn segments_intersect(a: Segment, b: Segment) -> bool {
+    let ab = orientation(a.start_x, a.start_y, a.end_x, a.end_y, b.start_x, b.start_y);
+    let ac = orientation(a.start_x, a.start_y, a.end_x, a.end_y, b.end_x, b.end_y);
+    let cd = orientation(b.start_x, b.start_y, b.end_x, b.end_y, a.start_x, a.start_y);
+    let ca = orientation(b.start_x, b.start_y, b.end_x, b.end_y, a.end_x, a.end_y);
 
-    (ab == 0.0 && on_segment(ax, ay, bx, by, cx, cy))
-        || (ac == 0.0 && on_segment(ax, ay, bx, by, dx, dy))
-        || (cd == 0.0 && on_segment(cx, cy, dx, dy, ax, ay))
-        || (ca == 0.0 && on_segment(cx, cy, dx, dy, bx, by))
+    (ab == 0.0 && on_segment(a.start_x, a.start_y, a.end_x, a.end_y, b.start_x, b.start_y))
+        || (ac == 0.0 && on_segment(a.start_x, a.start_y, a.end_x, a.end_y, b.end_x, b.end_y))
+        || (cd == 0.0 && on_segment(b.start_x, b.start_y, b.end_x, b.end_y, a.start_x, a.start_y))
+        || (ca == 0.0 && on_segment(b.start_x, b.start_y, b.end_x, b.end_y, a.end_x, a.end_y))
         || ((ab > 0.0) != (ac > 0.0) && (cd > 0.0) != (ca > 0.0))
 }
 
-fn resolve_collision_velocity(
-    player_x: f64,
-    player_y: f64,
-    player_vx: f64,
-    player_vy: f64,
-    player_mass: f64,
-    target_x: f64,
-    target_y: f64,
-    target_vx: f64,
-    target_vy: f64,
-    target_mass: f64,
-) -> ((f64, f64), (f64, f64)) {
-    let dx = target_x - player_x;
-    let dy = target_y - player_y;
+fn resolve_collision_velocity(player: CollisionBody, target: CollisionBody) -> ((f64, f64), (f64, f64)) {
+    let dx = target.x - player.x;
+    let dy = target.y - player.y;
     let distance = (dx * dx + dy * dy).sqrt();
     let (nx, ny) = if distance <= f64::EPSILON {
         (1.0, 0.0)
@@ -2636,21 +2724,21 @@ fn resolve_collision_velocity(
         (dx / distance, dy / distance)
     };
 
-    let player_normal = (player_vx * nx) + (player_vy * ny);
-    let target_normal = (target_vx * nx) + (target_vy * ny);
-    let player_tangent_x = player_vx - (player_normal * nx);
-    let player_tangent_y = player_vy - (player_normal * ny);
-    let target_tangent_x = target_vx - (target_normal * nx);
-    let target_tangent_y = target_vy - (target_normal * ny);
+    let player_normal = (player.vx * nx) + (player.vy * ny);
+    let target_normal = (target.vx * nx) + (target.vy * ny);
+    let player_tangent_x = player.vx - (player_normal * nx);
+    let player_tangent_y = player.vy - (player_normal * ny);
+    let target_tangent_x = target.vx - (target_normal * nx);
+    let target_tangent_y = target.vy - (target_normal * ny);
 
     let player_bounced_normal = (
-        (player_normal * (player_mass - target_mass))
-            + (2.0 * target_mass * target_normal)
-    ) / (player_mass + target_mass);
+        (player_normal * (player.mass - target.mass))
+            + (2.0 * target.mass * target_normal)
+    ) / (player.mass + target.mass);
     let target_bounced_normal = (
-        (target_normal * (target_mass - player_mass))
-            + (2.0 * player_mass * player_normal)
-    ) / (player_mass + target_mass);
+        (target_normal * (target.mass - player.mass))
+            + (2.0 * player.mass * player_normal)
+    ) / (player.mass + target.mass);
 
     (
         (
@@ -2705,7 +2793,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(battle.snapshot().lasers[0].end_y > 5000.0, true);
+        assert!(battle.snapshot().lasers[0].end_y > 5000.0);
     }
 
     #[test]
@@ -2776,10 +2864,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(
-            battle.snapshot().audio_events.iter().any(|event| event.key == "arilou-primary"),
-            true,
-        );
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "arilou-primary"));
     }
 
     #[test]
@@ -2901,10 +2986,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(
-            battle.snapshot().audio_events.iter().any(|event| event.key == "arilou-special"),
-            true,
-        );
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "arilou-special"));
     }
 
     #[test]
@@ -3405,8 +3487,8 @@ mod tests {
     #[test]
     fn collision_velocity_bounces_a_light_blazer_back_harder_than_a_human_cruiser() {
         let ((player_vx, _), (target_vx, _)) = super::resolve_collision_velocity(
-            5000.0, 5000.0, 10.0, 0.0, 1.0,
-            5100.0, 5000.0, 0.0, 0.0, 6.0,
+            super::CollisionBody { x: 5000.0, y: 5000.0, vx: 10.0, vy: 0.0, mass: 1.0 },
+            super::CollisionBody { x: 5100.0, y: 5000.0, vx: 0.0, vy: 0.0, mass: 6.0 },
         );
 
         assert_eq!(
@@ -3425,7 +3507,7 @@ mod tests {
         let projectile_polygon = super::projectile_hit_polygon(projectile_collision, 15, 4763.0, 1728.0);
         let ship_polygon = ship.hit_polygon(0, 6440.0, 1660.0);
 
-        assert_eq!(super::polygons_intersect(&projectile_polygon, &ship_polygon), false);
+        assert!(!super::polygons_intersect(&projectile_polygon, &ship_polygon));
     }
 
     #[test]
@@ -3491,7 +3573,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(battle.snapshot().projectiles[0].id > 0, true);
+        assert!(battle.snapshot().projectiles[0].id > 0);
     }
 
     #[test]
@@ -3518,10 +3600,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(
-            battle.snapshot().audio_events.iter().any(|event| event.key == "androsynth-special"),
-            true,
-        );
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "androsynth-special"));
     }
 
     #[test]
@@ -3534,7 +3613,7 @@ mod tests {
         let projectile_polygon = super::projectile_hit_polygon(projectile_collision, 0, 5000.0, 4210.0);
         let ship_polygon = ship.hit_polygon(0, 5000.0, 4300.0);
 
-        assert_eq!(super::polygons_intersect(&projectile_polygon, &ship_polygon), false);
+        assert!(!super::polygons_intersect(&projectile_polygon, &ship_polygon));
     }
 
     #[test]
@@ -3547,7 +3626,7 @@ mod tests {
         let projectile_polygon = super::projectile_hit_polygon(projectile_collision, 0, 5000.0, 4300.0);
         let ship_polygon = ship.hit_polygon(0, 5000.0, 4300.0);
 
-        assert_eq!(super::polygons_intersect(&projectile_polygon, &ship_polygon), true);
+        assert!(super::polygons_intersect(&projectile_polygon, &ship_polygon));
     }
 
     #[test]
@@ -3665,22 +3744,19 @@ mod tests {
     #[test]
     fn segment_hits_human_cruiser_polygon_when_path_crosses_it() {
         let polygon = crate::ships::HumanCruiser::new().hit_polygon(0, 0.0, 0.0);
-        assert_eq!(
-            super::segment_hits_polygon(
-                0.0,
-                -120.0,
-                0.0,
-                120.0,
-                &polygon,
-                0.0,
-            ),
-            true,
-        );
+        assert!(super::segment_hits_polygon(
+            0.0,
+            -120.0,
+            0.0,
+            120.0,
+            &polygon,
+            0.0,
+        ));
     }
 
     #[test]
     fn segment_hits_circle_when_path_crosses_it() {
-        assert_eq!(super::segment_hits_circle(0.0, 0.0, 10.0, 0.0, 5.0, 3.0, 3.5), true);
+        assert!(super::segment_hits_circle(0.0, 0.0, 10.0, 0.0, 5.0, 3.0, 3.5));
     }
 
     #[test]
@@ -3765,13 +3841,12 @@ mod tests {
 
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(
+        assert!(
             battle
                 .snapshot()
                 .audio_events
                 .iter()
-                .any(|event| event.key == "battle-boom-23"),
-            true
+                .any(|event| event.key == "battle-boom-23")
         );
     }
 
@@ -3801,7 +3876,7 @@ mod tests {
 
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(battle.snapshot().target.dead, true);
+        assert!(battle.snapshot().target.dead);
     }
 
     #[test]
@@ -3917,7 +3992,7 @@ mod tests {
 
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(battle.snapshot().player.vy < 0.0, true);
+        assert!(battle.snapshot().player.vy < 0.0);
     }
 
     #[test]
@@ -4067,10 +4142,9 @@ mod tests {
             far_battle.tick(1000.0 / 24.0);
         }
 
-        assert_eq!(
+        assert!(
             distance_to_point(&close_battle.snapshot().projectiles[0], 5080.0, 4900.0)
-                < distance_to_point(&far_battle.snapshot().projectiles[0], 5080.0, 4900.0),
-            true
+                < distance_to_point(&far_battle.snapshot().projectiles[0], 5080.0, 4900.0)
         );
     }
 
@@ -4249,10 +4323,7 @@ mod tests {
             point_battle.tick(1000.0 / 24.0);
         }
 
-        assert_eq!(
-            point_battle.snapshot().projectiles[0].x < default_battle.snapshot().projectiles[0].x,
-            true
-        );
+        assert!(point_battle.snapshot().projectiles[0].x < default_battle.snapshot().projectiles[0].x);
     }
 
     #[test]
@@ -4291,7 +4362,7 @@ mod tests {
             battle.tick(1000.0 / 24.0);
         }
 
-        assert_eq!(battle.snapshot().projectiles[0].x > 5000.0, true);
+        assert!(battle.snapshot().projectiles[0].x > 5000.0);
     }
 
     #[test]
@@ -4412,13 +4483,12 @@ mod tests {
             }
         }
 
-        assert_eq!(
+        assert!(
             battle
                 .snapshot()
                 .audio_events
                 .iter()
-                .any(|event| event.key == "human-victory"),
-            true
+                .any(|event| event.key == "human-victory")
         );
     }
 
@@ -4448,13 +4518,12 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(
+        assert!(
             battle
                 .snapshot()
                 .audio_events
                 .iter()
-                .any(|event| event.key == "arilou-victory"),
-            true
+                .any(|event| event.key == "arilou-victory")
         );
     }
 
@@ -4496,10 +4565,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(
-            battle.snapshot().audio_events.iter().any(|event| event.key == "human-special"),
-            true
-        );
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "human-special"));
     }
 
     #[test]
@@ -4656,13 +4722,12 @@ mod tests {
             }
         }
 
-        assert_eq!(
+        assert!(
             battle
                 .snapshot()
                 .audio_events
                 .iter()
-                .any(|event| event.key == "battle-shipdies"),
-            true
+                .any(|event| event.key == "battle-shipdies")
         );
     }
 
@@ -4725,13 +4790,12 @@ mod tests {
             }
         }
 
-        assert_eq!(
+        assert!(
             battle
                 .snapshot()
                 .explosions
                 .iter()
-                .any(|explosion| explosion.texture_prefix == "battle-boom"),
-            true
+                .any(|explosion| explosion.texture_prefix == "battle-boom")
         );
     }
 
@@ -4772,7 +4836,7 @@ mod tests {
             }
         }
 
-        assert_eq!(battle.snapshot().target.dead, true);
+        assert!(battle.snapshot().target.dead);
     }
 
     #[test]
@@ -4857,7 +4921,7 @@ mod tests {
         });
         battle.tick(1000.0 / 24.0);
 
-        assert_eq!(battle.snapshot().target.facing > -std::f64::consts::FRAC_PI_2, true);
+        assert!(battle.snapshot().target.facing > -std::f64::consts::FRAC_PI_2);
     }
 
     #[test]

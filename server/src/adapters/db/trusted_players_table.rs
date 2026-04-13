@@ -2,6 +2,7 @@ use super::row::Row;
 use super::table_entity::TableEntity;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct StoredTrustedPlayer {
     pub browser_id: String,
     pub user_name: String,

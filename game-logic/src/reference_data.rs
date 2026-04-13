@@ -2,6 +2,7 @@
 
 use serde::Deserialize;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Deserialize)]
 pub struct ReferenceData {
@@ -108,7 +109,9 @@ pub struct SimpleProjectileFrameData {
 }
 
 pub fn load() -> ReferenceData {
-    let json = fs::read_to_string("../testdata/reference.json")
-        .expect("reference.json not found — run from game-logic/");
+    let reference_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../frontend/testdata/reference.json");
+    let json = fs::read_to_string(reference_path)
+        .expect("reference.json not found");
     serde_json::from_str(&json).expect("failed to parse reference.json")
 }

@@ -9,6 +9,17 @@ const TRAVEL_ALIGNMENT_EPSILON: f64 = 0.0001;
 const GRAVITY_THRESHOLD: f64 = 420.0;
 const GRAVITY_PULL: f64 = 0.12;
 
+struct ThrustVelocityInput<'a> {
+    facing: f64,
+    thrust_increment: f64,
+    max_speed: f64,
+    current_velocity: &'a VelocityVector,
+    dvx: f64,
+    dvy: f64,
+    current_speed: f64,
+    allow_beyond_max_speed: bool,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub struct HitPolygonPoint {
     pub x: f64,
@@ -204,7 +215,82 @@ pub enum SpecialAbilitySpec {
     PlanetHarvest(PlanetHarvestSpec),
 }
 
-pub trait Ship {
+#[macro_export]
+macro_rules! define_ship_struct {
+    ($name:ident) => {
+        pub struct $name {
+            crew: i32,
+            energy: i32,
+            facing: f64,
+            turn_counter: i32,
+            thrust_counter: i32,
+            weapon_counter: i32,
+            special_counter: i32,
+            energy_counter: i32,
+        }
+
+        impl $name {
+            pub fn new() -> Self {
+                Self {
+                    crew: Self::MAX_CREW,
+                    energy: Self::MAX_ENERGY,
+                    facing: -::std::f64::consts::FRAC_PI_2,
+                    turn_counter: 0,
+                    thrust_counter: 0,
+                    weapon_counter: 0,
+                    special_counter: 0,
+                    energy_counter: 0,
+                }
+            }
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl $crate::traits::ship_trait::ShipState for $name {
+            fn crew(&self) -> i32 { self.crew }
+            fn set_crew(&mut self, value: i32) { self.crew = value }
+            fn energy(&self) -> i32 { self.energy }
+            fn set_energy(&mut self, value: i32) { self.energy = value }
+            fn facing(&self) -> f64 { self.facing }
+            fn set_facing(&mut self, value: f64) { self.facing = value }
+            fn turn_counter(&self) -> i32 { self.turn_counter }
+            fn set_turn_counter(&mut self, value: i32) { self.turn_counter = value }
+            fn thrust_counter(&self) -> i32 { self.thrust_counter }
+            fn set_thrust_counter(&mut self, value: i32) { self.thrust_counter = value }
+            fn weapon_counter(&self) -> i32 { self.weapon_counter }
+            fn set_weapon_counter(&mut self, value: i32) { self.weapon_counter = value }
+            fn special_counter(&self) -> i32 { self.special_counter }
+            fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
+            fn energy_counter(&self) -> i32 { self.energy_counter }
+            fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+        }
+    };
+}
+
+pub trait ShipState {
+    fn crew(&self) -> i32;
+    fn set_crew(&mut self, value: i32);
+    fn energy(&self) -> i32;
+    fn set_energy(&mut self, value: i32);
+    fn facing(&self) -> f64;
+    fn set_facing(&mut self, value: f64);
+    fn turn_counter(&self) -> i32;
+    fn set_turn_counter(&mut self, value: i32);
+    fn thrust_counter(&self) -> i32;
+    fn set_thrust_counter(&mut self, value: i32);
+    fn weapon_counter(&self) -> i32;
+    fn set_weapon_counter(&mut self, value: i32);
+    fn special_counter(&self) -> i32;
+    fn set_special_counter(&mut self, value: i32);
+    fn energy_counter(&self) -> i32;
+    fn set_energy_counter(&mut self, value: i32);
+}
+
+pub trait Ship: ShipState {
     const RACE_NAME: &'static str;
     const SHIP_CLASS: &'static str;
     const SPRITE_PREFIX: &'static str;
@@ -227,22 +313,6 @@ pub trait Ship {
     const SPECIAL_ENERGY_COST: i32;
     const MAX_CREW: i32;
 
-    fn crew(&self) -> i32;
-    fn set_crew(&mut self, value: i32);
-    fn energy(&self) -> i32;
-    fn set_energy(&mut self, value: i32);
-    fn facing(&self) -> f64;
-    fn set_facing(&mut self, value: f64);
-    fn turn_counter(&self) -> i32;
-    fn set_turn_counter(&mut self, value: i32);
-    fn thrust_counter(&self) -> i32;
-    fn set_thrust_counter(&mut self, value: i32);
-    fn weapon_counter(&self) -> i32;
-    fn set_weapon_counter(&mut self, value: i32);
-    fn special_counter(&self) -> i32;
-    fn set_special_counter(&mut self, value: i32);
-    fn energy_counter(&self) -> i32;
-    fn set_energy_counter(&mut self, value: i32);
     fn hit_polygon(&self, _facing: i32, _center_x: f64, _center_y: f64) -> Vec<HitPolygonPoint> {
         Vec::new()
     }
@@ -308,16 +378,16 @@ pub trait Ship {
         let delta_x = facing.cos() * thrust_increment;
         let delta_y = facing.sin() * thrust_increment;
 
-        Some(get_thrust_velocity(
+        Some(get_thrust_velocity(ThrustVelocityInput {
             facing,
             thrust_increment,
             max_speed,
-            velocity,
-            delta_x,
-            delta_y,
+            current_velocity: velocity,
+            dvx: delta_x,
+            dvy: delta_y,
             current_speed,
             allow_beyond_max_speed,
-        ))
+        }))
     }
 
     fn idle_velocity(&self, _velocity: &VelocityVector) -> Option<(f64, f64)> {
@@ -432,65 +502,76 @@ pub trait Ship {
         velocity: &VelocityVector,
         allow_beyond_max_speed: bool,
     ) -> Vec<PhysicsCommand> {
-        let mut commands = Vec::new();
         let current_speed = (velocity.x.powi(2) + velocity.y.powi(2)).sqrt();
+        self.regenerate_energy();
+        self.apply_turning(input);
+        let thrust_command = self.apply_thrust(input, velocity, allow_beyond_max_speed, current_speed);
+        self.apply_weapon_input(input);
+        self.apply_special_input(input);
+        thrust_command.into_iter().collect()
+    }
 
-        // Energy regeneration
-        let (max_energy, regen, e_wait) =
-            (self.max_energy(), self.energy_regeneration(), self.energy_wait());
+    fn regenerate_energy(&mut self) {
         if self.energy_counter() > 0 {
             self.decrease_energy_counter(1);
-        } else if self.energy() < max_energy {
-            self.set_energy((self.energy() + regen).min(max_energy));
-            self.set_energy_counter(e_wait);
+        } else if self.energy() < self.max_energy() {
+            let new_energy = (self.energy() + self.energy_regeneration()).min(self.max_energy());
+            self.set_energy(new_energy);
+            self.set_energy_counter(self.energy_wait());
         }
+    }
 
-        // Turning
-        let (rate, t_wait) = (self.turn_rate(), self.turn_wait());
+    fn apply_turning(&mut self, input: &ShipInput) {
         if self.turn_counter() > 0 {
             self.decrease_turn_counter(1);
         } else if input.left || input.right {
             if input.left {
-                self.decrease_facing(rate);
+                self.decrease_facing(self.turn_rate());
             } else {
-                self.increase_facing(rate);
+                self.increase_facing(self.turn_rate());
             }
-            self.set_turn_counter(t_wait);
+            self.set_turn_counter(self.turn_wait());
         }
+    }
 
-        // Thrust
-        let (th_wait, max_spd) = (self.thrust_wait(), self.max_speed());
+    fn apply_thrust(
+        &mut self,
+        input: &ShipInput,
+        velocity: &VelocityVector,
+        allow_beyond_max_speed: bool,
+        current_speed: f64,
+    ) -> Option<PhysicsCommand> {
         if self.thrust_counter() > 0 {
             self.decrease_thrust_counter(1);
+            None
         } else if input.thrust {
             let (vx, vy) = self
                 .thrust_velocity(velocity, allow_beyond_max_speed, current_speed)
-                .unwrap_or((self.facing().cos() * max_spd, self.facing().sin() * max_spd));
-            commands.push(PhysicsCommand::SetVelocity { vx, vy });
-            self.set_thrust_counter(th_wait);
-        } else if let Some((vx, vy)) = self.idle_velocity(velocity) {
-            commands.push(PhysicsCommand::SetVelocity { vx, vy });
+                .unwrap_or((self.facing().cos() * self.max_speed(), self.facing().sin() * self.max_speed()));
+            self.set_thrust_counter(self.thrust_wait());
+            Some(PhysicsCommand::SetVelocity { vx, vy })
+        } else {
+            self.idle_velocity(velocity)
+                .map(|(vx, vy)| PhysicsCommand::SetVelocity { vx, vy })
         }
+    }
 
-        // Weapon
-        let (w_wait, w_cost) = (self.weapon_wait(), self.weapon_energy_cost());
+    fn apply_weapon_input(&mut self, input: &ShipInput) {
         if self.weapon_counter() > 0 {
             self.decrease_weapon_counter(1);
-        } else if input.weapon && self.energy() >= w_cost {
-            self.decrease_energy(w_cost);
-            self.set_weapon_counter(w_wait);
+        } else if input.weapon && self.energy() >= self.weapon_energy_cost() {
+            self.decrease_energy(self.weapon_energy_cost());
+            self.set_weapon_counter(self.weapon_wait());
         }
+    }
 
-        // Special
-        let (sp_wait, sp_cost) = (self.special_wait(), self.special_energy_cost());
+    fn apply_special_input(&mut self, input: &ShipInput) {
         if self.special_counter() > 0 {
             self.decrease_special_counter(1);
-        } else if input.special && self.energy() >= sp_cost {
-            self.decrease_energy(sp_cost);
-            self.set_special_counter(sp_wait);
+        } else if input.special && self.energy() >= self.special_energy_cost() {
+            self.decrease_energy(self.special_energy_cost());
+            self.set_special_counter(self.special_wait());
         }
-
-        commands
     }
 
     fn take_damage(&mut self, amount: i32) -> bool {
@@ -528,60 +609,58 @@ pub trait Ship {
     }
 }
 
-fn get_thrust_velocity(
-    facing: f64,
-    thrust_increment: f64,
-    max_speed: f64,
-    current_velocity: &VelocityVector,
-    dvx: f64,
-    dvy: f64,
-    current_speed: f64,
-    allow_beyond_max_speed: bool,
-) -> (f64, f64) {
-    let gravity_max = max_speed * GRAVITY_WELL_SPEED_MULTIPLIER;
+fn get_thrust_velocity(input: ThrustVelocityInput<'_>) -> (f64, f64) {
+    let gravity_max = input.max_speed * GRAVITY_WELL_SPEED_MULTIPLIER;
     let travel_aligned =
-        current_speed <= TRAVEL_ALIGNMENT_EPSILON || is_travel_aligned(facing, current_velocity);
+        input.current_speed <= TRAVEL_ALIGNMENT_EPSILON
+            || is_travel_aligned(input.facing, input.current_velocity);
 
-    if !allow_beyond_max_speed && travel_aligned && current_speed > max_speed {
-        return (current_velocity.x, current_velocity.y);
+    if !input.allow_beyond_max_speed && travel_aligned && input.current_speed > input.max_speed {
+        return (input.current_velocity.x, input.current_velocity.y);
     }
 
-    let desired_x = current_velocity.x + dvx;
-    let desired_y = current_velocity.y + dvy;
+    let desired_x = input.current_velocity.x + input.dvx;
+    let desired_y = input.current_velocity.y + input.dvy;
     let desired_speed = (desired_x.powi(2) + desired_y.powi(2)).sqrt();
 
-    if desired_speed <= max_speed {
+    if desired_speed <= input.max_speed {
         return (desired_x, desired_y);
     }
 
-    if !travel_aligned && current_speed >= max_speed {
-        let travel_angle = current_velocity.y.atan2(current_velocity.x);
+    if !travel_aligned && input.current_speed >= input.max_speed {
+        let travel_angle = input.current_velocity.y.atan2(input.current_velocity.x);
         let rotated_x =
-            current_velocity.x + (dvx * 0.5) - (travel_angle.cos() * thrust_increment);
+            input.current_velocity.x
+                + (input.dvx * 0.5)
+                - (travel_angle.cos() * input.thrust_increment);
         let rotated_y =
-            current_velocity.y + (dvy * 0.5) - (travel_angle.sin() * thrust_increment);
+            input.current_velocity.y
+                + (input.dvy * 0.5)
+                - (travel_angle.sin() * input.thrust_increment);
         let rotated_speed = (rotated_x.powi(2) + rotated_y.powi(2)).sqrt();
 
-        if rotated_speed <= gravity_max || rotated_speed < current_speed {
+        if rotated_speed <= gravity_max || rotated_speed < input.current_speed {
             return (rotated_x, rotated_y);
         }
     }
 
-    if (allow_beyond_max_speed && desired_speed <= gravity_max) || desired_speed < current_speed {
+    if (input.allow_beyond_max_speed && desired_speed <= gravity_max)
+        || desired_speed < input.current_speed
+    {
         return (desired_x, desired_y);
     }
 
     if travel_aligned {
-        let limited_speed = if allow_beyond_max_speed {
+        let limited_speed = if input.allow_beyond_max_speed {
             gravity_max
         } else {
-            max_speed
+            input.max_speed
         }
         .min(desired_speed);
-        return (facing.cos() * limited_speed, facing.sin() * limited_speed);
+        return (input.facing.cos() * limited_speed, input.facing.sin() * limited_speed);
     }
 
-    (current_velocity.x, current_velocity.y)
+    (input.current_velocity.x, input.current_velocity.y)
 }
 
 fn is_travel_aligned(facing: f64, current_velocity: &VelocityVector) -> bool {

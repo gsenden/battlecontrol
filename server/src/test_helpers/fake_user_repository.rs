@@ -28,11 +28,6 @@ impl FakeUserRepository {
         self
     }
 
-    pub fn with_existing_settings(mut self, settings: UserSettingsDto) -> Self {
-        self.existing_settings = Some(settings);
-        self
-    }
-
     pub fn save_user_calls(&self) -> Vec<String> {
         self.save_user_calls.lock().unwrap().clone()
     }
@@ -42,13 +37,6 @@ impl FakeUserRepository {
 impl UserRepositoryDrivenPort for FakeUserRepository {
     async fn find_by_name(&self, name: &str) -> Result<Option<UserDto>, Error> {
         Ok(self.existing_user.as_ref().filter(|u| u.name == name).cloned())
-    }
-
-    async fn find_user_handle_by_name(&self, name: &str) -> Result<Option<Uuid>, Error> {
-        Ok(self.existing_user
-            .as_ref()
-            .filter(|u| u.name == name)
-            .map(|_| Uuid::nil()))
     }
 
     async fn save_user(&self, name: &str, _user_handle: Uuid) -> Result<UserDto, Error> {

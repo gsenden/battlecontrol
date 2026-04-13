@@ -197,9 +197,7 @@ impl MatterWorld {
     }
 
     pub fn wrap_body(&mut self, body_id: usize, width: f64, height: f64) -> Option<MatterBodyState> {
-        let Some(body) = self.engine.bodies.get_mut(body_id) else {
-            return None;
-        };
+        let body = self.engine.bodies.get_mut(body_id)?;
 
         let x = wrap_axis(body.position.x, width);
         let y = wrap_axis(body.position.y, height);
@@ -282,6 +280,40 @@ mod tests {
     use matter_js_rs::geometry::Vec2;
 
     #[test]
+    fn disable_body_moves_body_out_of_playfield() {
+        let mut world = MatterWorld::new();
+        let body_id = world.create_ship_body(120.0, 140.0, 12.0, 10.0, 0.8);
+
+        world.disable_body(body_id);
+        let body = world.body_state(body_id).expect("body state");
+
+        assert_eq!((body.x, body.y), (-10000.0, -10000.0));
+    }
+
+    #[test]
+    fn set_body_position_updates_coordinates() {
+        let mut world = MatterWorld::new();
+        let body_id = world.create_ship_body(120.0, 140.0, 12.0, 10.0, 0.8);
+
+        world.set_body_position(body_id, 333.0, 444.0);
+        let body = world.body_state(body_id).expect("body state");
+
+        assert_eq!((body.x, body.y), (333.0, 444.0));
+    }
+
+    #[test]
+    fn rotate_body_changes_angle() {
+        let mut world = MatterWorld::new();
+        let body_id = world.create_ship_body(120.0, 140.0, 12.0, 10.0, 0.8);
+        let before = world.body_state(body_id).expect("body state").angle;
+
+        world.rotate_body(body_id, 0.5);
+        let after = world.body_state(body_id).expect("body state").angle;
+
+        assert!(after > before);
+    }
+
+    #[test]
     fn step_reports_collision_normal_for_polygon_bodies() {
         let mut world = MatterWorld::new();
         let body_a = world.create_ship_polygon_body(
@@ -316,10 +348,7 @@ mod tests {
         let result = world.step(1000.0 / 24.0);
         let pair = result.collisions[0];
 
-        assert_eq!(
-            ((pair.normal_x.abs() + pair.normal_y.abs()) * 100.0).round() as i32 > 0,
-            true,
-        );
+        assert!(((pair.normal_x.abs() + pair.normal_y.abs()) * 100.0).round() as i32 > 0);
     }
 
     #[test]
@@ -356,7 +385,7 @@ mod tests {
 
         let result = world.step(1000.0 / 24.0);
 
-        assert_eq!(result.collisions.is_empty(), false);
+        assert!(!result.collisions.is_empty());
     }
 
     #[test]
@@ -369,7 +398,7 @@ mod tests {
 
         let result = world.step(1000.0 / 24.0);
 
-        assert_eq!(result.collisions.is_empty(), false);
+        assert!(!result.collisions.is_empty());
     }
 
     #[test]

@@ -11,6 +11,8 @@ use game_logic::ship_input::ShipInput;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
+use crate::ports::BattleSessionDrivenPort;
+
 const BATTLE_WIDTH: f64 = 7680.0;
 const BATTLE_HEIGHT: f64 = 4320.0;
 const PHYSICS_DELTA: f64 = 1000.0 / 24.0;
@@ -310,6 +312,33 @@ impl BattleSessionHub {
     }
 }
 
+impl BattleSessionDrivenPort for BattleSessionHub {
+    fn start_battle(&self, game: &GameDto) -> Result<(), String> {
+        BattleSessionHub::start_battle(self, game)
+    }
+
+    fn remove_battle(&self, game_id: &str) {
+        BattleSessionHub::remove_battle(self, game_id);
+    }
+
+    fn has_battle(&self, game_id: &str) -> bool {
+        BattleSessionHub::has_battle(self, game_id)
+    }
+
+    fn snapshot_for(&self, game_id: &str, user_name: &str) -> Option<BattleSnapshotDto> {
+        BattleSessionHub::snapshot_for(self, game_id, user_name)
+    }
+
+    fn apply_message(
+        &self,
+        game_id: &str,
+        user_name: &str,
+        message: BattleClientMessage,
+    ) -> Result<(), String> {
+        BattleSessionHub::apply_message(self, game_id, user_name, message)
+    }
+}
+
 fn swapped_snapshot(snapshot: BattleSnapshot) -> BattleSnapshot {
     BattleSnapshot {
         player: snapshot.target,
@@ -383,4 +412,93 @@ fn to_ship_dto(ship: game_logic::battle::BattleShipSnapshot) -> BattleShipSnapsh
 
 fn to_audio_dto(event: AudioEventSnapshot) -> AudioEventSnapshotDto {
     AudioEventSnapshotDto { key: event.key }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::dto::{GameDto, GamePlayerDto, UserDto};
+
+    use super::*;
+
+    fn user(id: i64, name: &str) -> UserDto {
+        UserDto {
+            id,
+            name: name.to_string(),
+            profile_image_url: None,
+        }
+    }
+
+    fn two_player_game() -> GameDto {
+        GameDto {
+            id: "game-2p".to_string(),
+            name: "Test 2P".to_string(),
+            game_type: "free_for_all".to_string(),
+            max_players: 2,
+            is_private: false,
+            password: None,
+            creator: user(1, "PilotOne"),
+            players: vec![
+                GamePlayerDto {
+                    user: user(1, "PilotOne"),
+                    selected_race: Some("human-cruiser".to_string()),
+                },
+                GamePlayerDto {
+                    user: user(2, "PilotTwo"),
+                    selected_race: Some("arilou-skiff".to_string()),
+                },
+            ],
+        }
+    }
+
+    fn one_player_game() -> GameDto {
+        let mut game = two_player_game();
+        game.id = "game-1p".to_string();
+        game.players.truncate(1);
+        game
+    }
+
+    #[tokio::test]
+    async fn start_battle_requires_exactly_two_players() {
+        let hub = BattleSessionHub::new();
+        let game = one_player_game();
+
+        let result = hub.start_battle(&game);
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn start_battle_registers_session() {
+        let hub = BattleSessionHub::new();
+        let game = two_player_game();
+        hub.start_battle(&game).expect("start battle");
+
+        let has_battle = hub.has_battle(&game.id);
+        hub.remove_battle(&game.id);
+
+        assert!(has_battle);
+    }
+
+    #[tokio::test]
+    async fn remove_battle_clears_session() {
+        let hub = BattleSessionHub::new();
+        let game = two_player_game();
+        hub.start_battle(&game).expect("start battle");
+
+        hub.remove_battle(&game.id);
+
+        assert!(!hub.has_battle(&game.id));
+    }
+
+    #[tokio::test]
+    async fn snapshot_for_unknown_player_returns_none() {
+        let hub = BattleSessionHub::new();
+        let game = two_player_game();
+        hub.start_battle(&game).expect("start battle");
+
+        let snapshot = hub.snapshot_for(&game.id, "UnknownPilot");
+        hub.remove_battle(&game.id);
+
+        assert!(snapshot.is_none());
+    }
 }

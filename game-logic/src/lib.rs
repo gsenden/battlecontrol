@@ -2,8 +2,8 @@ pub mod battle;
 pub mod matter_world;
 pub mod physics_command;
 pub mod ship_input;
-pub mod ships;
 pub mod traits;
+pub mod ships;
 pub mod velocity_vector;
 pub mod wrap;
 

@@ -1,18 +1,15 @@
 use async_trait::async_trait;
 use common::domain::Error;
 use common::domain::error::DatabaseErrorError;
-use common::dto::{CreateGameRequestDto, GameDto, GamePlayerDto, JoinGameRequestDto, SaveSelectedRaceRequestDto, UserDto, UserSettingsDto};
-use crate::ports::{GameRepositoryDrivenPort, UserRepositoryDrivenPort};
-use super::db::{GamePlayersTable, GamesTable, PasskeysTable, RecoveryCodesTable, SqliteAdapter, TableEntity, UserSettingsTable, UsersTable};
+use common::dto::{UserDto, UserSettingsDto};
+use crate::ports::UserRepositoryDrivenPort;
+use super::db::{PasskeysTable, RecoveryCodesTable, SqliteAdapter, TableEntity, UserSettingsTable, UsersTable};
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
 fn db_error() -> Error {
     Error::DatabaseError(DatabaseErrorError::new())
 }
-
-const STALE_GAME_TIMEOUT_SECONDS: i64 = 10 * 60;
-const DEFAULT_SELECTED_RACE: &str = "human-cruiser";
 
 #[derive(Clone)]
 pub struct SqliteUserRepository {
@@ -24,11 +21,8 @@ impl SqliteUserRepository {
         sqlite.ensure_table::<UsersTable>()?;
         sqlite.ensure_table::<PasskeysTable>()?;
         sqlite.ensure_table::<RecoveryCodesTable>()?;
-        sqlite.ensure_table::<GamesTable>()?;
-        sqlite.ensure_table::<GamePlayersTable>()?;
         sqlite.ensure_table::<UserSettingsTable>()?;
         Self::migrate_users_table(&sqlite)?;
-        Self::migrate_games_table(&sqlite)?;
         Self::migrate_user_settings_table(&sqlite)?;
         Ok(Self { sqlite })
     }
@@ -90,28 +84,6 @@ impl SqliteUserRepository {
         Ok(())
     }
 
-    fn migrate_games_table(sqlite: &SqliteAdapter) -> Result<(), String> {
-        let rows = sqlite.query(&format!("PRAGMA table_info({})", GamesTable::table_name()))?;
-        let has_last_activity_at = rows.iter().any(|row| {
-            row.get::<String>("name")
-                .map(|existing_column_name| existing_column_name == "last_activity_at")
-                .unwrap_or(false)
-        });
-
-        if !has_last_activity_at {
-            sqlite.execute(&format!(
-                "ALTER TABLE {} ADD COLUMN last_activity_at INTEGER NOT NULL DEFAULT 0",
-                GamesTable::table_name()
-            ))?;
-            sqlite.execute(&format!(
-                "UPDATE {} SET last_activity_at = created_at WHERE last_activity_at = 0",
-                GamesTable::table_name()
-            ))?;
-        }
-
-        Ok(())
-    }
-
     fn ensure_user_settings_column(sqlite: &SqliteAdapter, column_name: &str, column_sql: &str) -> Result<(), String> {
         let rows = sqlite.query(&format!("PRAGMA table_info({})", UserSettingsTable::table_name()))?;
         let has_column = rows.iter().any(|row| {
@@ -132,36 +104,6 @@ impl SqliteUserRepository {
         Ok(())
     }
 
-    fn game_from_row(&self, row: &super::db::Row) -> Result<GameDto, Error> {
-        let mut game = GamesTable::from_row(row).map_err(|_| db_error())?;
-        game.players = self.find_players_by_game_id(&game.id)?;
-        Ok(game)
-    }
-
-    fn find_players_by_game_id(&self, game_id: &str) -> Result<Vec<GamePlayerDto>, Error> {
-        let rows = self.sqlite.query_with_params(
-            &format!(
-                "SELECT u.id, u.name, u.profile_image_url, gp.selected_race
-                 FROM {} gp
-                 JOIN {} u ON u.name = gp.user_name
-                 WHERE gp.game_id = ?
-                 ORDER BY u.name ASC",
-                GamePlayersTable::table_name(),
-                UsersTable::table_name()
-            ),
-            &[&game_id as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())?;
-
-        rows.iter()
-            .map(|row| {
-                Ok(GamePlayerDto {
-                    user: UsersTable::from_row(row).map_err(|_| db_error())?,
-                    selected_race: row.get("selected_race").ok(),
-                })
-            })
-            .collect()
-    }
-
     fn current_timestamp() -> Result<i64, Error> {
         Ok(std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -169,26 +111,6 @@ impl SqliteUserRepository {
             .as_secs() as i64)
     }
 
-    fn delete_game_rows(&self, game_id: &str) -> Result<(), Error> {
-        self.sqlite.execute_with_params(
-            &format!("DELETE FROM {} WHERE game_id = ?", GamePlayersTable::table_name()),
-            &[&game_id as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())?;
-
-        self.sqlite.execute_with_params(
-            &format!("DELETE FROM {} WHERE id = ?", GamesTable::table_name()),
-            &[&game_id as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())
-    }
-
-    fn touch_game_activity(&self, game_id: &str, timestamp: i64) -> Result<(), Error> {
-        self.sqlite.execute_with_params(
-            &format!("UPDATE {} SET last_activity_at = ? WHERE id = ?", GamesTable::table_name()),
-            &[&timestamp as &dyn rusqlite::types::ToSql, &game_id],
-        ).map_err(|_| db_error())?;
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -202,22 +124,6 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
         match rows.first() {
             Some(row) => Ok(Some(UsersTable::from_row(row)
                 .map_err(|_| db_error())?)),
-            None => Ok(None),
-        }
-    }
-
-    async fn find_user_handle_by_name(&self, name: &str) -> Result<Option<Uuid>, Error> {
-        let rows = self.sqlite.query_with_params(
-            &format!("SELECT user_handle FROM {} WHERE name = ?", UsersTable::table_name()),
-            &[&name as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())?;
-
-        match rows.first() {
-            Some(row) => {
-                let raw: String = row.get("user_handle").map_err(|_| db_error())?;
-                let parsed = Uuid::parse_str(&raw).map_err(|_| db_error())?;
-                Ok(Some(parsed))
-            }
             None => Ok(None),
         }
     }
@@ -390,212 +296,6 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
     }
 }
 
-#[async_trait]
-impl GameRepositoryDrivenPort for SqliteUserRepository {
-    async fn delete_stale_games(&self) -> Result<Vec<String>, Error> {
-        let stale_before = Self::current_timestamp()? - STALE_GAME_TIMEOUT_SECONDS;
-        let stale_rows = self.sqlite.query_with_params(
-            &format!("SELECT id FROM {} WHERE last_activity_at < ?", GamesTable::table_name()),
-            &[&stale_before as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())?;
-
-        let stale_game_ids = stale_rows
-            .iter()
-            .map(|row| row.get::<String>("id").map_err(|_| db_error()))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        for game_id in &stale_game_ids {
-            self.delete_game_rows(game_id)?;
-        }
-
-        Ok(stale_game_ids)
-    }
-
-    async fn save_game(&self, creator_name: &str, request: &CreateGameRequestDto) -> Result<GameDto, Error> {
-        let creator = self.find_by_name(creator_name).await?.ok_or_else(db_error)?;
-        let game_id = Uuid::new_v4().to_string();
-        let now = Self::current_timestamp()?;
-
-        self.sqlite.execute_with_params(
-            &format!(
-                "INSERT INTO {} (
-                    id,
-                    name,
-                    game_type,
-                    max_players,
-                    is_private,
-                    password,
-                    creator_name,
-                    creator_id,
-                    creator_profile_image_url,
-                    created_at,
-                    last_activity_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                GamesTable::table_name()
-            ),
-            &[
-                &game_id as &dyn rusqlite::types::ToSql,
-                &request.name,
-                &"free_for_all",
-                &request.max_players,
-                &if request.is_private { 1 } else { 0 },
-                &request.password,
-                &creator.name,
-                &creator.id,
-                &creator.profile_image_url,
-                &now,
-                &now,
-            ],
-        ).map_err(|_| db_error())?;
-
-        self.sqlite.execute_with_params(
-            &format!(
-                "INSERT INTO {} (game_id, user_name, selected_race) VALUES (?, ?, ?)",
-                GamePlayersTable::table_name()
-            ),
-            &[&game_id as &dyn rusqlite::types::ToSql, &creator.name, &DEFAULT_SELECTED_RACE],
-        ).map_err(|_| db_error())?;
-
-        self.find_game(&game_id).await?.ok_or_else(db_error)
-    }
-
-    async fn list_games(&self) -> Result<Vec<GameDto>, Error> {
-        let rows = self.sqlite.query(
-            &format!(
-                "SELECT * FROM {} ORDER BY created_at DESC",
-                GamesTable::table_name()
-            ),
-        ).map_err(|_| db_error())?;
-
-        rows.iter().map(|row| self.game_from_row(row)).collect()
-    }
-
-    async fn find_game(&self, game_id: &str) -> Result<Option<GameDto>, Error> {
-        let rows = self.sqlite.query_with_params(
-            &format!("SELECT * FROM {} WHERE id = ?", GamesTable::table_name()),
-            &[&game_id as &dyn rusqlite::types::ToSql],
-        ).map_err(|_| db_error())?;
-
-        match rows.first() {
-            Some(row) => Ok(Some(self.game_from_row(row)?)),
-            None => Ok(None),
-        }
-    }
-
-    async fn join_game(&self, game_id: &str, player_name: &str, request: &JoinGameRequestDto) -> Result<Option<GameDto>, Error> {
-        let Some(game) = self.find_game(game_id).await? else {
-            return Ok(None);
-        };
-
-        if game.is_private && game.password != request.password {
-            return Err(common::domain::Error::AuthenticationFailed(
-                common::domain::error::AuthenticationFailedError::new(),
-            ));
-        }
-
-        let player_exists = self.sqlite.query_with_params(
-            &format!(
-                "SELECT game_id FROM {} WHERE game_id = ? AND user_name = ?",
-                GamePlayersTable::table_name()
-            ),
-            &[&game_id as &dyn rusqlite::types::ToSql, &player_name],
-        ).map_err(|_| db_error())?;
-
-        if player_exists.is_empty() {
-            self.sqlite.execute_with_params(
-                &format!(
-                    "INSERT INTO {} (game_id, user_name, selected_race) VALUES (?, ?, ?)",
-                    GamePlayersTable::table_name()
-                ),
-                &[&game_id as &dyn rusqlite::types::ToSql, &player_name, &DEFAULT_SELECTED_RACE],
-            ).map_err(|_| db_error())?;
-        }
-
-        self.touch_game_activity(game_id, Self::current_timestamp()?)?;
-
-        self.find_game(game_id).await
-    }
-
-    async fn leave_game(&self, game_id: &str, player_name: &str) -> Result<Option<GameDto>, Error> {
-        let Some(game) = self.find_game(game_id).await? else {
-            return Ok(None);
-        };
-
-        self.sqlite.execute_with_params(
-            &format!("DELETE FROM {} WHERE game_id = ? AND user_name = ?", GamePlayersTable::table_name()),
-            &[&game_id as &dyn rusqlite::types::ToSql, &player_name],
-        ).map_err(|_| db_error())?;
-
-        if game.creator.name == player_name {
-            self.delete_game_rows(game_id)?;
-            return Ok(Some(GameDto {
-                players: Vec::new(),
-                ..game
-            }));
-        }
-
-        self.touch_game_activity(game_id, Self::current_timestamp()?)?;
-
-        self.find_game(game_id).await
-    }
-
-    async fn cancel_game(&self, game_id: &str, player_name: &str) -> Result<Option<GameDto>, Error> {
-        let Some(game) = self.find_game(game_id).await? else {
-            return Ok(None);
-        };
-
-        if game.creator.name != player_name {
-            return Err(common::domain::Error::AuthenticationFailed(
-                common::domain::error::AuthenticationFailedError::new(),
-            ));
-        }
-
-        self.delete_game_rows(game_id)?;
-        Ok(Some(game))
-    }
-
-    async fn start_game(&self, game_id: &str, player_name: &str) -> Result<Option<GameDto>, Error> {
-        let Some(game) = self.find_game(game_id).await? else {
-            return Ok(None);
-        };
-
-        if game.creator.name != player_name {
-            return Err(common::domain::Error::AuthenticationFailed(
-                common::domain::error::AuthenticationFailedError::new(),
-            ));
-        }
-
-        self.delete_game_rows(game_id)?;
-        Ok(Some(game))
-    }
-
-    async fn save_selected_race(&self, game_id: &str, player_name: &str, request: &SaveSelectedRaceRequestDto) -> Result<Option<GameDto>, Error> {
-        let player_exists = self.sqlite.query_with_params(
-            &format!(
-                "SELECT game_id FROM {} WHERE game_id = ? AND user_name = ?",
-                GamePlayersTable::table_name()
-            ),
-            &[&game_id as &dyn rusqlite::types::ToSql, &player_name],
-        ).map_err(|_| db_error())?;
-
-        if player_exists.is_empty() {
-            return Ok(None);
-        }
-
-        self.sqlite.execute_with_params(
-            &format!(
-                "UPDATE {} SET selected_race = ? WHERE game_id = ? AND user_name = ?",
-                GamePlayersTable::table_name()
-            ),
-            &[&request.selected_race as &dyn rusqlite::types::ToSql, &game_id, &player_name],
-        ).map_err(|_| db_error())?;
-
-        self.touch_game_activity(game_id, Self::current_timestamp()?)?;
-
-        self.find_game(game_id).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,45 +313,6 @@ mod tests {
         repo.create_recovery_code(&user.name, "RECOVERY123", 9_999_999_999).await.unwrap();
         let found = repo.find_by_recovery_code("RECOVERY123", 0).await.unwrap();
         assert_eq!(found.unwrap().name, user.name);
-    }
-
-    #[tokio::test]
-    async fn list_games_removes_stale_games() {
-        let repo = repo_in_memory();
-        repo.save_user("Host", Uuid::new_v4()).await.unwrap();
-        let game = repo.save_game("Host", &CreateGameRequestDto {
-            name: "Stale".to_string(),
-            game_type: "free_for_all".to_string(),
-            max_players: 4,
-            is_private: false,
-            password: None,
-        }).await.unwrap();
-        repo.sqlite.execute_with_params(
-            &format!("UPDATE {} SET last_activity_at = ? WHERE id = ?", GamesTable::table_name()),
-            &[&0i64 as &dyn rusqlite::types::ToSql, &game.id],
-        ).unwrap();
-
-        let games = repo.delete_stale_games().await.unwrap();
-
-        assert_eq!(games, vec![game.id]);
-    }
-
-    #[tokio::test]
-    async fn start_game_removes_game_from_repository() {
-        let repo = repo_in_memory();
-        repo.save_user("Host", Uuid::new_v4()).await.unwrap();
-        let game = repo.save_game("Host", &CreateGameRequestDto {
-            name: "Ready".to_string(),
-            game_type: "free_for_all".to_string(),
-            max_players: 4,
-            is_private: false,
-            password: None,
-        }).await.unwrap();
-
-        repo.start_game(&game.id, "Host").await.unwrap();
-        let found = repo.find_game(&game.id).await.unwrap();
-
-        assert!(found.is_none());
     }
 
     #[tokio::test]
@@ -699,12 +360,4 @@ mod tests {
         assert!(found.is_some());
     }
 
-    #[tokio::test]
-    async fn save_user_can_be_found_by_user_handle() {
-        let repo = repo_in_memory();
-        let user_handle = Uuid::new_v4();
-        repo.save_user("TestPlayer", user_handle).await.unwrap();
-        let found = repo.find_user_handle_by_name("TestPlayer").await.unwrap();
-        assert_eq!(found, Some(user_handle));
-    }
 }

@@ -1,269 +1,84 @@
-mod androsynth_guardian;
-mod arilou_skiff;
-mod chenjesu_broodhome;
-mod chmmr_avatar;
-mod druuge_mauler;
-mod human_cruiser;
-mod ilwrath_avenger;
-mod kohrah_marauder;
-mod melnorme_trader;
-mod mmrnmhrm_xform;
-mod mycon_podship;
-mod orz_nemesis;
-mod pkunk_fury;
-mod shofixti_scout;
-mod slylandro_probe;
-mod spathi_eluder;
-mod supox_blade;
-mod syreen_penetrator;
-mod thraddash_torch;
-mod umgah_drone;
-mod urquan_dreadnought;
-mod utwig_jugger;
-mod vux_intruder;
-mod yehat_terminator;
-mod zoqfotpik_stinger;
+use crate::traits::ship_trait::{Ship, ShipState};
 
-use crate::traits::ship_trait::Ship;
+macro_rules! define_ship_registry {
+    (@inner ($d:tt) [$($variant:ident, $module:ident, $sprite:literal);+]) => {
+        $(mod $module;)+
+        $(pub use $module::$variant;)+
 
-pub use androsynth_guardian::AndrosynthGuardian;
-pub use arilou_skiff::ArilouSkiff;
-pub use chenjesu_broodhome::ChenjesuBroodhome;
-pub use chmmr_avatar::ChmmrAvatar;
-pub use druuge_mauler::DruugeMauler;
-pub use human_cruiser::HumanCruiser;
-pub use ilwrath_avenger::IlwrathAvenger;
-pub use kohrah_marauder::KohrahMarauder;
-pub use melnorme_trader::MelnormeTrader;
-pub use mmrnmhrm_xform::MmrnmhrmXform;
-pub use mycon_podship::MyconPodship;
-pub use orz_nemesis::OrzNemesis;
-pub use pkunk_fury::PkunkFury;
-pub use shofixti_scout::ShofixtiScout;
-pub use slylandro_probe::SlylandroProbe;
-pub use spathi_eluder::SpathiEluder;
-pub use supox_blade::SupoxBlade;
-pub use syreen_penetrator::SyreenPenetrator;
-pub use thraddash_torch::ThraddashTorch;
-pub use umgah_drone::UmgahDrone;
-pub use urquan_dreadnought::UrquanDreadnought;
-pub use utwig_jugger::UtwigJugger;
-pub use vux_intruder::VuxIntruder;
-pub use yehat_terminator::YehatTerminator;
-pub use zoqfotpik_stinger::ZoqfotpikStinger;
+        pub const ALL_SHIP_TYPES: [&str; 25] = [$($sprite),+];
 
-pub const ALL_SHIP_TYPES: [&str; 25] = [
-    "androsynth-guardian",
-    "arilou-skiff",
-    "chenjesu-broodhome",
-    "chmmr-avatar",
-    "druuge-mauler",
-    "human-cruiser",
-    "ilwrath-avenger",
-    "kohrah-marauder",
-    "melnorme-trader",
-    "mmrnmhrm-xform",
-    "mycon-podship",
-    "orz-nemesis",
-    "pkunk-fury",
-    "shofixti-scout",
-    "slylandro-probe",
-    "spathi-eluder",
-    "supox-blade",
-    "syreen-penetrator",
-    "thraddash-torch",
-    "umgah-drone",
-    "urquan-dreadnought",
-    "utwig-jugger",
-    "vux-intruder",
-    "yehat-terminator",
-    "zoqfotpik-stinger",
-];
+        pub enum AnyShip {
+            $($variant($variant)),+
+        }
 
-pub enum AnyShip {
-    AndrosynthGuardian(AndrosynthGuardian),
-    ArilouSkiff(ArilouSkiff),
-    ChenjesuBroodhome(ChenjesuBroodhome),
-    ChmmrAvatar(ChmmrAvatar),
-    DruugeMauler(DruugeMauler),
-    HumanCruiser(HumanCruiser),
-    IlwrathAvenger(IlwrathAvenger),
-    KohrahMarauder(KohrahMarauder),
-    MelnormeTrader(MelnormeTrader),
-    MmrnmhrmXform(MmrnmhrmXform),
-    MyconPodship(MyconPodship),
-    OrzNemesis(OrzNemesis),
-    PkunkFury(PkunkFury),
-    ShofixtiScout(ShofixtiScout),
-    SlylandroProbe(SlylandroProbe),
-    SpathiEluder(SpathiEluder),
-    SupoxBlade(SupoxBlade),
-    SyreenPenetrator(SyreenPenetrator),
-    ThraddashTorch(ThraddashTorch),
-    UmgahDrone(UmgahDrone),
-    UrquanDreadnought(UrquanDreadnought),
-    UtwigJugger(UtwigJugger),
-    VuxIntruder(VuxIntruder),
-    YehatTerminator(YehatTerminator),
-    ZoqfotpikStinger(ZoqfotpikStinger),
-}
+        $(impl From<$variant> for AnyShip {
+            fn from(ship: $variant) -> Self { AnyShip::$variant(ship) }
+        })+
 
-macro_rules! impl_from_ship {
-    ($name:ident) => {
-        impl From<$name> for AnyShip {
-            fn from(ship: $name) -> Self {
-                AnyShip::$name(ship)
+        pub fn build_ship(ship_type: &str) -> Option<AnyShip> {
+            match ship_type {
+                $($sprite => Some($variant::new().into()),)+
+                _ => None,
             }
         }
+
+        macro_rules! dispatch_ref {
+            ($d self_:expr, $d method:ident()) => {
+                match $d self_ {
+                    $(AnyShip::$variant(ship) => ship.$d method()),+
+                }
+            };
+            ($d self_:expr, $d method:ident($d($d arg:expr),+)) => {
+                match $d self_ {
+                    $(AnyShip::$variant(ship) => ship.$d method($d($d arg),+)),+
+                }
+            };
+        }
+
+        macro_rules! dispatch_mut {
+            ($d self_:expr, $d method:ident()) => {
+                match $d self_ {
+                    $(AnyShip::$variant(ship) => ship.$d method()),+
+                }
+            };
+            ($d self_:expr, $d method:ident($d($d arg:expr),+)) => {
+                match $d self_ {
+                    $(AnyShip::$variant(ship) => ship.$d method($d($d arg),+)),+
+                }
+            };
+        }
+    };
+    ($($variant:ident, $module:ident, $sprite:literal);+ $(;)?) => {
+        define_ship_registry!(@inner ($) [$($variant, $module, $sprite);+]);
     };
 }
 
-impl_from_ship!(AndrosynthGuardian);
-impl_from_ship!(ArilouSkiff);
-impl_from_ship!(ChenjesuBroodhome);
-impl_from_ship!(ChmmrAvatar);
-impl_from_ship!(DruugeMauler);
-impl_from_ship!(HumanCruiser);
-impl_from_ship!(IlwrathAvenger);
-impl_from_ship!(KohrahMarauder);
-impl_from_ship!(MelnormeTrader);
-impl_from_ship!(MmrnmhrmXform);
-impl_from_ship!(MyconPodship);
-impl_from_ship!(OrzNemesis);
-impl_from_ship!(PkunkFury);
-impl_from_ship!(ShofixtiScout);
-impl_from_ship!(SlylandroProbe);
-impl_from_ship!(SpathiEluder);
-impl_from_ship!(SupoxBlade);
-impl_from_ship!(SyreenPenetrator);
-impl_from_ship!(ThraddashTorch);
-impl_from_ship!(UmgahDrone);
-impl_from_ship!(UrquanDreadnought);
-impl_from_ship!(UtwigJugger);
-impl_from_ship!(VuxIntruder);
-impl_from_ship!(YehatTerminator);
-impl_from_ship!(ZoqfotpikStinger);
-
-macro_rules! dispatch_ref {
-    ($self:expr, $method:ident()) => {
-        match $self {
-            AnyShip::AndrosynthGuardian(ship) => ship.$method(),
-            AnyShip::ArilouSkiff(ship) => ship.$method(),
-            AnyShip::ChenjesuBroodhome(ship) => ship.$method(),
-            AnyShip::ChmmrAvatar(ship) => ship.$method(),
-            AnyShip::DruugeMauler(ship) => ship.$method(),
-            AnyShip::HumanCruiser(ship) => ship.$method(),
-            AnyShip::IlwrathAvenger(ship) => ship.$method(),
-            AnyShip::KohrahMarauder(ship) => ship.$method(),
-            AnyShip::MelnormeTrader(ship) => ship.$method(),
-            AnyShip::MmrnmhrmXform(ship) => ship.$method(),
-            AnyShip::MyconPodship(ship) => ship.$method(),
-            AnyShip::OrzNemesis(ship) => ship.$method(),
-            AnyShip::PkunkFury(ship) => ship.$method(),
-            AnyShip::ShofixtiScout(ship) => ship.$method(),
-            AnyShip::SlylandroProbe(ship) => ship.$method(),
-            AnyShip::SpathiEluder(ship) => ship.$method(),
-            AnyShip::SupoxBlade(ship) => ship.$method(),
-            AnyShip::SyreenPenetrator(ship) => ship.$method(),
-            AnyShip::ThraddashTorch(ship) => ship.$method(),
-            AnyShip::UmgahDrone(ship) => ship.$method(),
-            AnyShip::UrquanDreadnought(ship) => ship.$method(),
-            AnyShip::UtwigJugger(ship) => ship.$method(),
-            AnyShip::VuxIntruder(ship) => ship.$method(),
-            AnyShip::YehatTerminator(ship) => ship.$method(),
-            AnyShip::ZoqfotpikStinger(ship) => ship.$method(),
-        }
-    };
-    ($self:expr, $method:ident($($arg:expr),+)) => {
-        match $self {
-            AnyShip::AndrosynthGuardian(ship) => ship.$method($($arg),+),
-            AnyShip::ArilouSkiff(ship) => ship.$method($($arg),+),
-            AnyShip::ChenjesuBroodhome(ship) => ship.$method($($arg),+),
-            AnyShip::ChmmrAvatar(ship) => ship.$method($($arg),+),
-            AnyShip::DruugeMauler(ship) => ship.$method($($arg),+),
-            AnyShip::HumanCruiser(ship) => ship.$method($($arg),+),
-            AnyShip::IlwrathAvenger(ship) => ship.$method($($arg),+),
-            AnyShip::KohrahMarauder(ship) => ship.$method($($arg),+),
-            AnyShip::MelnormeTrader(ship) => ship.$method($($arg),+),
-            AnyShip::MmrnmhrmXform(ship) => ship.$method($($arg),+),
-            AnyShip::MyconPodship(ship) => ship.$method($($arg),+),
-            AnyShip::OrzNemesis(ship) => ship.$method($($arg),+),
-            AnyShip::PkunkFury(ship) => ship.$method($($arg),+),
-            AnyShip::ShofixtiScout(ship) => ship.$method($($arg),+),
-            AnyShip::SlylandroProbe(ship) => ship.$method($($arg),+),
-            AnyShip::SpathiEluder(ship) => ship.$method($($arg),+),
-            AnyShip::SupoxBlade(ship) => ship.$method($($arg),+),
-            AnyShip::SyreenPenetrator(ship) => ship.$method($($arg),+),
-            AnyShip::ThraddashTorch(ship) => ship.$method($($arg),+),
-            AnyShip::UmgahDrone(ship) => ship.$method($($arg),+),
-            AnyShip::UrquanDreadnought(ship) => ship.$method($($arg),+),
-            AnyShip::UtwigJugger(ship) => ship.$method($($arg),+),
-            AnyShip::VuxIntruder(ship) => ship.$method($($arg),+),
-            AnyShip::YehatTerminator(ship) => ship.$method($($arg),+),
-            AnyShip::ZoqfotpikStinger(ship) => ship.$method($($arg),+),
-        }
-    };
-}
-
-macro_rules! dispatch_mut {
-    ($self:expr, $method:ident()) => {
-        match $self {
-            AnyShip::AndrosynthGuardian(ship) => ship.$method(),
-            AnyShip::ArilouSkiff(ship) => ship.$method(),
-            AnyShip::ChenjesuBroodhome(ship) => ship.$method(),
-            AnyShip::ChmmrAvatar(ship) => ship.$method(),
-            AnyShip::DruugeMauler(ship) => ship.$method(),
-            AnyShip::HumanCruiser(ship) => ship.$method(),
-            AnyShip::IlwrathAvenger(ship) => ship.$method(),
-            AnyShip::KohrahMarauder(ship) => ship.$method(),
-            AnyShip::MelnormeTrader(ship) => ship.$method(),
-            AnyShip::MmrnmhrmXform(ship) => ship.$method(),
-            AnyShip::MyconPodship(ship) => ship.$method(),
-            AnyShip::OrzNemesis(ship) => ship.$method(),
-            AnyShip::PkunkFury(ship) => ship.$method(),
-            AnyShip::ShofixtiScout(ship) => ship.$method(),
-            AnyShip::SlylandroProbe(ship) => ship.$method(),
-            AnyShip::SpathiEluder(ship) => ship.$method(),
-            AnyShip::SupoxBlade(ship) => ship.$method(),
-            AnyShip::SyreenPenetrator(ship) => ship.$method(),
-            AnyShip::ThraddashTorch(ship) => ship.$method(),
-            AnyShip::UmgahDrone(ship) => ship.$method(),
-            AnyShip::UrquanDreadnought(ship) => ship.$method(),
-            AnyShip::UtwigJugger(ship) => ship.$method(),
-            AnyShip::VuxIntruder(ship) => ship.$method(),
-            AnyShip::YehatTerminator(ship) => ship.$method(),
-            AnyShip::ZoqfotpikStinger(ship) => ship.$method(),
-        }
-    };
-    ($self:expr, $method:ident($($arg:expr),+)) => {
-        match $self {
-            AnyShip::AndrosynthGuardian(ship) => ship.$method($($arg),+),
-            AnyShip::ArilouSkiff(ship) => ship.$method($($arg),+),
-            AnyShip::ChenjesuBroodhome(ship) => ship.$method($($arg),+),
-            AnyShip::ChmmrAvatar(ship) => ship.$method($($arg),+),
-            AnyShip::DruugeMauler(ship) => ship.$method($($arg),+),
-            AnyShip::HumanCruiser(ship) => ship.$method($($arg),+),
-            AnyShip::IlwrathAvenger(ship) => ship.$method($($arg),+),
-            AnyShip::KohrahMarauder(ship) => ship.$method($($arg),+),
-            AnyShip::MelnormeTrader(ship) => ship.$method($($arg),+),
-            AnyShip::MmrnmhrmXform(ship) => ship.$method($($arg),+),
-            AnyShip::MyconPodship(ship) => ship.$method($($arg),+),
-            AnyShip::OrzNemesis(ship) => ship.$method($($arg),+),
-            AnyShip::PkunkFury(ship) => ship.$method($($arg),+),
-            AnyShip::ShofixtiScout(ship) => ship.$method($($arg),+),
-            AnyShip::SlylandroProbe(ship) => ship.$method($($arg),+),
-            AnyShip::SpathiEluder(ship) => ship.$method($($arg),+),
-            AnyShip::SupoxBlade(ship) => ship.$method($($arg),+),
-            AnyShip::SyreenPenetrator(ship) => ship.$method($($arg),+),
-            AnyShip::ThraddashTorch(ship) => ship.$method($($arg),+),
-            AnyShip::UmgahDrone(ship) => ship.$method($($arg),+),
-            AnyShip::UrquanDreadnought(ship) => ship.$method($($arg),+),
-            AnyShip::UtwigJugger(ship) => ship.$method($($arg),+),
-            AnyShip::VuxIntruder(ship) => ship.$method($($arg),+),
-            AnyShip::YehatTerminator(ship) => ship.$method($($arg),+),
-            AnyShip::ZoqfotpikStinger(ship) => ship.$method($($arg),+),
-        }
-    };
+define_ship_registry! {
+    AndrosynthGuardian, androsynth_guardian, "androsynth-guardian";
+    ArilouSkiff, arilou_skiff, "arilou-skiff";
+    ChenjesuBroodhome, chenjesu_broodhome, "chenjesu-broodhome";
+    ChmmrAvatar, chmmr_avatar, "chmmr-avatar";
+    DruugeMauler, druuge_mauler, "druuge-mauler";
+    HumanCruiser, human_cruiser, "human-cruiser";
+    IlwrathAvenger, ilwrath_avenger, "ilwrath-avenger";
+    KohrahMarauder, kohrah_marauder, "kohrah-marauder";
+    MelnormeTrader, melnorme_trader, "melnorme-trader";
+    MmrnmhrmXform, mmrnmhrm_xform, "mmrnmhrm-xform";
+    MyconPodship, mycon_podship, "mycon-podship";
+    OrzNemesis, orz_nemesis, "orz-nemesis";
+    PkunkFury, pkunk_fury, "pkunk-fury";
+    ShofixtiScout, shofixti_scout, "shofixti-scout";
+    SlylandroProbe, slylandro_probe, "slylandro-probe";
+    SpathiEluder, spathi_eluder, "spathi-eluder";
+    SupoxBlade, supox_blade, "supox-blade";
+    SyreenPenetrator, syreen_penetrator, "syreen-penetrator";
+    ThraddashTorch, thraddash_torch, "thraddash-torch";
+    UmgahDrone, umgah_drone, "umgah-drone";
+    UrquanDreadnought, urquan_dreadnought, "urquan-dreadnought";
+    UtwigJugger, utwig_jugger, "utwig-jugger";
+    VuxIntruder, vux_intruder, "vux-intruder";
+    YehatTerminator, yehat_terminator, "yehat-terminator";
+    ZoqfotpikStinger, zoqfotpik_stinger, "zoqfotpik-stinger";
 }
 
 impl AnyShip {
@@ -413,37 +228,6 @@ pub fn apply_collision_between(ships: &mut [AnyShip], ship_a_id: usize, ship_b_i
     }
 }
 
-pub fn build_ship(ship_type: &str) -> Option<AnyShip> {
-    match ship_type {
-        "androsynth-guardian" => Some(AndrosynthGuardian::new().into()),
-        "arilou-skiff" => Some(ArilouSkiff::new().into()),
-        "chenjesu-broodhome" => Some(ChenjesuBroodhome::new().into()),
-        "chmmr-avatar" => Some(ChmmrAvatar::new().into()),
-        "druuge-mauler" => Some(DruugeMauler::new().into()),
-        "human-cruiser" => Some(HumanCruiser::new().into()),
-        "ilwrath-avenger" => Some(IlwrathAvenger::new().into()),
-        "kohrah-marauder" => Some(KohrahMarauder::new().into()),
-        "melnorme-trader" => Some(MelnormeTrader::new().into()),
-        "mmrnmhrm-xform" => Some(MmrnmhrmXform::new().into()),
-        "mycon-podship" => Some(MyconPodship::new().into()),
-        "orz-nemesis" => Some(OrzNemesis::new().into()),
-        "pkunk-fury" => Some(PkunkFury::new().into()),
-        "shofixti-scout" => Some(ShofixtiScout::new().into()),
-        "slylandro-probe" => Some(SlylandroProbe::new().into()),
-        "spathi-eluder" => Some(SpathiEluder::new().into()),
-        "supox-blade" => Some(SupoxBlade::new().into()),
-        "syreen-penetrator" => Some(SyreenPenetrator::new().into()),
-        "thraddash-torch" => Some(ThraddashTorch::new().into()),
-        "umgah-drone" => Some(UmgahDrone::new().into()),
-        "urquan-dreadnought" => Some(UrquanDreadnought::new().into()),
-        "utwig-jugger" => Some(UtwigJugger::new().into()),
-        "vux-intruder" => Some(VuxIntruder::new().into()),
-        "yehat-terminator" => Some(YehatTerminator::new().into()),
-        "zoqfotpik-stinger" => Some(ZoqfotpikStinger::new().into()),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -453,7 +237,7 @@ mod tests {
         IlwrathAvenger, SlylandroProbe, SyreenPenetrator, UmgahDrone, UrquanDreadnought,
         UtwigJugger, VuxIntruder, YehatTerminator, ZoqfotpikStinger, apply_collision_between,
     };
-    use crate::traits::ship_trait::Ship;
+    use crate::traits::ship_trait::{Ship, ShipState};
 
     #[test]
     fn ilwrath_avenger_exposes_cloak_special() {
@@ -708,20 +492,20 @@ mod tests {
     #[test]
     fn androsynth_guardian_blazer_polygon_differs_from_guardian_polygon() {
         let ship = AnyShip::from(AndrosynthGuardian::new());
-        assert_eq!(
-            ship.hit_polygon_for_state(0, 0.0, 0.0, false) == ship.hit_polygon_for_state(0, 0.0, 0.0, true),
-            false,
+        assert!(
+            ship.hit_polygon_for_state(0, 0.0, 0.0, false)
+                != ship.hit_polygon_for_state(0, 0.0, 0.0, true)
         );
     }
 
     #[test]
     fn androsynth_guardian_exposes_hit_polygon() {
-        assert_eq!(AnyShip::from(AndrosynthGuardian::new()).hit_polygon(0, 0.0, 0.0).is_empty(), false);
+        assert!(!AnyShip::from(AndrosynthGuardian::new()).hit_polygon(0, 0.0, 0.0).is_empty());
     }
 
     #[test]
     fn human_cruiser_exposes_hit_polygon() {
-        assert_eq!(AnyShip::from(HumanCruiser::new()).hit_polygon(0, 0.0, 0.0).is_empty(), false);
+        assert!(!AnyShip::from(HumanCruiser::new()).hit_polygon(0, 0.0, 0.0).is_empty());
     }
 
     #[test]

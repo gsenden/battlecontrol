@@ -1,5 +1,6 @@
 use super::{row::Row, table_entity::TableEntity};
 
+#[allow(dead_code)]
 pub struct StoredGamePlayer {
     pub game_id: String,
     pub user_name: String,
