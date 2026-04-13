@@ -35,6 +35,8 @@ import arilouVictorySound from '../assets/audio/arilou-victory.ogg';
 import humanPrimarySound from '../assets/audio/human-primary.wav';
 import humanSpecialSound from '../assets/audio/human-special.ogg';
 import humanVictorySound from '../assets/audio/human-victory.ogg';
+import yehatPrimarySound from '../assets/audio/yehat-primary.wav';
+import yehatSpecialSound from '../assets/audio/yehat-special.wav';
 import battleShipDiesSound from '../assets/audio/battle-shipdies.wav';
 import battleBoom23Sound from '../assets/audio/battle-boom-23.wav';
 import battleBoom45Sound from '../assets/audio/battle-boom-45.wav';
@@ -80,7 +82,8 @@ const PLANET_FAR_SCALE = 0.72;
 const SELECTED_SHIP_STORAGE_KEY = 'battlecontrol.selected-ships';
 const FLEET_LAYOUT_KEY = Phaser.Input.Keyboard.KeyCodes.T;
 const ROTATE_ENEMY_KEY = 106;
-const FIRE_ENEMY_WEAPON_KEY = Phaser.Input.Keyboard.KeyCodes.ONE;
+const FIRE_ENEMY_WEAPON_KEY = Phaser.Input.Keyboard.KeyCodes.R;
+const FIRE_ENEMY_WEAPON_ALT_KEY = Phaser.Input.Keyboard.KeyCodes.ONE;
 const CHMMR_PREFIX = 'chmmr-avatar';
 const SYREEN_PREFIX = 'syreen-penetrator';
 const DEFAULT_USER_SETTINGS: UserSettingsDto = {
@@ -111,6 +114,7 @@ export class BattleScene extends Phaser.Scene {
   private fleetLayoutKey!: Phaser.Input.Keyboard.Key;
   private rotateEnemyKey!: Phaser.Input.Keyboard.Key;
   private fireEnemyWeaponKey!: Phaser.Input.Keyboard.Key;
+  private fireEnemyWeaponAltKey!: Phaser.Input.Keyboard.Key;
   private cameraTarget!: Phaser.GameObjects.Container;
   private planet!: Phaser.GameObjects.Image;
   private battleWorker?: Worker;
@@ -144,6 +148,9 @@ export class BattleScene extends Phaser.Scene {
   private playerCaptainName = '';
   private projectileHitPolygons: Phaser.GameObjects.Graphics[] = [];
   private loggedExplosionKeys = new Set<string>();
+  private readonly sfxChannels = new Map<string, Phaser.Sound.BaseSound>();
+  private readonly sfxLastPlayedAtMs = new Map<string, number>();
+  private readonly sfxPatternStep = new Map<string, number>();
   private projectileTraceFrame = 0;
   private projectileTraceStopped = false;
   private lastWeaponDown = false;
@@ -184,6 +191,8 @@ export class BattleScene extends Phaser.Scene {
     });
 
     this.load.audio('androsynth-primary', androsynthPrimarySound);
+    this.load.audio('yehat-primary', yehatPrimarySound);
+    this.load.audio('yehat-special', yehatSpecialSound);
     this.load.audio('androsynth-special', androsynthSpecialSound);
     this.load.audio('arilou-primary', arilouPrimarySound);
     this.load.audio('arilou-special', arilouSpecialSound);
@@ -317,6 +326,7 @@ export class BattleScene extends Phaser.Scene {
     this.fleetLayoutKey = this.input.keyboard!.addKey(FLEET_LAYOUT_KEY);
     this.rotateEnemyKey = this.input.keyboard!.addKey(ROTATE_ENEMY_KEY);
     this.fireEnemyWeaponKey = this.input.keyboard!.addKey(FIRE_ENEMY_WEAPON_KEY);
+    this.fireEnemyWeaponAltKey = this.input.keyboard!.addKey(FIRE_ENEMY_WEAPON_ALT_KEY);
     this.input.mouse?.disableContextMenu();
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (!this.started) {
@@ -401,7 +411,10 @@ export class BattleScene extends Phaser.Scene {
       this.toggleFleetLayout();
     }
 
-    if (isDebugUiEnabled() && Phaser.Input.Keyboard.JustDown(this.fireEnemyWeaponKey)) {
+    if (
+      Phaser.Input.Keyboard.JustDown(this.fireEnemyWeaponKey)
+      || Phaser.Input.Keyboard.JustDown(this.fireEnemyWeaponAltKey)
+    ) {
       if (this.battleWorker) {
         this.battleWorker.postMessage({ type: 'triggerTargetWeapon' });
       }
@@ -413,7 +426,7 @@ export class BattleScene extends Phaser.Scene {
         type: 'setTargetInput',
         input: {
           left: false,
-          right: isDebugUiEnabled() && this.rotateEnemyKey.isDown,
+          right: this.rotateEnemyKey.isDown,
           thrust: false,
           weapon: false,
           special: false,
@@ -545,42 +558,96 @@ export class BattleScene extends Phaser.Scene {
     for (const event of snapshot.audioEvents) {
       switch (event.key) {
         case 'androsynth-primary':
-          this.sound.play(event.key, { volume: 0.55 });
+          this.playSfx(event.key, 0.55);
+          break;
+        case 'yehat-primary':
+          this.playSfx(event.key, 0.55);
+          break;
+        case 'yehat-special':
+          this.playSfxPattern(event.key, 0.65, [120, 420]);
           break;
         case 'androsynth-special':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.playSfx(event.key, 0.65);
           break;
         case 'arilou-primary':
-          this.sound.play(event.key, { volume: 0.55 });
+          this.playSfx(event.key, 0.55);
           break;
         case 'arilou-special':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.playSfx(event.key, 0.65);
           break;
         case 'arilou-victory':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.playSfx(event.key, 0.65);
           break;
         case 'human-primary':
-          this.sound.play(event.key, { volume: 0.5 });
+          this.playSfx(event.key, 0.5);
           break;
         case 'human-special':
-          this.sound.play(event.key, { volume: 0.6 });
+          this.playSfx(event.key, 0.6);
           break;
         case 'human-victory':
-          this.sound.play(event.key, { volume: 0.65 });
+          this.playSfx(event.key, 0.65);
           break;
         case 'battle-shipdies':
-          this.sound.play(event.key, { volume: 0.75 });
+          this.playSfx(event.key, 0.75);
           break;
         case 'battle-boom-23':
-          this.sound.play(event.key, { volume: 0.5 });
+          this.playSfx(event.key, 0.5);
           break;
         case 'battle-boom-45':
-          this.sound.play(event.key, { volume: 0.55 });
+          this.playSfx(event.key, 0.55);
           break;
         default:
           break;
       }
     }
+  }
+
+  private playSfx(key: string, volume: number) {
+    let sound = this.sfxChannels.get(key);
+    if (!sound) {
+      sound = this.sound.add(key, { volume });
+      this.sfxChannels.set(key, sound);
+    }
+    sound.setVolume(volume);
+    if (sound.isPlaying) {
+      sound.stop();
+    }
+    sound.play();
+  }
+
+  private playSfxIfIdle(key: string, volume: number) {
+    let sound = this.sfxChannels.get(key);
+    if (!sound) {
+      sound = this.sound.add(key, { volume });
+      this.sfxChannels.set(key, sound);
+    }
+    sound.setVolume(volume);
+    if (!sound.isPlaying) {
+      sound.play();
+    }
+  }
+
+  private playSfxThrottled(key: string, volume: number, minIntervalMs: number) {
+    const now = this.time.now;
+    const lastPlayedAtMs = this.sfxLastPlayedAtMs.get(key) ?? Number.NEGATIVE_INFINITY;
+    if (now - lastPlayedAtMs < minIntervalMs) {
+      return;
+    }
+    this.playSfx(key, volume);
+    this.sfxLastPlayedAtMs.set(key, now);
+  }
+
+  private playSfxPattern(key: string, volume: number, intervalsMs: number[]) {
+    const now = this.time.now;
+    const step = this.sfxPatternStep.get(key) ?? 0;
+    const minIntervalMs = intervalsMs[step % intervalsMs.length] ?? 0;
+    const lastPlayedAtMs = this.sfxLastPlayedAtMs.get(key) ?? Number.NEGATIVE_INFINITY;
+    if (now - lastPlayedAtMs < minIntervalMs) {
+      return;
+    }
+    this.playSfx(key, volume);
+    this.sfxLastPlayedAtMs.set(key, now);
+    this.sfxPatternStep.set(key, (step + 1) % intervalsMs.length);
   }
 
   private syncProjectiles(snapshot: BattleSnapshot) {

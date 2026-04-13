@@ -201,6 +201,9 @@ impl AnyShip {
     ) -> crate::traits::ship_trait::ProjectileTargetMode {
         dispatch_ref!(self, primary_projectile_target_mode_for_state(special_active))
     }
+    pub fn primary_projectile_inherits_ship_velocity_for_state(&self, special_active: bool) -> bool {
+        dispatch_ref!(self, primary_projectile_inherits_ship_velocity_for_state(special_active))
+    }
     pub fn special_state_persists_after_cooldown(&self) -> bool {
         dispatch_ref!(self, special_state_persists_after_cooldown())
     }
@@ -237,7 +240,36 @@ mod tests {
         IlwrathAvenger, SlylandroProbe, SyreenPenetrator, UmgahDrone, UrquanDreadnought,
         UtwigJugger, VuxIntruder, YehatTerminator, ZoqfotpikStinger, apply_collision_between,
     };
-    use crate::traits::ship_trait::{Ship, ShipState};
+    use crate::traits::ship_trait::{ProjectileTargetMode, ShipState};
+
+    #[test]
+    fn yehat_terminator_exposes_hit_polygon() {
+        assert!(!AnyShip::from(YehatTerminator::new()).hit_polygon(0, 0.0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn yehat_terminator_primary_volley_does_not_auto_target_enemy_ship() {
+        assert!(matches!(
+            AnyShip::from(YehatTerminator::new())
+                .primary_volley_spec()
+                .map(|spec| spec.target_mode),
+            Some(ProjectileTargetMode::None),
+        ));
+    }
+
+    #[test]
+    fn yehat_terminator_primary_volley_turn_wait_exceeds_projectile_life() {
+        assert!(AnyShip::from(YehatTerminator::new())
+            .primary_volley_spec()
+            .is_some_and(|spec| spec.projectile.turn_wait > spec.projectile.life));
+    }
+
+    #[test]
+    fn yehat_terminator_primary_volley_emits_yehat_primary_sound_key() {
+        assert!(AnyShip::from(YehatTerminator::new())
+            .primary_volley_spec()
+            .is_some_and(|spec| spec.projectile.sound_key == "yehat-primary"));
+    }
 
     #[test]
     fn ilwrath_avenger_exposes_cloak_special() {

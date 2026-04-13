@@ -31,7 +31,9 @@ export class Ship {
 
   private scene: Phaser.Scene;
   private sprite: Phaser.GameObjects.Image;
+  private shieldOverlay: Phaser.GameObjects.Image;
   private ghostSprites: Phaser.GameObjects.Image[] = [];
+  private shieldGhostSprites: Phaser.GameObjects.Image[] = [];
   private ionTrail: IonParticle[] = [];
   private spritePrefix: string;
   private readonly renderScaleMultiplier: number;
@@ -65,11 +67,18 @@ export class Ship {
     const defaultTexture = `${this.spritePrefix}-big-000`;
     this.sprite = scene.add.image(x, y, defaultTexture);
     this.sprite.setDepth(SHIP_DEPTH);
+    this.shieldOverlay = scene.add.image(x, y, 'yehat-shield-big-000');
+    this.shieldOverlay.setDepth(SHIP_DEPTH + 1);
+    this.shieldOverlay.setVisible(false);
     for (let i = 0; i < 8; i++) {
       const ghost = scene.add.image(x, y, defaultTexture);
       ghost.setDepth(SHIP_DEPTH);
       ghost.setVisible(false);
       this.ghostSprites.push(ghost);
+      const shieldGhost = scene.add.image(x, y, 'yehat-shield-big-000');
+      shieldGhost.setDepth(SHIP_DEPTH + 1);
+      shieldGhost.setVisible(false);
+      this.shieldGhostSprites.push(shieldGhost);
     }
   }
 
@@ -96,22 +105,33 @@ export class Ship {
 
   setTint(color: number) {
     this.sprite.setTint(color);
+    this.shieldOverlay.setTint(color);
     for (const ghost of this.ghostSprites) {
       ghost.setTint(color);
+    }
+    for (const shieldGhost of this.shieldGhostSprites) {
+      shieldGhost.setTint(color);
     }
   }
 
   renderUpdate(scale: number = 1) {
     if (this.dead) {
       this.sprite.setVisible(false);
+      this.shieldOverlay.setVisible(false);
       for (const ghost of this.ghostSprites) {
         ghost.setVisible(false);
+      }
+      for (const shieldGhost of this.shieldGhostSprites) {
+        shieldGhost.setVisible(false);
       }
       return;
     }
 
+    const shieldActive = this.spritePrefix === 'yehat-shield';
+    const baseSpritePrefix = shieldActive ? 'yehat-terminator' : this.spritePrefix;
     const frameIndex = this.facingToFrame();
-    const texture = `${this.spritePrefix}-big-${String(frameIndex).padStart(3, '0')}`;
+    const texture = `${baseSpritePrefix}-big-${String(frameIndex).padStart(3, '0')}`;
+    const shieldTexture = `yehat-shield-big-${String(frameIndex).padStart(3, '0')}`;
     const x = this.x;
     const y = this.y;
 
@@ -119,6 +139,15 @@ export class Ship {
     this.sprite.setTexture(texture);
     this.sprite.setScale(scale * this.renderScaleMultiplier);
     this.sprite.setAlpha(this.cloaked ? 0.28 : 1);
+    if (shieldActive) {
+      this.shieldOverlay.setPosition(x, y);
+      this.shieldOverlay.setTexture(shieldTexture);
+      this.shieldOverlay.setScale(scale * this.renderScaleMultiplier);
+      this.shieldOverlay.setAlpha(this.cloaked ? 0.3 : 0.95);
+      this.shieldOverlay.setVisible(true);
+    } else {
+      this.shieldOverlay.setVisible(false);
+    }
     const margin = Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.5;
 
     const xOffsets = [0];
@@ -150,11 +179,22 @@ export class Ship {
         ghost.setScale(scale * this.renderScaleMultiplier);
         ghost.setAlpha(this.cloaked ? 0.28 : 1);
         ghost.setVisible(true);
+        const shieldGhost = this.shieldGhostSprites[ghostIndex - 1];
+        if (shieldActive) {
+          shieldGhost.setTexture(shieldTexture);
+          shieldGhost.setPosition(x + xOffset, y + yOffset);
+          shieldGhost.setScale(scale * this.renderScaleMultiplier);
+          shieldGhost.setAlpha(this.cloaked ? 0.3 : 0.95);
+          shieldGhost.setVisible(true);
+        } else {
+          shieldGhost.setVisible(false);
+        }
       }
     }
 
     for (; ghostIndex < this.ghostSprites.length; ghostIndex++) {
       this.ghostSprites[ghostIndex].setVisible(false);
+      this.shieldGhostSprites[ghostIndex].setVisible(false);
     }
   }
 
@@ -179,8 +219,12 @@ export class Ship {
     this.clearIonTrail();
 
     this.sprite.destroy();
+    this.shieldOverlay.destroy();
     for (const ghost of this.ghostSprites) {
       ghost.destroy();
+    }
+    for (const shieldGhost of this.shieldGhostSprites) {
+      shieldGhost.destroy();
     }
   }
 

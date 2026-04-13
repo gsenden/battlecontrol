@@ -118,7 +118,8 @@
 		}
 
 		try {
-			const gameId = new URL(window.location.href).searchParams.get('gameId');
+			const params = new URL(window.location.href).searchParams;
+			const gameId = params.get('gameId');
 			if (gameId) {
 				activeGameId = gameId;
 				started = true;
@@ -140,6 +141,23 @@
 					playerCaptainName: currentUser?.name ?? currentPlayer?.user.name ?? '',
 					gameId,
 					opponents,
+				};
+			} else {
+				const playerShipType = params.get('playerShip') ?? params.get('player') ?? 'human-cruiser';
+				const targetShipType = params.get('targetShip') ?? params.get('target') ?? 'human-cruiser';
+				const playerCaptainName = params.get('playerName') ?? 'Dev Pilot';
+				const targetCaptainName = params.get('targetName') ?? 'Idle Target';
+				battleSetup = {
+					playerShipType,
+					targetShipType,
+					playerCaptainName,
+					opponents: [
+						{
+							id: 'dev-target',
+							shipType: targetShipType,
+							captainName: targetCaptainName,
+						},
+					],
 				};
 			}
 		} catch (error) {

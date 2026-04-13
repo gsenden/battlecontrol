@@ -84,6 +84,8 @@ export type BattleWorkerMessage =
   | { type: 'setPlayerInput'; input: ShipInput }
   | { type: 'setTargetInput'; input: ShipInput }
   | { type: 'triggerTargetWeapon' }
+  | { type: 'triggerTargetWeaponAtPlayer' }
+  | { type: 'setTargetWeaponTargetShip' }
   | { type: 'setPlayerWeaponTargetPoint'; x: number; y: number }
   | { type: 'setPlayerWeaponTargetShip' }
   | { type: 'setPlayerSpecialTargetPoint'; x: number; y: number }

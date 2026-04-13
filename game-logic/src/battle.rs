@@ -29,7 +29,7 @@ const METEOR_FRAME_COUNT: i32 = 21;
 const METEOR_HIT_RADIUS: f64 = 44.0;
 const METEOR_IMPACT_PUSH: f64 = 2.5;
 const METEOR_TEXTURE_PREFIX: &str = "battle-asteroid";
-const PROJECTILE_HIT_FALLBACK_PADDING: f64 = 64.0;
+const PROJECTILE_HIT_FALLBACK_PADDING: f64 = 0.0;
 const PROJECTILE_FACINGS: f64 = 16.0;
 const EXPLOSION_TEXTURE_BATTLE_BOOM: &str = "battle-boom";
 const AUDIO_SHIP_DEATH: &str = "battle-shipdies";
@@ -67,6 +67,8 @@ pub struct ProjectileSnapshot {
     pub y: f64,
     pub vx: f64,
     pub vy: f64,
+    inherited_vx: f64,
+    inherited_vy: f64,
     pub life: i32,
     pub texture_prefix: &'static str,
     damage: i32,
@@ -795,6 +797,7 @@ impl Battle {
         let current = self.matter_world.body_state(body_id).unwrap_or(body);
         let in_gravity_well = self.in_gravity_well(current.x, current.y);
         let energy_before = self.ships[ship_id].energy();
+        let energy_counter_before = self.ships[ship_id].energy_counter();
         let weapon_counter_before = self.ships[ship_id].weapon_counter();
         let special_counter_before = self.ships[ship_id].special_counter();
         let mut commands = self.ships[ship_id].update(
@@ -805,18 +808,45 @@ impl Battle {
 
         self.handle_blazer_activation(ship_id, body_id, &input, energy_before, is_player, &mut commands);
 
-        if is_weapon_triggered(&self.ships[ship_id], &input, weapon_counter_before, energy_before) {
+        if is_weapon_triggered(
+            &self.ships[ship_id],
+            &input,
+            weapon_counter_before,
+            energy_before,
+            energy_counter_before,
+        )
+            && !self.ship_blocks_damage(is_player)
+        {
             self.handle_weapon_fire(ship_id, current, is_player, &mut commands);
         }
 
-        if is_special_triggered(&self.ships[ship_id], &input, special_counter_before, energy_before) {
+        if is_special_triggered(
+            &self.ships[ship_id],
+            &input,
+            special_counter_before,
+            energy_before,
+            energy_counter_before,
+        ) {
             self.handle_special_activation(ship_id, body_id, current, is_player, &mut commands);
         }
 
         let thrusting = apply_commands(&mut self.matter_world, body_id, commands);
-        self.expire_special_cooldown(ship_id, is_player);
+        self.expire_special_cooldown(ship_id, is_player, input);
+        self.emit_active_special_audio(ship_id, is_player);
         self.ship_state_mut(is_player).thrusting = thrusting;
         sync_ship_body_angle(&mut self.matter_world, body_id, &self.ships[ship_id]);
+    }
+
+    fn emit_active_special_audio(&mut self, ship_id: usize, is_player: bool) {
+        if !self.ship_state(is_player).special_active {
+            return;
+        }
+        let SpecialAbilitySpec::Shield(spec) = self.ships[ship_id].special_ability_spec() else {
+            return;
+        };
+        if self.ships[ship_id].special_counter() > 0 && !spec.sound_key.is_empty() {
+            self.audio_events.push(AudioEventSnapshot { key: spec.sound_key });
+        }
     }
 
     fn handle_blazer_activation(
@@ -862,9 +892,11 @@ impl Battle {
         if self.ships[ship_id].is_cloaked(special_active) {
             self.ship_state_mut(is_player).special_active = false;
         }
+        let inherit_ship_velocity =
+            self.ships[ship_id].primary_projectile_inherits_ship_velocity_for_state(special_active);
 
         if let Some(volley_spec) = self.ships[ship_id].primary_volley_spec_for_state(special_active) {
-            self.spawn_projectile_volley(current, is_player, volley_spec);
+            self.spawn_projectile_volley(current, is_player, volley_spec, inherit_ship_velocity);
         } else if let Some(projectile_spec) = self.ships[ship_id].primary_projectile_spec_for_state(special_active) {
             self.spawn_projectile_from_spec(
                 current,
@@ -876,6 +908,7 @@ impl Battle {
                     lateral_offset: 0.0,
                 },
                 self.projectile_target_for(is_player),
+                inherit_ship_velocity,
             );
             if !projectile_spec.sound_key.is_empty() {
                 self.audio_events.push(AudioEventSnapshot {
@@ -921,7 +954,7 @@ impl Battle {
                 });
             }
             SpecialAbilitySpec::Projectile(SecondaryProjectileSpec { volley }) => {
-                self.spawn_projectile_volley(current, is_player, volley);
+                self.spawn_projectile_volley(current, is_player, volley, false);
             }
             SpecialAbilitySpec::CrewRegeneration(spec) => {
                 if !spec.sound_key.is_empty() {
@@ -958,7 +991,12 @@ impl Battle {
         }
     }
 
-    fn expire_special_cooldown(&mut self, ship_id: usize, is_player: bool) {
+    fn expire_special_cooldown(&mut self, ship_id: usize, is_player: bool, input: ShipInput) {
+        if matches!(self.ships[ship_id].special_ability_spec(), SpecialAbilitySpec::Shield(_))
+            && input.special
+        {
+            return;
+        }
         if self.ships[ship_id].special_state_persists_after_cooldown()
             || matches!(self.ships[ship_id].special_ability_spec(), SpecialAbilitySpec::Blazer(_))
         {
@@ -1119,7 +1157,13 @@ impl Battle {
     fn projectile_target_for_mode(&self, is_player: bool, mode: ProjectileTargetMode) -> ProjectileTarget {
         let selected_target = self.selected_weapon_target(is_player);
         match mode {
-            ProjectileTargetMode::None => self.normalized_selected_weapon_target(is_player, selected_target),
+            ProjectileTargetMode::None => {
+                if !is_player && matches!(selected_target, ProjectileTarget::None) {
+                    self.default_enemy_target_for(is_player)
+                } else {
+                    self.normalized_selected_weapon_target(is_player, selected_target)
+                }
+            }
             ProjectileTargetMode::EnemyShip => self.default_enemy_target_for(is_player),
             ProjectileTargetMode::PlayerSelectedOrEnemyShip => {
                 if matches!(selected_target, ProjectileTarget::None) {
@@ -1174,6 +1218,7 @@ impl Battle {
         current: MatterBodyState,
         is_player: bool,
         volley_spec: ProjectileVolleySpec,
+        inherit_ship_velocity: bool,
     ) {
         for spawn in volley_spec.spawns {
             self.spawn_projectile_from_spec(
@@ -1182,6 +1227,7 @@ impl Battle {
                 volley_spec.projectile,
                 *spawn,
                 self.projectile_target_for_mode(is_player, volley_spec.target_mode),
+                inherit_ship_velocity,
             );
         }
 
@@ -1199,6 +1245,7 @@ impl Battle {
         projectile_spec: PrimaryProjectileSpec,
         spawn: ProjectileSpawnSpec,
         target: ProjectileTarget,
+        inherit_ship_velocity: bool,
     ) {
         let base_facing = self.ships[self.ship_state(is_player).ship_id].facing();
         let base_facing_index = radians_to_facing_index(base_facing);
@@ -1227,6 +1274,8 @@ impl Battle {
                 - spawn_rewind_y,
             vx: projectile_raw_vx as f64 / 32.0,
             vy: projectile_raw_vy as f64 / 32.0,
+            inherited_vx: if inherit_ship_velocity { current.vx } else { 0.0 },
+            inherited_vy: if inherit_ship_velocity { current.vy } else { 0.0 },
             life: projectile_spec.life - 1,
             texture_prefix: projectile_spec.texture_prefix,
             damage: projectile_spec.impact.damage,
@@ -1874,21 +1923,6 @@ impl Battle {
                 if polygons_intersect(&projectile_polygon, &hit_polygon) {
                     return Some(is_player);
                 }
-
-                let hit_radius = projectile_hit_radius(projectile.collision);
-                if hit_radius > 0.0 {
-                    if polygon_intersects_circle(&hit_polygon, projectile.x, projectile.y, hit_radius) {
-                        return Some(is_player);
-                    }
-
-                    let ship_radius = ship_hit_radius(&hit_polygon, body.x, body.y);
-                    let dx = shortest_wrapped_delta(projectile.x, body.x, self.width);
-                    let dy = shortest_wrapped_delta(projectile.y, body.y, self.height);
-                    let distance = ((dx * dx) + (dy * dy)).sqrt();
-                    return (distance <= (hit_radius + ship_radius + PROJECTILE_HIT_FALLBACK_PADDING))
-                        .then_some(is_player);
-                }
-
                 return None;
             }
             return point_in_polygon(projectile.x, projectile.y, &hit_polygon).then_some(is_player);
@@ -2271,9 +2305,16 @@ fn ship_body_angle(ship: &AnyShip) -> f64 {
     ship.facing() + std::f64::consts::FRAC_PI_2
 }
 
-fn is_weapon_triggered(ship: &AnyShip, input: &ShipInput, weapon_counter_before: i32, energy_before: i32) -> bool {
-    let _ = (ship, energy_before);
-    input.weapon && weapon_counter_before == 0
+fn is_weapon_triggered(
+    ship: &AnyShip,
+    input: &ShipInput,
+    weapon_counter_before: i32,
+    energy_before: i32,
+    energy_counter_before: i32,
+) -> bool {
+    input.weapon
+        && weapon_counter_before == 0
+        && effective_energy_for_input(ship, energy_before, energy_counter_before) >= ship.weapon_energy_cost()
 }
 
 fn is_special_triggered(
@@ -2281,9 +2322,19 @@ fn is_special_triggered(
     input: &ShipInput,
     special_counter_before: i32,
     energy_before: i32,
+    energy_counter_before: i32,
 ) -> bool {
-    let _ = (ship, energy_before);
-    input.special && special_counter_before == 0
+    input.special
+        && special_counter_before == 0
+        && effective_energy_for_input(ship, energy_before, energy_counter_before) >= ship.special_energy_cost()
+}
+
+fn effective_energy_for_input(ship: &AnyShip, energy_before: i32, energy_counter_before: i32) -> i32 {
+    if energy_counter_before == 0 && energy_before < ship.max_energy() {
+        (energy_before + ship.energy_regeneration()).min(ship.max_energy())
+    } else {
+        energy_before
+    }
 }
 
 fn apply_commands(matter_world: &mut MatterWorld, body_id: usize, commands: Vec<PhysicsCommand>) -> bool {
@@ -2350,8 +2401,8 @@ fn projectile_velocity_for_facing(facing: i32, speed: i32) -> (i32, i32) {
 fn set_projectile_velocity_components(projectile: &mut ProjectileSnapshot, raw_vx: i32, raw_vy: i32) {
     projectile.raw_vx = raw_vx;
     projectile.raw_vy = raw_vy;
-    projectile.vx = raw_vx as f64 / 32.0;
-    projectile.vy = raw_vy as f64 / 32.0;
+    projectile.vx = (raw_vx as f64 / 32.0) + projectile.inherited_vx;
+    projectile.vy = (raw_vy as f64 / 32.0) + projectile.inherited_vy;
 
     let (width, fract, sign) = split_sc2_velocity_component(raw_vx);
     projectile.velocity_width = width;
@@ -2388,8 +2439,8 @@ fn advance_projectile_position(projectile: &mut ProjectileSnapshot) {
         &mut projectile.velocity_error_height,
         projectile.velocity_sign_height,
     );
-    projectile.x += dx as f64;
-    projectile.y += dy as f64;
+    projectile.x += dx as f64 + projectile.inherited_vx;
+    projectile.y += dy as f64 + projectile.inherited_vy;
 }
 
 fn next_sc2_velocity_step(vector: i32, fract: i32, error: &mut i32, sign: i32) -> i32 {
@@ -2767,6 +2818,226 @@ mod tests {
     use crate::ship_input::ShipInput;
     use crate::ships::{AnyShip, HumanCruiser};
     use crate::traits::ship_trait::Ship;
+
+    #[test]
+    fn yehat_primary_inherits_player_ship_velocity() {
+        let mut battle = Battle::new(
+            "yehat-terminator",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+
+        battle.matter_world.set_body_velocity(battle.player.body_id, 0.0, -5.0);
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert!(battle.snapshot().projectiles[0].vy < -20.5);
+    }
+
+    #[test]
+    fn human_weapon_does_not_fire_without_enough_energy() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+        let ship_id = battle.player.ship_id;
+        battle.ships[ship_id].set_energy(0);
+        battle.ships[ship_id].set_energy_counter(5);
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().projectiles.len(), 0);
+    }
+
+    #[test]
+    fn yehat_cannot_fire_primary_while_shield_is_active() {
+        let mut battle = Battle::new(
+            "yehat-terminator",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().projectiles.len(), 0);
+    }
+
+    #[test]
+    fn yehat_shield_stays_active_while_holding_special() {
+        let mut battle = Battle::new(
+            "yehat-terminator",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+        battle.tick(1000.0 / 24.0);
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().player.texture_prefix, "yehat-shield");
+    }
+
+    #[test]
+    fn yehat_special_shield_keeps_audio_while_active() {
+        let mut battle = Battle::new(
+            "yehat-terminator",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "yehat-special"));
+    }
+
+    #[test]
+    fn yehat_primary_adds_audio_event() {
+        let mut battle = Battle::new(
+            "yehat-terminator",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "yehat-primary"));
+    }
+
+    #[test]
+    fn yehat_special_shield_adds_audio_event() {
+        let mut battle = Battle::new(
+            "yehat-terminator",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: true,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert!(battle.snapshot().audio_events.iter().any(|event| event.key == "yehat-special"));
+    }
 
     #[test]
     fn target_arilou_primary_instant_laser_aims_at_player_selected_point() {

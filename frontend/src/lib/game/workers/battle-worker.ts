@@ -83,6 +83,12 @@ self.onmessage = async (event: MessageEvent<BattleWorkerMessage>) => {
     );
   } else if (message.type === 'triggerTargetWeapon') {
     battle.triggerTargetWeapon();
+  } else if (message.type === 'triggerTargetWeaponAtPlayer') {
+    const snapshot = battle.getSnapshot();
+    battle.setTargetWeaponTargetPoint(snapshot.player.x, snapshot.player.y);
+    battle.triggerTargetWeapon();
+  } else if (message.type === 'setTargetWeaponTargetShip') {
+    battle.setTargetWeaponTargetShip();
   } else if (message.type === 'setPlayerWeaponTargetPoint') {
     battle.setPlayerWeaponTargetPoint(message.x, message.y);
   } else if (message.type === 'setPlayerWeaponTargetShip') {

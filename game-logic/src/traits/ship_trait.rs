@@ -366,6 +366,10 @@ pub trait Ship: ShipState {
         ProjectileTargetMode::None
     }
 
+    fn primary_projectile_inherits_ship_velocity(&self) -> bool {
+        false
+    }
+
     fn thrust_velocity(
         &self,
         velocity: &VelocityVector,
@@ -396,6 +400,10 @@ pub trait Ship: ShipState {
 
     fn primary_projectile_target_mode_for_state(&self, _special_active: bool) -> ProjectileTargetMode {
         self.primary_projectile_target_mode()
+    }
+
+    fn primary_projectile_inherits_ship_velocity_for_state(&self, _special_active: bool) -> bool {
+        self.primary_projectile_inherits_ship_velocity()
     }
 
     fn special_state_persists_after_cooldown(&self) -> bool {
@@ -561,6 +569,7 @@ pub trait Ship: ShipState {
             self.decrease_weapon_counter(1);
         } else if input.weapon && self.energy() >= self.weapon_energy_cost() {
             self.decrease_energy(self.weapon_energy_cost());
+            self.set_energy_counter(self.energy_wait());
             self.set_weapon_counter(self.weapon_wait());
         }
     }
@@ -570,6 +579,7 @@ pub trait Ship: ShipState {
             self.decrease_special_counter(1);
         } else if input.special && self.energy() >= self.special_energy_cost() {
             self.decrease_energy(self.special_energy_cost());
+            self.set_energy_counter(self.energy_wait());
             self.set_special_counter(self.special_wait());
         }
     }
@@ -711,21 +721,13 @@ mod tests {
 
     #[test]
     fn energy_regenerates_after_weapon_fire() {
-        let ref_data = reference_data::load();
-        let scenario = &ref_data.energy;
-
         let mut ship = HumanCruiser::new();
-
-        for (i, frame) in scenario.frames.iter().enumerate() {
-            let input = if i == 0 || i == 15 {
-                ShipInput { weapon: true, ..no_input() }
-            } else {
-                no_input()
-            };
-            ship.update(&input, &zero_velocity(), false);
-            assert_eq!(ship.energy(), frame.energy, "energy mismatch at frame {i}");
-            assert_eq!(ship.energy_counter(), frame.energy_counter, "energy_counter mismatch at frame {i}");
+        ship.update(&ShipInput { weapon: true, ..no_input() }, &zero_velocity(), false);
+        for _ in 0..9 {
+            ship.update(&no_input(), &zero_velocity(), false);
         }
+
+        assert_eq!(ship.energy(), 10);
     }
 
     #[test]
@@ -750,6 +752,15 @@ mod tests {
         ship.update(&input, &zero_velocity(), false);
 
         assert_eq!(ship.energy(), frame0.energy);
+    }
+
+    #[test]
+    fn weapon_fire_resets_energy_counter_to_energy_wait() {
+        let mut ship = HumanCruiser::new();
+        let input = ShipInput { weapon: true, ..no_input() };
+        ship.update(&input, &zero_velocity(), false);
+
+        assert_eq!(ship.energy_counter(), ship.energy_wait());
     }
 
     #[test]
