@@ -21,24 +21,38 @@ impl SqliteSessionRepository {
 impl SessionRepositoryDrivenPort for SqliteSessionRepository {
     fn load_session_user(&self, session_id: &str) -> Result<Option<UserDto>, String> {
         let rows = self.sqlite.query_with_params(
-            &format!("SELECT * FROM {} WHERE session_id = ?", SessionsTable::table_name()),
+            &format!(
+                "SELECT * FROM {} WHERE session_id = ?",
+                SessionsTable::table_name()
+            ),
             &[&session_id as &dyn rusqlite::types::ToSql],
         )?;
 
         match rows.first() {
             Some(row) => {
                 let stored_session = SessionsTable::from_row(row)?;
-                if current_timestamp() - stored_session.last_active_at > SESSION_INACTIVITY_TIMEOUT_SECONDS {
+                if current_timestamp() - stored_session.last_active_at
+                    > SESSION_INACTIVITY_TIMEOUT_SECONDS
+                {
                     self.sqlite.execute_with_params(
-                        &format!("DELETE FROM {} WHERE session_id = ?", SessionsTable::table_name()),
+                        &format!(
+                            "DELETE FROM {} WHERE session_id = ?",
+                            SessionsTable::table_name()
+                        ),
                         &[&stored_session.session_id as &dyn rusqlite::types::ToSql],
                     )?;
                     return Ok(None);
                 }
 
                 self.sqlite.execute_with_params(
-                    &format!("UPDATE {} SET last_active_at = ? WHERE session_id = ?", SessionsTable::table_name()),
-                    &[&current_timestamp() as &dyn rusqlite::types::ToSql, &stored_session.session_id],
+                    &format!(
+                        "UPDATE {} SET last_active_at = ? WHERE session_id = ?",
+                        SessionsTable::table_name()
+                    ),
+                    &[
+                        &current_timestamp() as &dyn rusqlite::types::ToSql,
+                        &stored_session.session_id,
+                    ],
                 )?;
 
                 Ok(Some(stored_session.user()?))

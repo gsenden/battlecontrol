@@ -1,22 +1,15 @@
 mod adapters;
-mod ports;
 mod domain;
+mod ports;
 
 #[cfg(test)]
 mod test_helpers;
 
-use adapters::{
-    AuthApiAdapter,
-    AxumAdapter,
-    BattleSessionHub,
-    GameApiAdapter,
-    GameRoomHub,
-    SqliteGameRepository,
-    SqliteSessionRepository,
-    SqliteUserRepository,
-    TracingLoggerAdapter,
-};
 use adapters::db::SqliteAdapter;
+use adapters::{
+    AuthApiAdapter, AxumAdapter, BattleSessionHub, GameApiAdapter, GameRoomHub,
+    SqliteGameRepository, SqliteSessionRepository, SqliteUserRepository, TracingLoggerAdapter,
+};
 use domain::{Authenticator, AuthenticatorDrivenPorts, GameLobby, GameLobbyDrivenPorts};
 use ports::{GameRepositoryDrivenPort, GameRoomDrivenPort};
 use std::path::{Path, PathBuf};
@@ -61,12 +54,11 @@ fn spawn_stale_game_cleanup(game_repo: SqliteGameRepository, game_rooms: GameRoo
 
 #[tokio::main]
 async fn main() {
-    let sqlite = SqliteAdapter::new(&database_path())
-        .expect("Failed to open database");
-    let user_repo = SqliteUserRepository::new(sqlite.clone())
-        .expect("Failed to initialize user repository");
-    let game_repo = SqliteGameRepository::new(sqlite.clone())
-        .expect("Failed to initialize game repository");
+    let sqlite = SqliteAdapter::new(&database_path()).expect("Failed to open database");
+    let user_repo =
+        SqliteUserRepository::new(sqlite.clone()).expect("Failed to initialize user repository");
+    let game_repo =
+        SqliteGameRepository::new(sqlite.clone()).expect("Failed to initialize game repository");
     let session_repo = SqliteSessionRepository::new(sqlite.clone())
         .expect("Failed to initialize session repository");
     let game_rooms = GameRoomHub::new();

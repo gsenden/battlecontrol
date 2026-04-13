@@ -1,10 +1,10 @@
-use std::convert::Infallible;
+use super::ApiAdapter;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
-use tower_http::services::{ServeDir, ServeFile};
+use std::convert::Infallible;
 use tower::ServiceExt;
-use super::ApiAdapter;
+use tower_http::services::{ServeDir, ServeFile};
 
 pub struct AxumAdapter {
     router: axum::Router,
@@ -24,7 +24,9 @@ impl AxumAdapter {
 
     pub fn serve_directory(self, route_path: &str, static_dir: &str) -> Self {
         AxumAdapter {
-            router: self.router.nest_service(route_path, ServeDir::new(static_dir)),
+            router: self
+                .router
+                .nest_service(route_path, ServeDir::new(static_dir)),
         }
     }
 
@@ -34,7 +36,9 @@ impl AxumAdapter {
         let static_service = tower::service_fn(move |request: Request<Body>| {
             let serve_dir = serve_dir.clone();
             async move {
-                if request.uri().path().starts_with("/auth") || request.uri().path().starts_with("/games") {
+                if request.uri().path().starts_with("/auth")
+                    || request.uri().path().starts_with("/games")
+                {
                     return Ok::<_, Infallible>(StatusCode::NOT_FOUND.into_response());
                 }
 
@@ -72,11 +76,11 @@ impl AxumAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::to_bytes;
-    use tower::ServiceExt;
     use crate::adapters::AuthApiAdapter;
     use crate::adapters::db::SqliteAdapter;
     use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
+    use axum::body::to_bytes;
+    use tower::ServiceExt;
 
     #[test]
     fn axum_adapter_exists() {
@@ -92,8 +96,7 @@ mod tests {
             }
         }
 
-        let _ = AxumAdapter::new()
-            .register(MockAdapter);
+        let _ = AxumAdapter::new().register(MockAdapter);
     }
 
     #[tokio::test]

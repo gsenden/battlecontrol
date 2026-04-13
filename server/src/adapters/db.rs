@@ -1,8 +1,8 @@
 mod game_players_table;
 mod games_table;
-mod row;
 mod passkeys_table;
 mod recovery_codes_table;
+mod row;
 mod sessions_table;
 mod sqlite_adapter;
 mod table_entity;

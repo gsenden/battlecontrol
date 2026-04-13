@@ -1,12 +1,6 @@
 use common::dto::{
-    CreateGameRequestDto,
-    GameDto,
-    GamePlayerDto,
-    JoinGameRequestDto,
-    RegistrationRequestDto,
-    SaveSelectedRaceRequestDto,
-    UserDto,
-    UserSettingsDto,
+    CreateGameRequestDto, GameDto, GamePlayerDto, JoinGameRequestDto, RegistrationRequestDto,
+    SaveSelectedRaceRequestDto, UserDto, UserSettingsDto,
 };
 
 pub const TEST_PLAYER_NAME: &str = "TestPlayer";
@@ -50,9 +44,7 @@ pub fn test_create_game_request() -> CreateGameRequestDto {
 }
 
 pub fn test_join_game_request() -> JoinGameRequestDto {
-    JoinGameRequestDto {
-        password: None,
-    }
+    JoinGameRequestDto { password: None }
 }
 
 pub fn test_save_selected_race_request() -> SaveSelectedRaceRequestDto {

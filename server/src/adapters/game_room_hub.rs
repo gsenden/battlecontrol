@@ -76,7 +76,10 @@ impl GameRoomHub {
     pub fn game(&self, game_id: &str) -> Option<GameDto> {
         let rooms = self.rooms.lock().expect("game rooms lock poisoned");
         let entry = rooms.get(game_id)?;
-        entry.current_game.clone().or_else(|| entry.started_game.clone())
+        entry
+            .current_game
+            .clone()
+            .or_else(|| entry.started_game.clone())
     }
 
     pub fn subscribe_all(&self) -> broadcast::Receiver<GameRoomEvent> {
@@ -93,7 +96,11 @@ impl GameRoomHub {
     }
 
     fn message_for(event: GameRoomEvent) -> Message {
-        Message::Text(serde_json::to_string(&event).expect("Failed to serialize game room event").into())
+        Message::Text(
+            serde_json::to_string(&event)
+                .expect("Failed to serialize game room event")
+                .into(),
+        )
     }
 
     fn broadcast(entry: &RoomEntry, event: GameRoomEvent) {

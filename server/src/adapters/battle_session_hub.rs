@@ -40,6 +40,7 @@ pub enum BattleClientMessage {
     SetWeaponTargetPoint { x: f64, y: f64 },
     SetWeaponTargetShip,
     SetSpecialTargetPoint { x: f64, y: f64 },
+    SetSpecialTargetShip,
     ClearWeaponTarget,
     ClearSpecialTarget,
 }
@@ -292,6 +293,13 @@ impl BattleSessionHub {
                     runtime.battle.set_target_special_target_point(x, y);
                 }
             }
+            BattleClientMessage::SetSpecialTargetShip => {
+                if is_player {
+                    runtime.battle.set_player_special_target_ship();
+                } else {
+                    runtime.battle.set_target_special_target_ship();
+                }
+            }
             BattleClientMessage::ClearWeaponTarget => {
                 if is_player {
                     runtime.battle.clear_player_weapon_target();
@@ -355,41 +363,61 @@ fn to_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
     BattleSnapshotDto {
         player: to_ship_dto(snapshot.player),
         target: to_ship_dto(snapshot.target),
-        meteors: snapshot.meteors.into_iter().map(|meteor| MeteorSnapshotDto {
-            id: meteor.id,
-            x: meteor.x,
-            y: meteor.y,
-            vx: meteor.vx,
-            vy: meteor.vy,
-            frame_index: meteor.frame_index,
-            texture_prefix: meteor.texture_prefix,
-        }).collect(),
-        projectiles: snapshot.projectiles.into_iter().map(|projectile| ProjectileSnapshotDto {
-            id: projectile.id,
-            x: projectile.x,
-            y: projectile.y,
-            vx: projectile.vx,
-            vy: projectile.vy,
-            life: projectile.life,
-            texture_prefix: projectile.texture_prefix,
-        }).collect(),
-        explosions: snapshot.explosions.into_iter().map(|explosion| ExplosionSnapshotDto {
-            id: explosion.id,
-            x: explosion.x,
-            y: explosion.y,
-            frame_index: explosion.frame_index,
-            texture_prefix: explosion.texture_prefix,
-        }).collect(),
-        lasers: snapshot.lasers.into_iter().map(|laser| LaserSnapshotDto {
-            id: laser.id,
-            start_x: laser.start_x,
-            start_y: laser.start_y,
-            end_x: laser.end_x,
-            end_y: laser.end_y,
-            color: laser.color,
-            width: laser.width,
-        }).collect(),
-        audio_events: snapshot.audio_events.into_iter().map(to_audio_dto).collect(),
+        meteors: snapshot
+            .meteors
+            .into_iter()
+            .map(|meteor| MeteorSnapshotDto {
+                id: meteor.id,
+                x: meteor.x,
+                y: meteor.y,
+                vx: meteor.vx,
+                vy: meteor.vy,
+                frame_index: meteor.frame_index,
+                texture_prefix: meteor.texture_prefix,
+            })
+            .collect(),
+        projectiles: snapshot
+            .projectiles
+            .into_iter()
+            .map(|projectile| ProjectileSnapshotDto {
+                id: projectile.id,
+                x: projectile.x,
+                y: projectile.y,
+                vx: projectile.vx,
+                vy: projectile.vy,
+                life: projectile.life,
+                texture_prefix: projectile.texture_prefix,
+            })
+            .collect(),
+        explosions: snapshot
+            .explosions
+            .into_iter()
+            .map(|explosion| ExplosionSnapshotDto {
+                id: explosion.id,
+                x: explosion.x,
+                y: explosion.y,
+                frame_index: explosion.frame_index,
+                texture_prefix: explosion.texture_prefix,
+            })
+            .collect(),
+        lasers: snapshot
+            .lasers
+            .into_iter()
+            .map(|laser| LaserSnapshotDto {
+                id: laser.id,
+                start_x: laser.start_x,
+                start_y: laser.start_y,
+                end_x: laser.end_x,
+                end_y: laser.end_y,
+                color: laser.color,
+                width: laser.width,
+            })
+            .collect(),
+        audio_events: snapshot
+            .audio_events
+            .into_iter()
+            .map(to_audio_dto)
+            .collect(),
     }
 }
 

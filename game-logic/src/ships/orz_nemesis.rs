@@ -6,10 +6,11 @@ use crate::traits::ship_trait::{
     SecondaryProjectileSpec, SpecialAbilitySpec,
 };
 
-const ORZ_HOWITZER_SPEED: f64 = 24.0;
-const ORZ_HOWITZER_LIFE: i32 = 18;
+const ORZ_HOWITZER_SPEED: f64 = 30.0;
+const ORZ_HOWITZER_LIFE: i32 = 48;
 const ORZ_HOWITZER_OFFSET: f64 = 20.0;
 const ORZ_HOWITZER_DAMAGE: i32 = 3;
+const ORZ_HOWITZER_TURN_RATE: f64 = std::f64::consts::PI / 32.0;
 const ORZ_MARINE_SPEED: f64 = 10.0;
 const ORZ_MARINE_LIFE: i32 = 90;
 const ORZ_MARINE_OFFSET: f64 = 14.0;
@@ -57,8 +58,8 @@ impl Ship for OrzNemesis {
             offset: ORZ_HOWITZER_OFFSET,
             turn_wait: 0,
             texture_prefix: "orz-howitzer",
-            sound_key: "",
-            behavior: ProjectileBehaviorSpec::Tracking,
+            sound_key: "orz-primary",
+            behavior: ProjectileBehaviorSpec::Straight,
             collision: ProjectileCollisionSpec::None,
             impact: ProjectileImpactSpec {
                 damage: ORZ_HOWITZER_DAMAGE,
@@ -68,6 +69,10 @@ impl Ship for OrzNemesis {
                 sound_key: "battle-boom-23",
             },
         })
+    }
+
+    fn primary_mount_turn_rate(&self) -> Option<f64> {
+        Some(ORZ_HOWITZER_TURN_RATE)
     }
 
     fn special_ability_spec(&self) -> SpecialAbilitySpec {
@@ -89,12 +94,12 @@ impl Ship for OrzNemesis {
                         texture_prefix: "battle-blast",
                         start_frame: 0,
                         end_frame: 7,
-                        sound_key: "battle-boom-23",
+                        sound_key: "",
                     },
                 },
                 spawns: &ORZ_MARINE_SPAWNS,
-                sound_key: "",
-                target_mode: ProjectileTargetMode::EnemyShip,
+                sound_key: "orz-secondary",
+                target_mode: ProjectileTargetMode::PlayerSelectedOrEnemyShip,
             },
         })
     }

@@ -10,8 +10,11 @@ use axum_extra::extract::cookie::CookieJar;
 use common::dto::{CreateGameRequestDto, JoinGameRequestDto, SaveSelectedRaceRequestDto};
 
 use super::{ApiAdapter, GameRoomHub};
-use crate::ports::{BattleSessionDrivenPort, GameDrivingPort, GameRoomDrivenPort, LoggerDrivingPort, SessionRepositoryDrivenPort};
 use crate::adapters::battle_session_hub::{BattleClientMessage, BattleServerMessage};
+use crate::ports::{
+    BattleSessionDrivenPort, GameDrivingPort, GameRoomDrivenPort, LoggerDrivingPort,
+    SessionRepositoryDrivenPort,
+};
 
 pub struct GameApiAdapter<
     GamePort: GameDrivingPort,
@@ -73,18 +76,55 @@ where
 {
     fn routes(self) -> axum::Router {
         axum::Router::new()
-            .route("/games", post(create_game::<GamePort, BattlePort, SessionPort, Logger>).get(list_games::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/events", get(connect_lobby_events::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}", get(find_game::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/instance", get(find_game_instance::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/events", get(connect_game_events::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/battle", get(connect_battle::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/join", post(join_game::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/leave", post(leave_game::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/cancel", post(cancel_game::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/start", post(start_game::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/complete", post(complete_game::<GamePort, BattlePort, SessionPort, Logger>))
-            .route("/games/{game_id}/race", put(save_selected_race::<GamePort, BattlePort, SessionPort, Logger>))
+            .route(
+                "/games",
+                post(create_game::<GamePort, BattlePort, SessionPort, Logger>)
+                    .get(list_games::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/events",
+                get(connect_lobby_events::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}",
+                get(find_game::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/instance",
+                get(find_game_instance::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/events",
+                get(connect_game_events::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/battle",
+                get(connect_battle::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/join",
+                post(join_game::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/leave",
+                post(leave_game::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/cancel",
+                post(cancel_game::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/start",
+                post(start_game::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/complete",
+                post(complete_game::<GamePort, BattlePort, SessionPort, Logger>),
+            )
+            .route(
+                "/games/{game_id}/race",
+                put(save_selected_race::<GamePort, BattlePort, SessionPort, Logger>),
+            )
             .with_state(Arc::new(AppState {
                 game: self.game,
                 game_rooms: self.game_rooms,
@@ -381,7 +421,11 @@ async fn save_selected_race<
         return StatusCode::UNAUTHORIZED.into_response();
     };
 
-    match state.game.save_selected_race(game_id, user.name, body).await {
+    match state
+        .game
+        .save_selected_race(game_id, user.name, body)
+        .await
+    {
         Ok(game) => Json(game).into_response(),
         Err(error) => {
             state.logger.log_error(&error);
@@ -403,7 +447,11 @@ fn session_user<
         .get("battlecontrol-session")
         .map(|cookie| cookie.value().to_string())?;
 
-    state.session_repo.load_session_user(&session_id).ok().flatten()
+    state
+        .session_repo
+        .load_session_user(&session_id)
+        .ok()
+        .flatten()
 }
 
 async fn game_events_socket(socket: WebSocket, game_rooms: GameRoomHub, game_id: String) {
@@ -526,12 +574,14 @@ async fn battle_socket<BattlePort: BattleSessionDrivenPort + Send + Sync + 'stat
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use crate::adapters::BattleSessionHub;
     use async_trait::async_trait;
     use axum::body::Body;
     use axum::http::StatusCode;
     use common::domain::Error;
-    use common::dto::{CreateGameRequestDto, GameDto, JoinGameRequestDto, SaveSelectedRaceRequestDto, UserDto};
-    use crate::adapters::BattleSessionHub;
+    use common::dto::{
+        CreateGameRequestDto, GameDto, JoinGameRequestDto, SaveSelectedRaceRequestDto, UserDto,
+    };
     use tower::ServiceExt;
 
     use super::*;
@@ -539,11 +589,7 @@ mod tests {
     use crate::adapters::{ApiAdapter, SqliteSessionRepository};
     use crate::ports::{GameDrivingPort, LoggerDrivingPort, SessionRepositoryDrivenPort};
     use crate::test_helpers::FakeLoggerDrivingPort;
-    use crate::test_helpers::sample_data::{
-        TEST_PLAYER_NAME,
-        test_create_game_request,
-        test_game,
-    };
+    use crate::test_helpers::sample_data::{TEST_PLAYER_NAME, test_create_game_request, test_game};
 
     const TEST_SESSION_ID: &str = "session-1";
 
@@ -562,13 +608,20 @@ mod tests {
         }
 
         fn create_game_calls(&self) -> Vec<String> {
-            self.create_game_calls.lock().expect("create_game_calls lock poisoned").clone()
+            self.create_game_calls
+                .lock()
+                .expect("create_game_calls lock poisoned")
+                .clone()
         }
     }
 
     #[async_trait]
     impl GameDrivingPort for FakeGameDrivingPort {
-        async fn create_game(&self, creator_name: String, _request: CreateGameRequestDto) -> Result<GameDto, Error> {
+        async fn create_game(
+            &self,
+            creator_name: String,
+            _request: CreateGameRequestDto,
+        ) -> Result<GameDto, Error> {
             self.create_game_calls
                 .lock()
                 .expect("create_game_calls lock poisoned")
@@ -576,7 +629,12 @@ mod tests {
             Ok(test_game())
         }
 
-        async fn join_game(&self, _game_id: String, _player_name: String, _request: JoinGameRequestDto) -> Result<GameDto, Error> {
+        async fn join_game(
+            &self,
+            _game_id: String,
+            _player_name: String,
+            _request: JoinGameRequestDto,
+        ) -> Result<GameDto, Error> {
             Ok(test_game())
         }
 
@@ -588,7 +646,11 @@ mod tests {
             Ok(())
         }
 
-        async fn start_game(&self, _game_id: String, _player_name: String) -> Result<GameDto, Error> {
+        async fn start_game(
+            &self,
+            _game_id: String,
+            _player_name: String,
+        ) -> Result<GameDto, Error> {
             Ok(test_game())
         }
 
@@ -643,7 +705,8 @@ mod tests {
             if self.with_session {
                 insert_session(&self.sqlite, TEST_SESSION_ID, test_user());
             }
-            let session_repo = SqliteSessionRepository::new(self.sqlite.clone()).expect("session repo");
+            let session_repo =
+                SqliteSessionRepository::new(self.sqlite.clone()).expect("session repo");
             let app = GameApiAdapter::new(
                 self.game.clone(),
                 GameRoomHub::new(),
@@ -736,7 +799,8 @@ mod tests {
     #[tokio::test]
     async fn create_game_uses_session_user_name_as_creator() {
         let (app, fake_game) = TestGameApiAdapterBuilder::new().with_session().build();
-        let request_json = serde_json::to_string(&test_create_game_request()).expect("serialize request");
+        let request_json =
+            serde_json::to_string(&test_create_game_request()).expect("serialize request");
 
         let _ = app
             .oneshot(
@@ -751,7 +815,10 @@ mod tests {
             .await
             .expect("request response");
 
-        assert_eq!(fake_game.create_game_calls(), vec![TEST_PLAYER_NAME.to_string()]);
+        assert_eq!(
+            fake_game.create_game_calls(),
+            vec![TEST_PLAYER_NAME.to_string()]
+        );
     }
 
     #[test]
@@ -789,7 +856,12 @@ mod tests {
         fn assert_api_adapter<T: ApiAdapter>() {}
         fn assert_logger_port<T: LoggerDrivingPort>() {}
         assert_api_adapter::<
-            GameApiAdapter<FakeGameDrivingPort, BattleSessionHub, SqliteSessionRepository, FakeLoggerDrivingPort>,
+            GameApiAdapter<
+                FakeGameDrivingPort,
+                BattleSessionHub,
+                SqliteSessionRepository,
+                FakeLoggerDrivingPort,
+            >,
         >();
         assert_logger_port::<FakeLoggerDrivingPort>();
     }

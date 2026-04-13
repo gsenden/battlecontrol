@@ -11,11 +11,11 @@ mod passkey_start_registration_request_dto;
 mod profile_image_upload_dto;
 mod recover_user_request_dto;
 mod recovery_code_dto;
-mod user_dto;
-mod user_settings_dto;
 mod registration_request_dto;
 mod save_selected_race_request_dto;
 mod update_user_profile_request_dto;
+mod user_dto;
+mod user_settings_dto;
 
 pub use create_game_request_dto::CreateGameRequestDto;
 pub use game_dto::GameDto;
@@ -30,8 +30,8 @@ pub use passkey_start_registration_request_dto::PasskeyStartRegistrationRequestD
 pub use profile_image_upload_dto::ProfileImageUploadDto;
 pub use recover_user_request_dto::RecoverUserRequestDto;
 pub use recovery_code_dto::RecoveryCodeDto;
-pub use user_dto::UserDto;
-pub use user_settings_dto::UserSettingsDto;
 pub use registration_request_dto::RegistrationRequestDto;
 pub use save_selected_race_request_dto::SaveSelectedRaceRequestDto;
 pub use update_user_profile_request_dto::UpdateUserProfileRequestDto;
+pub use user_dto::UserDto;
+pub use user_settings_dto::UserSettingsDto;

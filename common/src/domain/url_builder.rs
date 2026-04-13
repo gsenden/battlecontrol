@@ -7,15 +7,26 @@ impl UrlBuilder {
     pub fn build(host: &str, port: &str, path: &str) -> Result<url::Url, Error> {
         let host = host.trim_end_matches(':');
         let path = path.trim_end_matches('/');
-        let path = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
+        let path = if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{path}")
+        };
 
-        let mut url = url::Url::parse("http://placeholder")
-            .map_err(|_| Error::InvalidUrl(InvalidUrlError::new(
-                host.to_string(), port.to_string(), path.to_string(),
-            )))?;
-        let make_err = || Error::InvalidUrl(InvalidUrlError::new(
-            host.to_string(), port.to_string(), path.clone(),
-        ));
+        let mut url = url::Url::parse("http://placeholder").map_err(|_| {
+            Error::InvalidUrl(InvalidUrlError::new(
+                host.to_string(),
+                port.to_string(),
+                path.to_string(),
+            ))
+        })?;
+        let make_err = || {
+            Error::InvalidUrl(InvalidUrlError::new(
+                host.to_string(),
+                port.to_string(),
+                path.clone(),
+            ))
+        };
 
         url.set_host(Some(host)).map_err(|_| make_err())?;
         url.set_port(Some(port.parse().map_err(|_| make_err())?))

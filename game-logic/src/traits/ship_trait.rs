@@ -85,6 +85,7 @@ pub struct InstantLaserSpec {
 
 #[derive(Clone, Copy)]
 pub enum ProjectileBehaviorSpec {
+    Straight,
     Tracking,
     WobbleTracking {
         direct_track_range: f64,
@@ -251,22 +252,54 @@ macro_rules! define_ship_struct {
         }
 
         impl $crate::traits::ship_trait::ShipState for $name {
-            fn crew(&self) -> i32 { self.crew }
-            fn set_crew(&mut self, value: i32) { self.crew = value }
-            fn energy(&self) -> i32 { self.energy }
-            fn set_energy(&mut self, value: i32) { self.energy = value }
-            fn facing(&self) -> f64 { self.facing }
-            fn set_facing(&mut self, value: f64) { self.facing = value }
-            fn turn_counter(&self) -> i32 { self.turn_counter }
-            fn set_turn_counter(&mut self, value: i32) { self.turn_counter = value }
-            fn thrust_counter(&self) -> i32 { self.thrust_counter }
-            fn set_thrust_counter(&mut self, value: i32) { self.thrust_counter = value }
-            fn weapon_counter(&self) -> i32 { self.weapon_counter }
-            fn set_weapon_counter(&mut self, value: i32) { self.weapon_counter = value }
-            fn special_counter(&self) -> i32 { self.special_counter }
-            fn set_special_counter(&mut self, value: i32) { self.special_counter = value }
-            fn energy_counter(&self) -> i32 { self.energy_counter }
-            fn set_energy_counter(&mut self, value: i32) { self.energy_counter = value }
+            fn crew(&self) -> i32 {
+                self.crew
+            }
+            fn set_crew(&mut self, value: i32) {
+                self.crew = value
+            }
+            fn energy(&self) -> i32 {
+                self.energy
+            }
+            fn set_energy(&mut self, value: i32) {
+                self.energy = value
+            }
+            fn facing(&self) -> f64 {
+                self.facing
+            }
+            fn set_facing(&mut self, value: f64) {
+                self.facing = value
+            }
+            fn turn_counter(&self) -> i32 {
+                self.turn_counter
+            }
+            fn set_turn_counter(&mut self, value: i32) {
+                self.turn_counter = value
+            }
+            fn thrust_counter(&self) -> i32 {
+                self.thrust_counter
+            }
+            fn set_thrust_counter(&mut self, value: i32) {
+                self.thrust_counter = value
+            }
+            fn weapon_counter(&self) -> i32 {
+                self.weapon_counter
+            }
+            fn set_weapon_counter(&mut self, value: i32) {
+                self.weapon_counter = value
+            }
+            fn special_counter(&self) -> i32 {
+                self.special_counter
+            }
+            fn set_special_counter(&mut self, value: i32) {
+                self.special_counter = value
+            }
+            fn energy_counter(&self) -> i32 {
+                self.energy_counter
+            }
+            fn set_energy_counter(&mut self, value: i32) {
+                self.energy_counter = value
+            }
         }
     };
 }
@@ -330,7 +363,10 @@ pub trait Ship: ShipState {
         None
     }
 
-    fn primary_projectile_spec_for_state(&self, _special_active: bool) -> Option<PrimaryProjectileSpec> {
+    fn primary_projectile_spec_for_state(
+        &self,
+        _special_active: bool,
+    ) -> Option<PrimaryProjectileSpec> {
         self.primary_projectile_spec()
     }
 
@@ -346,7 +382,10 @@ pub trait Ship: ShipState {
         None
     }
 
-    fn primary_instant_laser_spec_for_state(&self, _special_active: bool) -> Option<InstantLaserSpec> {
+    fn primary_instant_laser_spec_for_state(
+        &self,
+        _special_active: bool,
+    ) -> Option<InstantLaserSpec> {
         self.primary_instant_laser_spec()
     }
 
@@ -368,6 +407,10 @@ pub trait Ship: ShipState {
 
     fn primary_projectile_inherits_ship_velocity(&self) -> bool {
         false
+    }
+
+    fn primary_mount_turn_rate(&self) -> Option<f64> {
+        None
     }
 
     fn thrust_velocity(
@@ -398,7 +441,10 @@ pub trait Ship: ShipState {
         None
     }
 
-    fn primary_projectile_target_mode_for_state(&self, _special_active: bool) -> ProjectileTargetMode {
+    fn primary_projectile_target_mode_for_state(
+        &self,
+        _special_active: bool,
+    ) -> ProjectileTargetMode {
         self.primary_projectile_target_mode()
     }
 
@@ -482,27 +528,69 @@ pub trait Ship: ShipState {
         self.set_energy_counter(self.energy_counter() - amount);
     }
 
-    fn race_name(&self) -> &'static str { Self::RACE_NAME }
-    fn ship_class(&self) -> &'static str { Self::SHIP_CLASS }
-    fn sprite_prefix(&self) -> &'static str { Self::SPRITE_PREFIX }
-    fn captain_names(&self) -> &'static [&'static str] { Self::CAPTAIN_NAMES }
-    fn cost(&self) -> i32 { Self::COST }
-    fn color(&self) -> u32 { Self::COLOR }
-    fn size(&self) -> f64 { Self::SIZE }
-    fn mass(&self) -> f64 { Self::MASS }
-    fn thrust_increment(&self) -> f64 { Self::THRUST_INCREMENT }
-    fn max_speed(&self) -> f64 { Self::MAX_SPEED }
-    fn turn_rate(&self) -> f64 { Self::TURN_RATE }
-    fn turn_wait(&self) -> i32 { Self::TURN_WAIT }
-    fn thrust_wait(&self) -> i32 { Self::THRUST_WAIT }
-    fn weapon_wait(&self) -> i32 { Self::WEAPON_WAIT }
-    fn special_wait(&self) -> i32 { Self::SPECIAL_WAIT }
-    fn max_energy(&self) -> i32 { Self::MAX_ENERGY }
-    fn energy_regeneration(&self) -> i32 { Self::ENERGY_REGENERATION }
-    fn energy_wait(&self) -> i32 { Self::ENERGY_WAIT }
-    fn weapon_energy_cost(&self) -> i32 { Self::WEAPON_ENERGY_COST }
-    fn special_energy_cost(&self) -> i32 { Self::SPECIAL_ENERGY_COST }
-    fn max_crew(&self) -> i32 { Self::MAX_CREW }
+    fn race_name(&self) -> &'static str {
+        Self::RACE_NAME
+    }
+    fn ship_class(&self) -> &'static str {
+        Self::SHIP_CLASS
+    }
+    fn sprite_prefix(&self) -> &'static str {
+        Self::SPRITE_PREFIX
+    }
+    fn captain_names(&self) -> &'static [&'static str] {
+        Self::CAPTAIN_NAMES
+    }
+    fn cost(&self) -> i32 {
+        Self::COST
+    }
+    fn color(&self) -> u32 {
+        Self::COLOR
+    }
+    fn size(&self) -> f64 {
+        Self::SIZE
+    }
+    fn mass(&self) -> f64 {
+        Self::MASS
+    }
+    fn thrust_increment(&self) -> f64 {
+        Self::THRUST_INCREMENT
+    }
+    fn max_speed(&self) -> f64 {
+        Self::MAX_SPEED
+    }
+    fn turn_rate(&self) -> f64 {
+        Self::TURN_RATE
+    }
+    fn turn_wait(&self) -> i32 {
+        Self::TURN_WAIT
+    }
+    fn thrust_wait(&self) -> i32 {
+        Self::THRUST_WAIT
+    }
+    fn weapon_wait(&self) -> i32 {
+        Self::WEAPON_WAIT
+    }
+    fn special_wait(&self) -> i32 {
+        Self::SPECIAL_WAIT
+    }
+    fn max_energy(&self) -> i32 {
+        Self::MAX_ENERGY
+    }
+    fn energy_regeneration(&self) -> i32 {
+        Self::ENERGY_REGENERATION
+    }
+    fn energy_wait(&self) -> i32 {
+        Self::ENERGY_WAIT
+    }
+    fn weapon_energy_cost(&self) -> i32 {
+        Self::WEAPON_ENERGY_COST
+    }
+    fn special_energy_cost(&self) -> i32 {
+        Self::SPECIAL_ENERGY_COST
+    }
+    fn max_crew(&self) -> i32 {
+        Self::MAX_CREW
+    }
 
     fn update(
         &mut self,
@@ -513,7 +601,8 @@ pub trait Ship: ShipState {
         let current_speed = (velocity.x.powi(2) + velocity.y.powi(2)).sqrt();
         self.regenerate_energy();
         self.apply_turning(input);
-        let thrust_command = self.apply_thrust(input, velocity, allow_beyond_max_speed, current_speed);
+        let thrust_command =
+            self.apply_thrust(input, velocity, allow_beyond_max_speed, current_speed);
         self.apply_weapon_input(input);
         self.apply_special_input(input);
         thrust_command.into_iter().collect()
@@ -555,7 +644,10 @@ pub trait Ship: ShipState {
         } else if input.thrust {
             let (vx, vy) = self
                 .thrust_velocity(velocity, allow_beyond_max_speed, current_speed)
-                .unwrap_or((self.facing().cos() * self.max_speed(), self.facing().sin() * self.max_speed()));
+                .unwrap_or((
+                    self.facing().cos() * self.max_speed(),
+                    self.facing().sin() * self.max_speed(),
+                ));
             self.set_thrust_counter(self.thrust_wait());
             Some(PhysicsCommand::SetVelocity { vx, vy })
         } else {
@@ -621,9 +713,8 @@ pub trait Ship: ShipState {
 
 fn get_thrust_velocity(input: ThrustVelocityInput<'_>) -> (f64, f64) {
     let gravity_max = input.max_speed * GRAVITY_WELL_SPEED_MULTIPLIER;
-    let travel_aligned =
-        input.current_speed <= TRAVEL_ALIGNMENT_EPSILON
-            || is_travel_aligned(input.facing, input.current_velocity);
+    let travel_aligned = input.current_speed <= TRAVEL_ALIGNMENT_EPSILON
+        || is_travel_aligned(input.facing, input.current_velocity);
 
     if !input.allow_beyond_max_speed && travel_aligned && input.current_speed > input.max_speed {
         return (input.current_velocity.x, input.current_velocity.y);
@@ -639,14 +730,10 @@ fn get_thrust_velocity(input: ThrustVelocityInput<'_>) -> (f64, f64) {
 
     if !travel_aligned && input.current_speed >= input.max_speed {
         let travel_angle = input.current_velocity.y.atan2(input.current_velocity.x);
-        let rotated_x =
-            input.current_velocity.x
-                + (input.dvx * 0.5)
-                - (travel_angle.cos() * input.thrust_increment);
-        let rotated_y =
-            input.current_velocity.y
-                + (input.dvy * 0.5)
-                - (travel_angle.sin() * input.thrust_increment);
+        let rotated_x = input.current_velocity.x + (input.dvx * 0.5)
+            - (travel_angle.cos() * input.thrust_increment);
+        let rotated_y = input.current_velocity.y + (input.dvy * 0.5)
+            - (travel_angle.sin() * input.thrust_increment);
         let rotated_speed = (rotated_x.powi(2) + rotated_y.powi(2)).sqrt();
 
         if rotated_speed <= gravity_max || rotated_speed < input.current_speed {
@@ -667,7 +754,10 @@ fn get_thrust_velocity(input: ThrustVelocityInput<'_>) -> (f64, f64) {
             input.max_speed
         }
         .min(desired_speed);
-        return (input.facing.cos() * limited_speed, input.facing.sin() * limited_speed);
+        return (
+            input.facing.cos() * limited_speed,
+            input.facing.sin() * limited_speed,
+        );
     }
 
     (input.current_velocity.x, input.current_velocity.y)
@@ -675,7 +765,9 @@ fn get_thrust_velocity(input: ThrustVelocityInput<'_>) -> (f64, f64) {
 
 fn is_travel_aligned(facing: f64, current_velocity: &VelocityVector) -> bool {
     let travel_angle = current_velocity.y.atan2(current_velocity.x);
-    let facing_delta = (facing - travel_angle).sin().atan2((facing - travel_angle).cos());
+    let facing_delta = (facing - travel_angle)
+        .sin()
+        .atan2((facing - travel_angle).cos());
     facing_delta.abs() <= TRAVEL_ALIGNMENT_EPSILON
 }
 
@@ -686,7 +778,13 @@ mod tests {
     use crate::ships::{AnyShip, ArilouSkiff, ChmmrAvatar, HumanCruiser};
 
     fn no_input() -> ShipInput {
-        ShipInput { left: false, right: false, thrust: false, weapon: false, special: false }
+        ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        }
     }
 
     fn zero_velocity() -> VelocityVector {
@@ -722,7 +820,14 @@ mod tests {
     #[test]
     fn energy_regenerates_after_weapon_fire() {
         let mut ship = HumanCruiser::new();
-        ship.update(&ShipInput { weapon: true, ..no_input() }, &zero_velocity(), false);
+        ship.update(
+            &ShipInput {
+                weapon: true,
+                ..no_input()
+            },
+            &zero_velocity(),
+            false,
+        );
         for _ in 0..9 {
             ship.update(&no_input(), &zero_velocity(), false);
         }
@@ -736,7 +841,10 @@ mod tests {
         let frame0 = &ref_data.energy.frames[0];
 
         let mut ship = HumanCruiser::new();
-        let input = ShipInput { weapon: true, ..no_input() };
+        let input = ShipInput {
+            weapon: true,
+            ..no_input()
+        };
         ship.update(&input, &zero_velocity(), false);
 
         assert_eq!(ship.weapon_counter(), frame0.weapon_counter);
@@ -748,7 +856,10 @@ mod tests {
         let frame0 = &ref_data.energy.frames[0];
 
         let mut ship = HumanCruiser::new();
-        let input = ShipInput { weapon: true, ..no_input() };
+        let input = ShipInput {
+            weapon: true,
+            ..no_input()
+        };
         ship.update(&input, &zero_velocity(), false);
 
         assert_eq!(ship.energy(), frame0.energy);
@@ -757,7 +868,10 @@ mod tests {
     #[test]
     fn weapon_fire_resets_energy_counter_to_energy_wait() {
         let mut ship = HumanCruiser::new();
-        let input = ShipInput { weapon: true, ..no_input() };
+        let input = ShipInput {
+            weapon: true,
+            ..no_input()
+        };
         ship.update(&input, &zero_velocity(), false);
 
         assert_eq!(ship.energy_counter(), ship.energy_wait());

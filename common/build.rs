@@ -85,13 +85,17 @@ fn validate_i18n(codes: &[String], i18n_dir: &Path) {
 
         for key in &first_keys {
             if !other_keys.contains(key) {
-                panic!("Key '{key}' exists in {first_name}.yaml but is missing in {other_name}.yaml");
+                panic!(
+                    "Key '{key}' exists in {first_name}.yaml but is missing in {other_name}.yaml"
+                );
             }
         }
 
         for key in &other_keys {
             if !first_keys.contains(key) {
-                panic!("Key '{key}' exists in {other_name}.yaml but is missing in {first_name}.yaml");
+                panic!(
+                    "Key '{key}' exists in {other_name}.yaml but is missing in {first_name}.yaml"
+                );
             }
         }
     }
@@ -166,7 +170,9 @@ fn generate_i18n_enum(i18n_dir: &Path, out_dir: &Path) {
                     format!("                I18n::{variant} => \"{text}\",\n")
                 })
                 .collect();
-            format!("            Language::{lang_variant} => match self {{\n{arms}            }},\n")
+            format!(
+                "            Language::{lang_variant} => match self {{\n{arms}            }},\n"
+            )
         })
         .collect();
 
@@ -186,9 +192,12 @@ fn generate_i18n_enum(i18n_dir: &Path, out_dir: &Path) {
 
 fn generate_resource_enum(openapi_path: &Path, out_dir: &Path) {
     let content = fs::read_to_string(openapi_path).expect("Could not read openapi.yaml");
-    let spec: serde_yml::Value = serde_yml::from_str(&content).expect("Could not parse openapi.yaml");
+    let spec: serde_yml::Value =
+        serde_yml::from_str(&content).expect("Could not parse openapi.yaml");
 
-    let paths = spec["paths"].as_mapping().expect("Missing 'paths' in openapi.yaml");
+    let paths = spec["paths"]
+        .as_mapping()
+        .expect("Missing 'paths' in openapi.yaml");
 
     let mut resources: Vec<(String, String)> = paths
         .keys()
@@ -235,7 +244,9 @@ fn collect_env_vars(
     prefix: &str,
     result: &mut Vec<(String, String, String)>,
 ) {
-    let mapping = value.as_mapping().expect("Expected mapping in env vars yaml");
+    let mapping = value
+        .as_mapping()
+        .expect("Expected mapping in env vars yaml");
     for (key, val) in mapping {
         let key = key.as_str().unwrap();
         let path = if prefix.is_empty() {
@@ -250,7 +261,11 @@ fn collect_env_vars(
                 let default_key = serde_yml::Value::String("default".to_string());
                 let env_name = inner[&env_key].as_str().unwrap();
                 let default = inner[&default_key].as_str().unwrap();
-                result.push((to_pascal_case(&path.to_lowercase()), env_name.to_string(), default.to_string()));
+                result.push((
+                    to_pascal_case(&path.to_lowercase()),
+                    env_name.to_string(),
+                    default.to_string(),
+                ));
             } else {
                 collect_env_vars(val, &path, result);
             }
@@ -259,8 +274,10 @@ fn collect_env_vars(
 }
 
 fn generate_env_var_enum(env_vars_path: &Path, out_dir: &Path) {
-    let content = fs::read_to_string(env_vars_path).expect("Could not read environment_variables_defaults.yaml");
-    let spec: serde_yml::Value = serde_yml::from_str(&content).expect("Could not parse environment_variables_defaults.yaml");
+    let content = fs::read_to_string(env_vars_path)
+        .expect("Could not read environment_variables_defaults.yaml");
+    let spec: serde_yml::Value =
+        serde_yml::from_str(&content).expect("Could not parse environment_variables_defaults.yaml");
 
     let mut vars = Vec::new();
     collect_env_vars(&spec, "", &mut vars);
@@ -387,12 +404,8 @@ fn generate_error_enum(codes: &[String], i18n_dir: &Path, out_dir: &Path) {
         ));
 
         // Match arms for Error impl
-        match_key_arms.push_str(&format!(
-            "            Error::{variant}(e) => e.key(),\n"
-        ));
-        match_params_arms.push_str(&format!(
-            "            Error::{variant}(e) => e.params(),\n"
-        ));
+        match_key_arms.push_str(&format!("            Error::{variant}(e) => e.key(),\n"));
+        match_params_arms.push_str(&format!("            Error::{variant}(e) => e.params(),\n"));
     }
 
     let generated = format!(
@@ -434,9 +447,7 @@ fn main() {
     let default_language = read_i18n_config(i18n_dir);
 
     if !languages.iter().any(|l| l == &default_language) {
-        panic!(
-            "Default language '{default_language}' has no YAML file in shared/i18n/"
-        );
+        panic!("Default language '{default_language}' has no YAML file in shared/i18n/");
     }
 
     validate_i18n(&codes, i18n_dir);

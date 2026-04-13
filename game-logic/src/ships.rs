@@ -95,7 +95,11 @@ impl AnyShip {
         dispatch_mut!(self, apply_collision_cooldowns())
     }
 
-    pub fn gravity_command(&self, dx: f64, dy: f64) -> Option<crate::physics_command::PhysicsCommand> {
+    pub fn gravity_command(
+        &self,
+        dx: f64,
+        dy: f64,
+    ) -> Option<crate::physics_command::PhysicsCommand> {
         dispatch_ref!(self, gravity_command(dx, dy))
     }
 
@@ -103,15 +107,36 @@ impl AnyShip {
         dispatch_mut!(self, take_damage(amount))
     }
 
-    pub fn crew(&self) -> i32 { dispatch_ref!(self, crew()) }
-    pub fn energy(&self) -> i32 { dispatch_ref!(self, energy()) }
-    pub fn facing(&self) -> f64 { dispatch_ref!(self, facing()) }
-    pub fn turn_counter(&self) -> i32 { dispatch_ref!(self, turn_counter()) }
-    pub fn thrust_counter(&self) -> i32 { dispatch_ref!(self, thrust_counter()) }
-    pub fn weapon_counter(&self) -> i32 { dispatch_ref!(self, weapon_counter()) }
-    pub fn special_counter(&self) -> i32 { dispatch_ref!(self, special_counter()) }
-    pub fn energy_counter(&self) -> i32 { dispatch_ref!(self, energy_counter()) }
-    pub fn hit_polygon(&self, facing: i32, center_x: f64, center_y: f64) -> Vec<crate::traits::ship_trait::HitPolygonPoint> {
+    pub fn crew(&self) -> i32 {
+        dispatch_ref!(self, crew())
+    }
+    pub fn energy(&self) -> i32 {
+        dispatch_ref!(self, energy())
+    }
+    pub fn facing(&self) -> f64 {
+        dispatch_ref!(self, facing())
+    }
+    pub fn turn_counter(&self) -> i32 {
+        dispatch_ref!(self, turn_counter())
+    }
+    pub fn thrust_counter(&self) -> i32 {
+        dispatch_ref!(self, thrust_counter())
+    }
+    pub fn weapon_counter(&self) -> i32 {
+        dispatch_ref!(self, weapon_counter())
+    }
+    pub fn special_counter(&self) -> i32 {
+        dispatch_ref!(self, special_counter())
+    }
+    pub fn energy_counter(&self) -> i32 {
+        dispatch_ref!(self, energy_counter())
+    }
+    pub fn hit_polygon(
+        &self,
+        facing: i32,
+        center_x: f64,
+        center_y: f64,
+    ) -> Vec<crate::traits::ship_trait::HitPolygonPoint> {
         dispatch_ref!(self, hit_polygon(facing, center_x, center_y))
     }
     pub fn hit_polygon_for_state(
@@ -121,42 +146,113 @@ impl AnyShip {
         center_y: f64,
         special_active: bool,
     ) -> Vec<crate::traits::ship_trait::HitPolygonPoint> {
-        dispatch_ref!(self, hit_polygon_for_state(facing, center_x, center_y, special_active))
+        dispatch_ref!(
+            self,
+            hit_polygon_for_state(facing, center_x, center_y, special_active)
+        )
     }
-    pub fn set_crew(&mut self, value: i32) { dispatch_mut!(self, set_crew(value)) }
-    pub fn set_energy(&mut self, value: i32) { dispatch_mut!(self, set_energy(value)) }
-    pub fn set_turn_counter(&mut self, value: i32) { dispatch_mut!(self, set_turn_counter(value)) }
-    pub fn set_thrust_counter(&mut self, value: i32) { dispatch_mut!(self, set_thrust_counter(value)) }
-    pub fn set_special_counter(&mut self, value: i32) { dispatch_mut!(self, set_special_counter(value)) }
-    pub fn set_energy_counter(&mut self, value: i32) { dispatch_mut!(self, set_energy_counter(value)) }
-    pub fn decrease_energy(&mut self, amount: i32) { dispatch_mut!(self, decrease_energy(amount)) }
-    pub fn decrease_facing(&mut self, amount: f64) { dispatch_mut!(self, decrease_facing(amount)) }
-    pub fn increase_facing(&mut self, amount: f64) { dispatch_mut!(self, increase_facing(amount)) }
-    pub fn decrease_turn_counter(&mut self, amount: i32) { dispatch_mut!(self, decrease_turn_counter(amount)) }
-    pub fn decrease_thrust_counter(&mut self, amount: i32) { dispatch_mut!(self, decrease_thrust_counter(amount)) }
-    pub fn decrease_energy_counter(&mut self, amount: i32) { dispatch_mut!(self, decrease_energy_counter(amount)) }
-    pub fn race_name(&self) -> &'static str { dispatch_ref!(self, race_name()) }
-    pub fn ship_class(&self) -> &'static str { dispatch_ref!(self, ship_class()) }
-    pub fn sprite_prefix(&self) -> &'static str { dispatch_ref!(self, sprite_prefix()) }
-    pub fn captain_names(&self) -> &'static [&'static str] { dispatch_ref!(self, captain_names()) }
-    pub fn cost(&self) -> i32 { dispatch_ref!(self, cost()) }
-    pub fn color(&self) -> u32 { dispatch_ref!(self, color()) }
-    pub fn size(&self) -> f64 { dispatch_ref!(self, size()) }
-    pub fn mass(&self) -> f64 { dispatch_ref!(self, mass()) }
-    pub fn thrust_increment(&self) -> f64 { dispatch_ref!(self, thrust_increment()) }
-    pub fn max_speed(&self) -> f64 { dispatch_ref!(self, max_speed()) }
-    pub fn turn_rate(&self) -> f64 { dispatch_ref!(self, turn_rate()) }
-    pub fn turn_wait(&self) -> i32 { dispatch_ref!(self, turn_wait()) }
-    pub fn thrust_wait(&self) -> i32 { dispatch_ref!(self, thrust_wait()) }
-    pub fn weapon_wait(&self) -> i32 { dispatch_ref!(self, weapon_wait()) }
-    pub fn special_wait(&self) -> i32 { dispatch_ref!(self, special_wait()) }
-    pub fn max_energy(&self) -> i32 { dispatch_ref!(self, max_energy()) }
-    pub fn energy_regeneration(&self) -> i32 { dispatch_ref!(self, energy_regeneration()) }
-    pub fn energy_wait(&self) -> i32 { dispatch_ref!(self, energy_wait()) }
-    pub fn weapon_energy_cost(&self) -> i32 { dispatch_ref!(self, weapon_energy_cost()) }
-    pub fn special_energy_cost(&self) -> i32 { dispatch_ref!(self, special_energy_cost()) }
-    pub fn max_crew(&self) -> i32 { dispatch_ref!(self, max_crew()) }
-    pub fn primary_projectile_spec(&self) -> Option<crate::traits::ship_trait::PrimaryProjectileSpec> {
+    pub fn set_crew(&mut self, value: i32) {
+        dispatch_mut!(self, set_crew(value))
+    }
+    pub fn set_energy(&mut self, value: i32) {
+        dispatch_mut!(self, set_energy(value))
+    }
+    pub fn set_turn_counter(&mut self, value: i32) {
+        dispatch_mut!(self, set_turn_counter(value))
+    }
+    pub fn set_thrust_counter(&mut self, value: i32) {
+        dispatch_mut!(self, set_thrust_counter(value))
+    }
+    pub fn set_special_counter(&mut self, value: i32) {
+        dispatch_mut!(self, set_special_counter(value))
+    }
+    pub fn set_energy_counter(&mut self, value: i32) {
+        dispatch_mut!(self, set_energy_counter(value))
+    }
+    pub fn decrease_energy(&mut self, amount: i32) {
+        dispatch_mut!(self, decrease_energy(amount))
+    }
+    pub fn decrease_facing(&mut self, amount: f64) {
+        dispatch_mut!(self, decrease_facing(amount))
+    }
+    pub fn increase_facing(&mut self, amount: f64) {
+        dispatch_mut!(self, increase_facing(amount))
+    }
+    pub fn decrease_turn_counter(&mut self, amount: i32) {
+        dispatch_mut!(self, decrease_turn_counter(amount))
+    }
+    pub fn decrease_thrust_counter(&mut self, amount: i32) {
+        dispatch_mut!(self, decrease_thrust_counter(amount))
+    }
+    pub fn decrease_energy_counter(&mut self, amount: i32) {
+        dispatch_mut!(self, decrease_energy_counter(amount))
+    }
+    pub fn race_name(&self) -> &'static str {
+        dispatch_ref!(self, race_name())
+    }
+    pub fn ship_class(&self) -> &'static str {
+        dispatch_ref!(self, ship_class())
+    }
+    pub fn sprite_prefix(&self) -> &'static str {
+        dispatch_ref!(self, sprite_prefix())
+    }
+    pub fn captain_names(&self) -> &'static [&'static str] {
+        dispatch_ref!(self, captain_names())
+    }
+    pub fn cost(&self) -> i32 {
+        dispatch_ref!(self, cost())
+    }
+    pub fn color(&self) -> u32 {
+        dispatch_ref!(self, color())
+    }
+    pub fn size(&self) -> f64 {
+        dispatch_ref!(self, size())
+    }
+    pub fn mass(&self) -> f64 {
+        dispatch_ref!(self, mass())
+    }
+    pub fn thrust_increment(&self) -> f64 {
+        dispatch_ref!(self, thrust_increment())
+    }
+    pub fn max_speed(&self) -> f64 {
+        dispatch_ref!(self, max_speed())
+    }
+    pub fn turn_rate(&self) -> f64 {
+        dispatch_ref!(self, turn_rate())
+    }
+    pub fn turn_wait(&self) -> i32 {
+        dispatch_ref!(self, turn_wait())
+    }
+    pub fn thrust_wait(&self) -> i32 {
+        dispatch_ref!(self, thrust_wait())
+    }
+    pub fn weapon_wait(&self) -> i32 {
+        dispatch_ref!(self, weapon_wait())
+    }
+    pub fn special_wait(&self) -> i32 {
+        dispatch_ref!(self, special_wait())
+    }
+    pub fn max_energy(&self) -> i32 {
+        dispatch_ref!(self, max_energy())
+    }
+    pub fn energy_regeneration(&self) -> i32 {
+        dispatch_ref!(self, energy_regeneration())
+    }
+    pub fn energy_wait(&self) -> i32 {
+        dispatch_ref!(self, energy_wait())
+    }
+    pub fn weapon_energy_cost(&self) -> i32 {
+        dispatch_ref!(self, weapon_energy_cost())
+    }
+    pub fn special_energy_cost(&self) -> i32 {
+        dispatch_ref!(self, special_energy_cost())
+    }
+    pub fn max_crew(&self) -> i32 {
+        dispatch_ref!(self, max_crew())
+    }
+    pub fn primary_projectile_spec(
+        &self,
+    ) -> Option<crate::traits::ship_trait::PrimaryProjectileSpec> {
         dispatch_ref!(self, primary_projectile_spec())
     }
     pub fn primary_projectile_spec_for_state(
@@ -174,7 +270,9 @@ impl AnyShip {
     ) -> Option<crate::traits::ship_trait::ProjectileVolleySpec> {
         dispatch_ref!(self, primary_volley_spec_for_state(special_active))
     }
-    pub fn primary_instant_laser_spec(&self) -> Option<crate::traits::ship_trait::InstantLaserSpec> {
+    pub fn primary_instant_laser_spec(
+        &self,
+    ) -> Option<crate::traits::ship_trait::InstantLaserSpec> {
         dispatch_ref!(self, primary_instant_laser_spec())
     }
     pub fn primary_instant_laser_spec_for_state(
@@ -192,17 +290,31 @@ impl AnyShip {
     pub fn special_ability_spec(&self) -> crate::traits::ship_trait::SpecialAbilitySpec {
         dispatch_ref!(self, special_ability_spec())
     }
-    pub fn primary_projectile_target_mode(&self) -> crate::traits::ship_trait::ProjectileTargetMode {
+    pub fn primary_projectile_target_mode(
+        &self,
+    ) -> crate::traits::ship_trait::ProjectileTargetMode {
         dispatch_ref!(self, primary_projectile_target_mode())
     }
     pub fn primary_projectile_target_mode_for_state(
         &self,
         special_active: bool,
     ) -> crate::traits::ship_trait::ProjectileTargetMode {
-        dispatch_ref!(self, primary_projectile_target_mode_for_state(special_active))
+        dispatch_ref!(
+            self,
+            primary_projectile_target_mode_for_state(special_active)
+        )
     }
-    pub fn primary_projectile_inherits_ship_velocity_for_state(&self, special_active: bool) -> bool {
-        dispatch_ref!(self, primary_projectile_inherits_ship_velocity_for_state(special_active))
+    pub fn primary_projectile_inherits_ship_velocity_for_state(
+        &self,
+        special_active: bool,
+    ) -> bool {
+        dispatch_ref!(
+            self,
+            primary_projectile_inherits_ship_velocity_for_state(special_active)
+        )
+    }
+    pub fn primary_mount_turn_rate(&self) -> Option<f64> {
+        dispatch_ref!(self, primary_mount_turn_rate())
     }
     pub fn special_state_persists_after_cooldown(&self) -> bool {
         dispatch_ref!(self, special_state_persists_after_cooldown())
@@ -234,17 +346,21 @@ pub fn apply_collision_between(ships: &mut [AnyShip], ship_a_id: usize, ship_b_i
 #[cfg(test)]
 mod tests {
     use super::{
-        AndrosynthGuardian, AnyShip, ArilouSkiff, ChenjesuBroodhome, ChmmrAvatar,
-        DruugeMauler, HumanCruiser, KohrahMarauder, MelnormeTrader, MmrnmhrmXform,
-        MyconPodship, OrzNemesis, PkunkFury, ShofixtiScout, SpathiEluder,
-        IlwrathAvenger, SlylandroProbe, SyreenPenetrator, UmgahDrone, UrquanDreadnought,
-        UtwigJugger, VuxIntruder, YehatTerminator, ZoqfotpikStinger, apply_collision_between,
+        AndrosynthGuardian, AnyShip, ArilouSkiff, ChenjesuBroodhome, ChmmrAvatar, DruugeMauler,
+        HumanCruiser, IlwrathAvenger, KohrahMarauder, MelnormeTrader, MmrnmhrmXform, MyconPodship,
+        OrzNemesis, PkunkFury, ShofixtiScout, SlylandroProbe, SpathiEluder, SyreenPenetrator,
+        UmgahDrone, UrquanDreadnought, UtwigJugger, VuxIntruder, YehatTerminator, ZoqfotpikStinger,
+        apply_collision_between,
     };
     use crate::traits::ship_trait::{ProjectileTargetMode, ShipState};
 
     #[test]
     fn yehat_terminator_exposes_hit_polygon() {
-        assert!(!AnyShip::from(YehatTerminator::new()).hit_polygon(0, 0.0, 0.0).is_empty());
+        assert!(
+            !AnyShip::from(YehatTerminator::new())
+                .hit_polygon(0, 0.0, 0.0)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -259,16 +375,20 @@ mod tests {
 
     #[test]
     fn yehat_terminator_primary_volley_turn_wait_exceeds_projectile_life() {
-        assert!(AnyShip::from(YehatTerminator::new())
-            .primary_volley_spec()
-            .is_some_and(|spec| spec.projectile.turn_wait > spec.projectile.life));
+        assert!(
+            AnyShip::from(YehatTerminator::new())
+                .primary_volley_spec()
+                .is_some_and(|spec| spec.projectile.turn_wait > spec.projectile.life)
+        );
     }
 
     #[test]
     fn yehat_terminator_primary_volley_emits_yehat_primary_sound_key() {
-        assert!(AnyShip::from(YehatTerminator::new())
-            .primary_volley_spec()
-            .is_some_and(|spec| spec.projectile.sound_key == "yehat-primary"));
+        assert!(
+            AnyShip::from(YehatTerminator::new())
+                .primary_volley_spec()
+                .is_some_and(|spec| spec.projectile.sound_key == "yehat-primary")
+        );
     }
 
     #[test]
@@ -532,17 +652,28 @@ mod tests {
 
     #[test]
     fn androsynth_guardian_exposes_hit_polygon() {
-        assert!(!AnyShip::from(AndrosynthGuardian::new()).hit_polygon(0, 0.0, 0.0).is_empty());
+        assert!(
+            !AnyShip::from(AndrosynthGuardian::new())
+                .hit_polygon(0, 0.0, 0.0)
+                .is_empty()
+        );
     }
 
     #[test]
     fn human_cruiser_exposes_hit_polygon() {
-        assert!(!AnyShip::from(HumanCruiser::new()).hit_polygon(0, 0.0, 0.0).is_empty());
+        assert!(
+            !AnyShip::from(HumanCruiser::new())
+                .hit_polygon(0, 0.0, 0.0)
+                .is_empty()
+        );
     }
 
     #[test]
     fn apply_collision_between_sets_both_ship_cooldowns() {
-        let mut ships = vec![AnyShip::from(HumanCruiser::new()), AnyShip::from(HumanCruiser::new())];
+        let mut ships = vec![
+            AnyShip::from(HumanCruiser::new()),
+            AnyShip::from(HumanCruiser::new()),
+        ];
 
         apply_collision_between(&mut ships, 0, 1);
 

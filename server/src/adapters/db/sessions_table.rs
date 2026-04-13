@@ -1,6 +1,6 @@
-use common::dto::UserDto;
 use super::row::Row;
 use super::table_entity::TableEntity;
+use common::dto::UserDto;
 
 #[derive(Clone)]
 pub struct StoredSession {

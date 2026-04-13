@@ -12,7 +12,6 @@ impl Row {
             .find(|(col_name, _)| col_name == name)
             .ok_or_else(|| format!("Column '{name}' not found"))?;
 
-        T::column_result(ValueRef::from(value))
-            .map_err(|e| e.to_string())
+        T::column_result(ValueRef::from(value)).map_err(|e| e.to_string())
     }
 }

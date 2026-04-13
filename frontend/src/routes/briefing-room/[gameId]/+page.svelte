@@ -11,7 +11,7 @@
 	import LandingTextLink from '$lib/ui/LandingTextLink.svelte';
 
 	const { data } = $props<{ data: { gameId: string } }>();
-	const AVAILABLE_SHIP_PREFIXES = ['human-cruiser', 'arilou-skiff', 'androsynth-guardian', 'yehat-terminator'];
+	const AVAILABLE_SHIP_PREFIXES = ['human-cruiser', 'arilou-skiff', 'androsynth-guardian', 'yehat-terminator', 'orz-nemesis'];
 	const DEFAULT_SELECTED_RACE = 'human-cruiser';
 
 	let currentUser = $state<UserDto | null>(null);

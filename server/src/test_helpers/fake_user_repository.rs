@@ -1,9 +1,9 @@
-use std::sync::{Arc, Mutex};
+use super::sample_data::test_user;
+use crate::ports::UserRepositoryDrivenPort;
 use async_trait::async_trait;
 use common::domain::Error;
 use common::dto::{UserDto, UserSettingsDto};
-use crate::ports::UserRepositoryDrivenPort;
-use super::sample_data::test_user;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
@@ -36,7 +36,11 @@ impl FakeUserRepository {
 #[async_trait]
 impl UserRepositoryDrivenPort for FakeUserRepository {
     async fn find_by_name(&self, name: &str) -> Result<Option<UserDto>, Error> {
-        Ok(self.existing_user.as_ref().filter(|u| u.name == name).cloned())
+        Ok(self
+            .existing_user
+            .as_ref()
+            .filter(|u| u.name == name)
+            .cloned())
     }
 
     async fn save_user(&self, name: &str, _user_handle: Uuid) -> Result<UserDto, Error> {
@@ -56,11 +60,20 @@ impl UserRepositoryDrivenPort for FakeUserRepository {
         Ok(())
     }
 
-    async fn create_recovery_code(&self, _user_name: &str, _recovery_code: &str, _expires_at: i64) -> Result<(), Error> {
+    async fn create_recovery_code(
+        &self,
+        _user_name: &str,
+        _recovery_code: &str,
+        _expires_at: i64,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    async fn find_by_recovery_code(&self, _recovery_code: &str, _now: i64) -> Result<Option<UserDto>, Error> {
+    async fn find_by_recovery_code(
+        &self,
+        _recovery_code: &str,
+        _now: i64,
+    ) -> Result<Option<UserDto>, Error> {
         Ok(self.existing_user.clone())
     }
 
@@ -68,7 +81,12 @@ impl UserRepositoryDrivenPort for FakeUserRepository {
         Ok(())
     }
 
-    async fn update_user_profile(&self, _current_name: &str, name: &str, profile_image_url: &str) -> Result<UserDto, Error> {
+    async fn update_user_profile(
+        &self,
+        _current_name: &str,
+        name: &str,
+        profile_image_url: &str,
+    ) -> Result<UserDto, Error> {
         Ok(UserDto {
             id: test_user().id,
             name: name.to_string(),
@@ -84,7 +102,11 @@ impl UserRepositoryDrivenPort for FakeUserRepository {
         Ok(self.existing_settings.clone())
     }
 
-    async fn save_settings(&self, _name: &str, settings: &UserSettingsDto) -> Result<UserSettingsDto, Error> {
+    async fn save_settings(
+        &self,
+        _name: &str,
+        settings: &UserSettingsDto,
+    ) -> Result<UserSettingsDto, Error> {
         Ok(settings.clone())
     }
 }

@@ -109,9 +109,8 @@ pub struct SimpleProjectileFrameData {
 }
 
 pub fn load() -> ReferenceData {
-    let reference_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../frontend/testdata/reference.json");
-    let json = fs::read_to_string(reference_path)
-        .expect("reference.json not found");
+    let reference_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../frontend/testdata/reference.json");
+    let json = fs::read_to_string(reference_path).expect("reference.json not found");
     serde_json::from_str(&json).expect("failed to parse reference.json")
 }

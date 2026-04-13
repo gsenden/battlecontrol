@@ -1,5 +1,6 @@
 const SATURN_FACING_COUNT = 16;
 const DEFAULT_DIRECTIONAL_FACING_COUNT = 16;
+const ORZ_MARINE_FRAME = 20;
 
 const DIRECTIONAL_PROJECTILES: Record<string, number> = {
   'human-saturn': SATURN_FACING_COUNT,
@@ -9,6 +10,7 @@ const DIRECTIONAL_PROJECTILES: Record<string, number> = {
   'shofixti-missile': DEFAULT_DIRECTIONAL_FACING_COUNT,
   'mmrnmhrm-torpedo': DEFAULT_DIRECTIONAL_FACING_COUNT,
   'urquan-fighter': DEFAULT_DIRECTIONAL_FACING_COUNT,
+  'orz-howitzer': DEFAULT_DIRECTIONAL_FACING_COUNT,
 };
 
 const ANIMATED_PROJECTILES: Record<string, number> = {
@@ -22,7 +24,6 @@ const ANIMATED_PROJECTILES: Record<string, number> = {
   'chmmr-satellite': 8,
   'melnorme-pumpup': 26,
   'melnorme-confuse': 16,
-  'orz-howitzer': 22,
   'vux-limpets': 4,
   'zoqfotpik-spit': 13,
   'kohrah-buzzsaw': 8,
@@ -44,6 +45,12 @@ export function projectileFrameFor(
   vy: number,
   life: number,
 ): number {
+  // In SC2 the flying Orz marine uses a dedicated small frame from the turret sheet,
+  // not the turret rotation frames.
+  if (texturePrefix === 'orz-turret') {
+    return ORZ_MARINE_FRAME;
+  }
+
   if (texturePrefix in ANIMATED_PROJECTILES) {
     const frameCount = ANIMATED_PROJECTILES[texturePrefix];
     return frameCount <= 1 ? 0 : Math.abs(life) % frameCount;

@@ -1,25 +1,28 @@
-use std::fs;
-use std::path::PathBuf;
+use super::ApiAdapter;
+use crate::adapters::db::{
+    SessionsTable, SqliteAdapter, TableEntity, TrustedPlayersTable, UsersTable,
+};
+use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
+use axum::Json;
 use axum::extract::Multipart;
-use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use axum::routing::{get, post, put};
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use cookie::time::Duration;
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto, ProfileImageUploadDto,
-    RecoverUserRequestDto, RegistrationRequestDto, UserDto, UpdateUserProfileRequestDto, UserSettingsDto,
+    RecoverUserRequestDto, RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto,
+    UserSettingsDto,
 };
+use cookie::time::Duration;
 use image::codecs::webp::WebPEncoder;
 use image::{ExtendedColorType, ImageEncoder};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
 use uuid::Uuid;
-use super::ApiAdapter;
-use crate::adapters::db::{SessionsTable, SqliteAdapter, TableEntity, TrustedPlayersTable, UsersTable};
-use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
 
 const SESSION_INACTIVITY_TIMEOUT_SECONDS: i64 = 8 * 24 * 60 * 60;
 const BROWSER_COOKIE_NAME: &str = "battlecontrol-browser";
@@ -32,15 +35,21 @@ pub struct AuthApiAdapter<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> 
 
 impl<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> AuthApiAdapter<AuthPort, Logger> {
     pub fn new(auth: AuthPort, logger: Logger, sqlite: SqliteAdapter) -> Self {
-        sqlite.ensure_table::<UsersTable>()
+        sqlite
+            .ensure_table::<UsersTable>()
             .expect("Failed to initialize users table");
-        sqlite.ensure_table::<SessionsTable>()
+        sqlite
+            .ensure_table::<SessionsTable>()
             .expect("Failed to initialize sessions table");
-        sqlite.ensure_table::<TrustedPlayersTable>()
+        sqlite
+            .ensure_table::<TrustedPlayersTable>()
             .expect("Failed to initialize trusted players table");
-        migrate_sessions_table(&sqlite)
-            .expect("Failed to migrate sessions table");
-        Self { auth, logger, sqlite }
+        migrate_sessions_table(&sqlite).expect("Failed to migrate sessions table");
+        Self {
+            auth,
+            logger,
+            sqlite,
+        }
     }
 }
 
@@ -65,10 +74,7 @@ where
                 common::domain::Resource::AuthMe.path(),
                 get(current_user::<AuthPort, Logger>),
             )
-            .route(
-                "/auth/profile",
-                put(save_user_profile::<AuthPort, Logger>),
-            )
+            .route("/auth/profile", put(save_user_profile::<AuthPort, Logger>))
             .route(
                 "/auth/profile-image",
                 post(upload_profile_image::<AuthPort, Logger>),
@@ -79,7 +85,8 @@ where
             )
             .route(
                 common::domain::Resource::AuthSettings.path(),
-                get(current_user_settings::<AuthPort, Logger>).put(save_user_settings::<AuthPort, Logger>),
+                get(current_user_settings::<AuthPort, Logger>)
+                    .put(save_user_settings::<AuthPort, Logger>),
             )
             .route(
                 common::domain::Resource::AuthRecoveryCode.path(),
@@ -247,7 +254,10 @@ async fn logout<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
 ) -> Response {
     if let Some(session_id) = session_id(&jar) {
         let _ = state.sqlite.execute_with_params(
-            &format!("DELETE FROM {} WHERE session_id = ?", SessionsTable::table_name()),
+            &format!(
+                "DELETE FROM {} WHERE session_id = ?",
+                SessionsTable::table_name()
+            ),
             &[&session_id as &dyn rusqlite::types::ToSql],
         );
     }
@@ -336,13 +346,22 @@ async fn save_user_profile<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>
     };
     let current_user_name = user.name.clone();
 
-    match state.auth.update_user_profile(current_user_name.clone(), body).await {
+    match state
+        .auth
+        .update_user_profile(current_user_name.clone(), body)
+        .await
+    {
         Ok(updated_user) => {
             if let Some(session_id) = session_id(&jar) {
                 let _ = store_session(&state.sqlite, &session_id, &updated_user);
             }
             if let Some(browser_id) = browser_id(&jar) {
-                let _ = update_trusted_user_name(&state.sqlite, &browser_id, &current_user_name, &updated_user.name);
+                let _ = update_trusted_user_name(
+                    &state.sqlite,
+                    &browser_id,
+                    &current_user_name,
+                    &updated_user.name,
+                );
             }
             Json(updated_user).into_response()
         }
@@ -374,7 +393,9 @@ async fn upload_profile_image<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPo
                 break;
             }
             Err(_) => {
-                let error = common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new());
+                let error = common::domain::Error::DatabaseError(
+                    common::domain::error::DatabaseErrorError::new(),
+                );
                 state.logger.log_error(&error);
                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response();
             }
@@ -395,8 +416,9 @@ async fn upload_profile_image<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPo
 }
 
 fn persist_profile_image(bytes: &[u8]) -> Result<String, common::domain::Error> {
-    let source_image = image::load_from_memory(bytes)
-        .map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?;
+    let source_image = image::load_from_memory(bytes).map_err(|_| {
+        common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new())
+    })?;
     let resized_image = source_image.thumbnail(256, 256).to_rgba8();
     let image_id = Uuid::new_v4().to_string();
     let relative_path = format!("profile-images/{image_id}.webp");
@@ -406,18 +428,24 @@ fn persist_profile_image(bytes: &[u8]) -> Result<String, common::domain::Error> 
         .unwrap_or_else(|| std::path::Path::new("."))
         .join("uploads")
         .join("profile-images");
-    fs::create_dir_all(&uploads_dir)
-        .map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?;
+    fs::create_dir_all(&uploads_dir).map_err(|_| {
+        common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new())
+    })?;
     let output_path = uploads_dir.join(format!("{image_id}.webp"));
-    let mut output_file = fs::File::create(&output_path)
-        .map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?;
+    let mut output_file = fs::File::create(&output_path).map_err(|_| {
+        common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new())
+    })?;
     let encoder = WebPEncoder::new_lossless(&mut output_file);
-    encoder.write_image(
-        resized_image.as_raw(),
-        resized_image.width(),
-        resized_image.height(),
-        ExtendedColorType::Rgba8,
-    ).map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?;
+    encoder
+        .write_image(
+            resized_image.as_raw(),
+            resized_image.width(),
+            resized_image.height(),
+            ExtendedColorType::Rgba8,
+        )
+        .map_err(|_| {
+            common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new())
+        })?;
 
     Ok(format!("/uploads/{relative_path}"))
 }
@@ -429,8 +457,7 @@ fn login_response_with_browser<AuthPort: AuthDrivingPort, Logger: LoggerDrivingP
     browser_id: &str,
 ) -> Response {
     let session_id = Uuid::new_v4().to_string();
-    store_session(&state.sqlite, &session_id, &user)
-        .expect("Failed to store session");
+    store_session(&state.sqlite, &session_id, &user).expect("Failed to store session");
     let jar = jar
         .add(session_cookie(&session_id))
         .add(browser_cookie(browser_id));
@@ -473,30 +500,45 @@ fn browser_cookie(browser_id: &str) -> Cookie<'static> {
         .build()
 }
 
-fn find_user_by_name(sqlite: &SqliteAdapter, name: &str) -> Result<Option<UserDto>, common::domain::Error> {
-    let rows = sqlite.query_with_params(
-        &format!("SELECT * FROM {} WHERE name = ?", UsersTable::table_name()),
-        &[&name as &dyn rusqlite::types::ToSql],
-    ).map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?;
+fn find_user_by_name(
+    sqlite: &SqliteAdapter,
+    name: &str,
+) -> Result<Option<UserDto>, common::domain::Error> {
+    let rows = sqlite
+        .query_with_params(
+            &format!("SELECT * FROM {} WHERE name = ?", UsersTable::table_name()),
+            &[&name as &dyn rusqlite::types::ToSql],
+        )
+        .map_err(|_| {
+            common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new())
+        })?;
 
     match rows.first() {
-        Some(row) => Ok(Some(UsersTable::from_row(row)
-            .map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?)),
+        Some(row) => Ok(Some(UsersTable::from_row(row).map_err(|_| {
+            common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new())
+        })?)),
         None => Ok(None),
     }
 }
 
 fn browser_trusts_user(sqlite: &SqliteAdapter, browser_id: &str, user_name: &str) -> bool {
-    sqlite.query_with_params(
-        &format!(
-            "SELECT * FROM {} WHERE browser_id = ? AND user_name = ?",
-            TrustedPlayersTable::table_name()
-        ),
-        &[&browser_id as &dyn rusqlite::types::ToSql, &user_name],
-    ).map(|rows| !rows.is_empty()).unwrap_or(false)
+    sqlite
+        .query_with_params(
+            &format!(
+                "SELECT * FROM {} WHERE browser_id = ? AND user_name = ?",
+                TrustedPlayersTable::table_name()
+            ),
+            &[&browser_id as &dyn rusqlite::types::ToSql, &user_name],
+        )
+        .map(|rows| !rows.is_empty())
+        .unwrap_or(false)
 }
 
-fn trust_browser_for_user(sqlite: &SqliteAdapter, browser_id: &str, user_name: &str) -> Result<(), String> {
+fn trust_browser_for_user(
+    sqlite: &SqliteAdapter,
+    browser_id: &str,
+    user_name: &str,
+) -> Result<(), String> {
     sqlite.execute_with_params(
         &format!(
             "INSERT OR IGNORE INTO {} (browser_id, user_name) VALUES (?, ?)",
@@ -506,13 +548,22 @@ fn trust_browser_for_user(sqlite: &SqliteAdapter, browser_id: &str, user_name: &
     )
 }
 
-fn update_trusted_user_name(sqlite: &SqliteAdapter, browser_id: &str, current_name: &str, updated_name: &str) -> Result<(), String> {
+fn update_trusted_user_name(
+    sqlite: &SqliteAdapter,
+    browser_id: &str,
+    current_name: &str,
+    updated_name: &str,
+) -> Result<(), String> {
     sqlite.execute_with_params(
         &format!(
             "UPDATE {} SET user_name = ? WHERE browser_id = ? AND user_name = ?",
             TrustedPlayersTable::table_name()
         ),
-        &[&updated_name as &dyn rusqlite::types::ToSql, &browser_id, &current_name],
+        &[
+            &updated_name as &dyn rusqlite::types::ToSql,
+            &browser_id,
+            &current_name,
+        ],
     )
 }
 
@@ -533,24 +584,38 @@ fn store_session(sqlite: &SqliteAdapter, session_id: &str, user: &UserDto) -> Re
 
 fn load_session_user(sqlite: &SqliteAdapter, session_id: &str) -> Result<Option<UserDto>, String> {
     let rows = sqlite.query_with_params(
-        &format!("SELECT * FROM {} WHERE session_id = ?", SessionsTable::table_name()),
+        &format!(
+            "SELECT * FROM {} WHERE session_id = ?",
+            SessionsTable::table_name()
+        ),
         &[&session_id as &dyn rusqlite::types::ToSql],
     )?;
 
     match rows.first() {
         Some(row) => {
             let stored_session = SessionsTable::from_row(row)?;
-            if current_timestamp() - stored_session.last_active_at > SESSION_INACTIVITY_TIMEOUT_SECONDS {
+            if current_timestamp() - stored_session.last_active_at
+                > SESSION_INACTIVITY_TIMEOUT_SECONDS
+            {
                 sqlite.execute_with_params(
-                    &format!("DELETE FROM {} WHERE session_id = ?", SessionsTable::table_name()),
+                    &format!(
+                        "DELETE FROM {} WHERE session_id = ?",
+                        SessionsTable::table_name()
+                    ),
                     &[&stored_session.session_id as &dyn rusqlite::types::ToSql],
                 )?;
                 return Ok(None);
             }
 
             sqlite.execute_with_params(
-                &format!("UPDATE {} SET last_active_at = ? WHERE session_id = ?", SessionsTable::table_name()),
-                &[&current_timestamp() as &dyn rusqlite::types::ToSql, &stored_session.session_id],
+                &format!(
+                    "UPDATE {} SET last_active_at = ? WHERE session_id = ?",
+                    SessionsTable::table_name()
+                ),
+                &[
+                    &current_timestamp() as &dyn rusqlite::types::ToSql,
+                    &stored_session.session_id,
+                ],
             )?;
 
             Ok(Some(stored_session.user()?))
@@ -560,7 +625,10 @@ fn load_session_user(sqlite: &SqliteAdapter, session_id: &str) -> Result<Option<
 }
 
 fn migrate_sessions_table(sqlite: &SqliteAdapter) -> Result<(), String> {
-    let rows = sqlite.query(&format!("PRAGMA table_info({})", SessionsTable::table_name()))?;
+    let rows = sqlite.query(&format!(
+        "PRAGMA table_info({})",
+        SessionsTable::table_name()
+    ))?;
     let has_last_active_at = rows.iter().any(|row| {
         row.get::<String>("name")
             .map(|column_name| column_name == "last_active_at")
@@ -592,14 +660,14 @@ fn current_timestamp() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
-    use axum::http::header::SET_COOKIE;
-    use tower::ServiceExt;
-    use common::domain::ErrorTrait;
     use crate::adapters::ApiAdapter;
     use crate::adapters::db::SqliteAdapter;
-    use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
     use crate::test_helpers::sample_data::{TEST_PLAYER_NAME, TEST_USER_ID};
+    use crate::test_helpers::{FakeAuthDrivingPort, FakeLoggerDrivingPort};
+    use axum::body::Body;
+    use axum::http::header::SET_COOKIE;
+    use common::domain::ErrorTrait;
+    use tower::ServiceExt;
 
     fn sqlite_in_memory() -> SqliteAdapter {
         SqliteAdapter::new(":memory:").unwrap()
@@ -660,12 +728,15 @@ mod tests {
     async fn post_login_user() -> (axum::http::Response<Body>, FakeAuthDrivingPort) {
         let fake_port = FakeAuthDrivingPort::new();
         let port_clone = fake_port.clone();
-        let adapter = AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite_in_memory());
+        let adapter =
+            AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite_in_memory());
         let response = adapter.routes().oneshot(login_request()).await.unwrap();
         (response, port_clone)
     }
 
-    async fn post_login_user_with_error(error: common::domain::Error) -> (axum::http::Response<Body>, FakeLoggerDrivingPort) {
+    async fn post_login_user_with_error(
+        error: common::domain::Error,
+    ) -> (axum::http::Response<Body>, FakeLoggerDrivingPort) {
         let fake_port = FakeAuthDrivingPort::new().with_login_user_error(error);
         let fake_logger = FakeLoggerDrivingPort::new();
         let logger_clone = fake_logger.clone();
@@ -677,12 +748,15 @@ mod tests {
     async fn post_register_user() -> (axum::http::Response<Body>, FakeAuthDrivingPort) {
         let fake_port = FakeAuthDrivingPort::new();
         let port_clone = fake_port.clone();
-        let adapter = AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite_in_memory());
+        let adapter =
+            AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite_in_memory());
         let response = adapter.routes().oneshot(register_request()).await.unwrap();
         (response, port_clone)
     }
 
-    async fn post_register_user_with_error(error: common::domain::Error) -> (axum::http::Response<Body>, FakeLoggerDrivingPort) {
+    async fn post_register_user_with_error(
+        error: common::domain::Error,
+    ) -> (axum::http::Response<Body>, FakeLoggerDrivingPort) {
         let fake_port = FakeAuthDrivingPort::new().with_register_user_error(error);
         let fake_logger = FakeLoggerDrivingPort::new();
         let logger_clone = fake_logger.clone();
@@ -696,19 +770,32 @@ mod tests {
         let sqlite = sqlite_in_memory();
         sqlite.ensure_table::<UsersTable>().unwrap();
         sqlite.ensure_table::<TrustedPlayersTable>().unwrap();
-        sqlite.execute_with_params(
-            "INSERT INTO users (name, user_handle) VALUES (?, ?)",
-            &[&TEST_PLAYER_NAME as &dyn rusqlite::types::ToSql, &Uuid::new_v4().to_string()],
-        ).unwrap();
-        sqlite.execute_with_params(
-            "INSERT INTO trusted_players (browser_id, user_name) VALUES (?, ?)",
-            &[&"browser-1" as &dyn rusqlite::types::ToSql, &TEST_PLAYER_NAME],
-        ).unwrap();
+        sqlite
+            .execute_with_params(
+                "INSERT INTO users (name, user_handle) VALUES (?, ?)",
+                &[
+                    &TEST_PLAYER_NAME as &dyn rusqlite::types::ToSql,
+                    &Uuid::new_v4().to_string(),
+                ],
+            )
+            .unwrap();
+        sqlite
+            .execute_with_params(
+                "INSERT INTO trusted_players (browser_id, user_name) VALUES (?, ?)",
+                &[
+                    &"browser-1" as &dyn rusqlite::types::ToSql,
+                    &TEST_PLAYER_NAME,
+                ],
+            )
+            .unwrap();
         let fake_port = FakeAuthDrivingPort::new();
         let port_clone = fake_port.clone();
         let app = AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite).routes();
 
-        let _ = app.oneshot(login_request_with_browser(TEST_PLAYER_NAME, "browser-1")).await.unwrap();
+        let _ = app
+            .oneshot(login_request_with_browser(TEST_PLAYER_NAME, "browser-1"))
+            .await
+            .unwrap();
 
         assert_eq!(port_clone.login_user_calls().len(), 0);
     }
@@ -718,18 +805,38 @@ mod tests {
         let sqlite = sqlite_in_memory();
         sqlite.ensure_table::<UsersTable>().unwrap();
         sqlite.ensure_table::<TrustedPlayersTable>().unwrap();
-        sqlite.execute_with_params(
-            "INSERT INTO users (name, user_handle) VALUES (?, ?)",
-            &[&TEST_PLAYER_NAME as &dyn rusqlite::types::ToSql, &Uuid::new_v4().to_string()],
-        ).unwrap();
-        sqlite.execute_with_params(
-            "INSERT INTO trusted_players (browser_id, user_name) VALUES (?, ?)",
-            &[&"browser-1" as &dyn rusqlite::types::ToSql, &TEST_PLAYER_NAME],
-        ).unwrap();
-        let app = AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new(), sqlite).routes();
+        sqlite
+            .execute_with_params(
+                "INSERT INTO users (name, user_handle) VALUES (?, ?)",
+                &[
+                    &TEST_PLAYER_NAME as &dyn rusqlite::types::ToSql,
+                    &Uuid::new_v4().to_string(),
+                ],
+            )
+            .unwrap();
+        sqlite
+            .execute_with_params(
+                "INSERT INTO trusted_players (browser_id, user_name) VALUES (?, ?)",
+                &[
+                    &"browser-1" as &dyn rusqlite::types::ToSql,
+                    &TEST_PLAYER_NAME,
+                ],
+            )
+            .unwrap();
+        let app = AuthApiAdapter::new(
+            FakeAuthDrivingPort::new(),
+            FakeLoggerDrivingPort::new(),
+            sqlite,
+        )
+        .routes();
 
-        let response = app.oneshot(login_request_with_browser(TEST_PLAYER_NAME, "browser-2")).await.unwrap();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let response = app
+            .oneshot(login_request_with_browser(TEST_PLAYER_NAME, "browser-2"))
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
         assert_eq!(json["code"], "UserAlreadyExists");
@@ -745,14 +852,17 @@ mod tests {
     #[tokio::test]
     async fn auth_me_returns_logged_in_user() {
         let fake_port = FakeAuthDrivingPort::new();
-        let adapter = AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite_in_memory());
+        let adapter =
+            AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite_in_memory());
         let app = adapter.routes();
 
         let login_response = app.clone().oneshot(login_request()).await.unwrap();
         let session_cookie = extract_session_cookie(&login_response);
 
         let response = app.oneshot(auth_me_request(&session_cookie)).await.unwrap();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
         assert_eq!(user.id, TEST_USER_ID);
     }
@@ -760,14 +870,29 @@ mod tests {
     #[tokio::test]
     async fn auth_me_returns_logged_in_user_after_rebuilding_adapter() {
         let sqlite = sqlite_in_memory();
-        let first_app = AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new(), sqlite.clone()).routes();
+        let first_app = AuthApiAdapter::new(
+            FakeAuthDrivingPort::new(),
+            FakeLoggerDrivingPort::new(),
+            sqlite.clone(),
+        )
+        .routes();
 
         let login_response = first_app.oneshot(login_request()).await.unwrap();
         let session_cookie = extract_session_cookie(&login_response);
 
-        let second_app = AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new(), sqlite).routes();
-        let response = second_app.oneshot(auth_me_request(&session_cookie)).await.unwrap();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let second_app = AuthApiAdapter::new(
+            FakeAuthDrivingPort::new(),
+            FakeLoggerDrivingPort::new(),
+            sqlite,
+        )
+        .routes();
+        let response = second_app
+            .oneshot(auth_me_request(&session_cookie))
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
         assert_eq!(user.id, TEST_USER_ID);
     }
@@ -775,15 +900,22 @@ mod tests {
     #[tokio::test]
     async fn login_user_error_logs_error() {
         let error = common::domain::error::UserNotFoundError::new(TEST_PLAYER_NAME.to_string());
-        let (_, logger) = post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
-        assert_eq!(logger.logged_errors()[0].key(), common::domain::ErrorCode::UserNotFound);
+        let (_, logger) =
+            post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
+        assert_eq!(
+            logger.logged_errors()[0].key(),
+            common::domain::ErrorCode::UserNotFound
+        );
     }
 
     #[tokio::test]
     async fn login_user_error_returns_error_code() {
         let error = common::domain::error::UserNotFoundError::new(TEST_PLAYER_NAME.to_string());
-        let (response, _) = post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let (response, _) =
+            post_login_user_with_error(common::domain::Error::UserNotFound(error)).await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["code"], "UserNotFound");
     }
@@ -791,7 +923,9 @@ mod tests {
     #[tokio::test]
     async fn login_user_returns_user_id() {
         let (response, _) = post_login_user().await;
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
         assert_eq!(user.id, TEST_USER_ID);
     }
@@ -805,15 +939,22 @@ mod tests {
     #[tokio::test]
     async fn register_user_error_logs_error() {
         let error = common::domain::error::RoomNotFoundError::new("lobby".to_string());
-        let (_, logger) = post_register_user_with_error(common::domain::Error::RoomNotFound(error)).await;
-        assert_eq!(logger.logged_errors()[0].key(), common::domain::ErrorCode::RoomNotFound);
+        let (_, logger) =
+            post_register_user_with_error(common::domain::Error::RoomNotFound(error)).await;
+        assert_eq!(
+            logger.logged_errors()[0].key(),
+            common::domain::ErrorCode::RoomNotFound
+        );
     }
 
     #[tokio::test]
     async fn register_user_error_returns_error_code() {
         let error = common::domain::error::RoomNotFoundError::new("lobby".to_string());
-        let (response, _) = post_register_user_with_error(common::domain::Error::RoomNotFound(error)).await;
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let (response, _) =
+            post_register_user_with_error(common::domain::Error::RoomNotFound(error)).await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["code"], "RoomNotFound");
     }
@@ -821,14 +962,20 @@ mod tests {
     #[tokio::test]
     async fn register_user_error_returns_500() {
         let error = common::domain::error::RoomNotFoundError::new("lobby".to_string());
-        let (response, _) = post_register_user_with_error(common::domain::Error::RoomNotFound(error)).await;
-        assert_eq!(response.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        let (response, _) =
+            post_register_user_with_error(common::domain::Error::RoomNotFound(error)).await;
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[tokio::test]
     async fn register_user_returns_user_id() {
         let (response, _) = post_register_user().await;
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
         assert_eq!(user.id, TEST_USER_ID);
     }

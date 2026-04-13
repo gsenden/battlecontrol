@@ -32,8 +32,10 @@ export class Ship {
   private scene: Phaser.Scene;
   private sprite: Phaser.GameObjects.Image;
   private shieldOverlay: Phaser.GameObjects.Image;
+  private turretOverlay: Phaser.GameObjects.Image;
   private ghostSprites: Phaser.GameObjects.Image[] = [];
   private shieldGhostSprites: Phaser.GameObjects.Image[] = [];
+  private turretGhostSprites: Phaser.GameObjects.Image[] = [];
   private ionTrail: IonParticle[] = [];
   private spritePrefix: string;
   private readonly renderScaleMultiplier: number;
@@ -41,6 +43,7 @@ export class Ship {
   crew: number;
   energy: number;
   facing: number;
+  turretFacing: number;
   x: number;
   y: number;
   vx: number;
@@ -57,6 +60,7 @@ export class Ship {
     this.crew = stats.maxCrew;
     this.energy = stats.maxEnergy;
     this.facing = -Math.PI / 2;
+    this.turretFacing = -Math.PI / 2;
     this.x = x;
     this.y = y;
     this.vx = 0;
@@ -70,6 +74,9 @@ export class Ship {
     this.shieldOverlay = scene.add.image(x, y, 'yehat-shield-big-000');
     this.shieldOverlay.setDepth(SHIP_DEPTH + 1);
     this.shieldOverlay.setVisible(false);
+    this.turretOverlay = scene.add.image(x, y, 'orz-turret-big-000');
+    this.turretOverlay.setDepth(SHIP_DEPTH + 1);
+    this.turretOverlay.setVisible(false);
     for (let i = 0; i < 8; i++) {
       const ghost = scene.add.image(x, y, defaultTexture);
       ghost.setDepth(SHIP_DEPTH);
@@ -79,6 +86,10 @@ export class Ship {
       shieldGhost.setDepth(SHIP_DEPTH + 1);
       shieldGhost.setVisible(false);
       this.shieldGhostSprites.push(shieldGhost);
+      const turretGhost = scene.add.image(x, y, 'orz-turret-big-000');
+      turretGhost.setDepth(SHIP_DEPTH + 1);
+      turretGhost.setVisible(false);
+      this.turretGhostSprites.push(turretGhost);
     }
   }
 
@@ -90,6 +101,7 @@ export class Ship {
     this.crew = snapshot.crew;
     this.energy = snapshot.energy;
     this.facing = snapshot.facing;
+    this.turretFacing = snapshot.turretFacing;
     this.dead = snapshot.dead;
     this.cloaked = snapshot.cloaked;
     this.spritePrefix = snapshot.texturePrefix;
@@ -106,11 +118,15 @@ export class Ship {
   setTint(color: number) {
     this.sprite.setTint(color);
     this.shieldOverlay.setTint(color);
+    this.turretOverlay.setTint(color);
     for (const ghost of this.ghostSprites) {
       ghost.setTint(color);
     }
     for (const shieldGhost of this.shieldGhostSprites) {
       shieldGhost.setTint(color);
+    }
+    for (const turretGhost of this.turretGhostSprites) {
+      turretGhost.setTint(color);
     }
   }
 
@@ -118,20 +134,26 @@ export class Ship {
     if (this.dead) {
       this.sprite.setVisible(false);
       this.shieldOverlay.setVisible(false);
+      this.turretOverlay.setVisible(false);
       for (const ghost of this.ghostSprites) {
         ghost.setVisible(false);
       }
       for (const shieldGhost of this.shieldGhostSprites) {
         shieldGhost.setVisible(false);
       }
+      for (const turretGhost of this.turretGhostSprites) {
+        turretGhost.setVisible(false);
+      }
       return;
     }
 
     const shieldActive = this.spritePrefix === 'yehat-shield';
     const baseSpritePrefix = shieldActive ? 'yehat-terminator' : this.spritePrefix;
+    const turretActive = baseSpritePrefix === 'orz-nemesis';
     const frameIndex = this.facingToFrame();
     const texture = `${baseSpritePrefix}-big-${String(frameIndex).padStart(3, '0')}`;
     const shieldTexture = `yehat-shield-big-${String(frameIndex).padStart(3, '0')}`;
+    const turretTexture = `orz-turret-big-${String(this.facingToFrameFor(this.turretFacing)).padStart(3, '0')}`;
     const x = this.x;
     const y = this.y;
 
@@ -147,6 +169,15 @@ export class Ship {
       this.shieldOverlay.setVisible(true);
     } else {
       this.shieldOverlay.setVisible(false);
+    }
+    if (turretActive) {
+      this.turretOverlay.setPosition(x, y);
+      this.turretOverlay.setTexture(turretTexture);
+      this.turretOverlay.setScale(scale * this.renderScaleMultiplier);
+      this.turretOverlay.setAlpha(this.cloaked ? 0.28 : 1);
+      this.turretOverlay.setVisible(true);
+    } else {
+      this.turretOverlay.setVisible(false);
     }
     const margin = Math.max(this.sprite.displayWidth, this.sprite.displayHeight) * 0.5;
 
@@ -189,12 +220,23 @@ export class Ship {
         } else {
           shieldGhost.setVisible(false);
         }
+        const turretGhost = this.turretGhostSprites[ghostIndex - 1];
+        if (turretActive) {
+          turretGhost.setTexture(turretTexture);
+          turretGhost.setPosition(x + xOffset, y + yOffset);
+          turretGhost.setScale(scale * this.renderScaleMultiplier);
+          turretGhost.setAlpha(this.cloaked ? 0.28 : 1);
+          turretGhost.setVisible(true);
+        } else {
+          turretGhost.setVisible(false);
+        }
       }
     }
 
     for (; ghostIndex < this.ghostSprites.length; ghostIndex++) {
       this.ghostSprites[ghostIndex].setVisible(false);
       this.shieldGhostSprites[ghostIndex].setVisible(false);
+      this.turretGhostSprites[ghostIndex].setVisible(false);
     }
   }
 
@@ -220,11 +262,15 @@ export class Ship {
 
     this.sprite.destroy();
     this.shieldOverlay.destroy();
+    this.turretOverlay.destroy();
     for (const ghost of this.ghostSprites) {
       ghost.destroy();
     }
     for (const shieldGhost of this.shieldGhostSprites) {
       shieldGhost.destroy();
+    }
+    for (const turretGhost of this.turretGhostSprites) {
+      turretGhost.destroy();
     }
   }
 
@@ -263,7 +309,11 @@ export class Ship {
   }
 
   private facingToFrame(): number {
-    let angle = this.facing + Math.PI / 2;
+    return this.facingToFrameFor(this.facing);
+  }
+
+  private facingToFrameFor(facing: number): number {
+    let angle = facing + Math.PI / 2;
     angle = ((angle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
     return Math.round(angle / (2 * Math.PI / NUM_FACINGS)) % NUM_FACINGS;
   }

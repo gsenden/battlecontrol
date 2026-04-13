@@ -1,10 +1,10 @@
 mod env_var;
+pub mod error;
 mod error_code;
 mod i18n;
 mod language;
 mod resource;
 mod url_builder;
-pub mod error;
 
 pub use env_var::EnvVar;
 pub use error::Error;

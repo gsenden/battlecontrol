@@ -1,3 +1,4 @@
+use crate::ports::{AuthDrivingPort, UserRepositoryDrivenPort};
 use async_trait::async_trait;
 use common::domain::EnvVar;
 use common::domain::Error;
@@ -5,9 +6,9 @@ use common::domain::error::{AuthenticationFailedError, UserAlreadyExistsError, U
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
-    RecoverUserRequestDto, RecoveryCodeDto, RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
+    RecoverUserRequestDto, RecoveryCodeDto, RegistrationRequestDto, UpdateUserProfileRequestDto,
+    UserDto, UserSettingsDto,
 };
-use crate::ports::{AuthDrivingPort, UserRepositoryDrivenPort};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use uuid::Uuid;
@@ -74,23 +75,45 @@ impl<DP: AuthenticatorDrivenPorts> Authenticator<DP> {
 #[async_trait]
 impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
     async fn login_user(&self, login_request: LoginRequestDto) -> Result<UserDto, Error> {
-        if self.user_repo.find_by_name(&login_request.name).await?.is_some() {
-            return Err(Error::UserAlreadyExists(UserAlreadyExistsError::new(login_request.name)));
+        if self
+            .user_repo
+            .find_by_name(&login_request.name)
+            .await?
+            .is_some()
+        {
+            return Err(Error::UserAlreadyExists(UserAlreadyExistsError::new(
+                login_request.name,
+            )));
         }
 
-        self.user_repo.save_user(&login_request.name, Uuid::new_v4()).await
+        self.user_repo
+            .save_user(&login_request.name, Uuid::new_v4())
+            .await
     }
 
-    async fn register_user(&self, registration_request: RegistrationRequestDto) -> Result<UserDto, Error> {
-        if self.user_repo.find_by_name(&registration_request.name).await?.is_some() {
+    async fn register_user(
+        &self,
+        registration_request: RegistrationRequestDto,
+    ) -> Result<UserDto, Error> {
+        if self
+            .user_repo
+            .find_by_name(&registration_request.name)
+            .await?
+            .is_some()
+        {
             return Err(Error::UserAlreadyExists(
                 common::domain::error::UserAlreadyExistsError::new(registration_request.name),
             ));
         }
-        self.user_repo.save_user(&registration_request.name, Uuid::new_v4()).await
+        self.user_repo
+            .save_user(&registration_request.name, Uuid::new_v4())
+            .await
     }
 
-    async fn start_passkey_registration(&self, request: PasskeyStartRegistrationRequestDto) -> Result<PasskeyOptionsDto, Error> {
+    async fn start_passkey_registration(
+        &self,
+        request: PasskeyStartRegistrationRequestDto,
+    ) -> Result<PasskeyOptionsDto, Error> {
         if self.user_repo.find_by_name(&request.name).await?.is_some() {
             return Err(Error::UserAlreadyExists(
                 common::domain::error::UserAlreadyExistsError::new(request.name),
@@ -108,10 +131,7 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
             .expect("passkey registration state poisoned")
             .insert(
                 request.name,
-                PendingPasskeyRegistration {
-                    user_handle,
-                    state,
-                },
+                PendingPasskeyRegistration { user_handle, state },
             );
 
         let mut public_key = extract_public_key_json(options)
@@ -121,8 +141,12 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
         Ok(PasskeyOptionsDto { public_key })
     }
 
-    async fn finish_passkey_registration(&self, request: PasskeyFinishRegistrationRequestDto) -> Result<UserDto, Error> {
-        let pending_registration = self.pending_passkey_registrations
+    async fn finish_passkey_registration(
+        &self,
+        request: PasskeyFinishRegistrationRequestDto,
+    ) -> Result<UserDto, Error> {
+        let pending_registration = self
+            .pending_passkey_registrations
             .lock()
             .expect("passkey registration state poisoned")
             .remove(&request.name)
@@ -136,12 +160,18 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
             .finish_passkey_registration(&credential, &pending_registration.state)
             .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
 
-        let user = self.user_repo.save_user(&request.name, pending_registration.user_handle).await?;
+        let user = self
+            .user_repo
+            .save_user(&request.name, pending_registration.user_handle)
+            .await?;
         self.user_repo.save_passkey(&request.name, &passkey).await?;
         Ok(user)
     }
 
-    async fn start_passkey_login(&self, request: PasskeyStartLoginRequestDto) -> Result<PasskeyOptionsDto, Error> {
+    async fn start_passkey_login(
+        &self,
+        request: PasskeyStartLoginRequestDto,
+    ) -> Result<PasskeyOptionsDto, Error> {
         let passkeys = self.user_repo.list_passkeys_by_name(&request.name).await?;
         if passkeys.is_empty() {
             return Err(Error::UserNotFound(UserNotFoundError::new(request.name)));
@@ -163,8 +193,12 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
         })
     }
 
-    async fn finish_passkey_login(&self, request: PasskeyFinishLoginRequestDto) -> Result<UserDto, Error> {
-        let state = self.pending_passkey_authentications
+    async fn finish_passkey_login(
+        &self,
+        request: PasskeyFinishLoginRequestDto,
+    ) -> Result<UserDto, Error> {
+        let state = self
+            .pending_passkey_authentications
             .lock()
             .expect("passkey authentication state poisoned")
             .remove(&request.name)
@@ -185,7 +219,9 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
             .ok_or_else(|| Error::AuthenticationFailed(AuthenticationFailedError::new()))?;
 
         let _ = passkey.update_credential(&authentication_result);
-        self.user_repo.update_passkey(&request.name, passkey).await?;
+        self.user_repo
+            .update_passkey(&request.name, passkey)
+            .await?;
 
         self.user_repo
             .find_by_name(&request.name)
@@ -208,15 +244,24 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
 
     async fn recover_user(&self, request: RecoverUserRequestDto) -> Result<UserDto, Error> {
         let now = Self::current_timestamp()?;
-        let user = self.user_repo
+        let user = self
+            .user_repo
             .find_by_recovery_code(&request.recovery_code, now)
             .await?
-            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(request.recovery_code.clone())))?;
-        self.user_repo.mark_recovery_code_used(&request.recovery_code).await?;
+            .ok_or_else(|| {
+                Error::UserNotFound(UserNotFoundError::new(request.recovery_code.clone()))
+            })?;
+        self.user_repo
+            .mark_recovery_code_used(&request.recovery_code)
+            .await?;
         Ok(user)
     }
 
-    async fn update_user_profile(&self, current_user_name: String, request: UpdateUserProfileRequestDto) -> Result<UserDto, Error> {
+    async fn update_user_profile(
+        &self,
+        current_user_name: String,
+        request: UpdateUserProfileRequestDto,
+    ) -> Result<UserDto, Error> {
         if request.name != current_user_name
             && self.user_repo.find_by_name(&request.name).await?.is_some()
         {
@@ -226,27 +271,37 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
         }
 
         self.user_repo
-            .update_user_profile(&current_user_name, &request.name, &request.profile_image_url)
+            .update_user_profile(
+                &current_user_name,
+                &request.name,
+                &request.profile_image_url,
+            )
             .await
     }
 
     async fn get_user_settings(&self, user_name: String) -> Result<UserSettingsDto, Error> {
-        Ok(self.user_repo
+        Ok(self
+            .user_repo
             .find_settings_by_name(&user_name)
             .await?
             .unwrap_or_else(Self::default_user_settings))
     }
 
-    async fn save_user_settings(&self, user_name: String, settings: UserSettingsDto) -> Result<UserSettingsDto, Error> {
+    async fn save_user_settings(
+        &self,
+        user_name: String,
+        settings: UserSettingsDto,
+    ) -> Result<UserSettingsDto, Error> {
         self.user_repo.save_settings(&user_name, &settings).await
     }
 }
 
 fn build_webauthn() -> Result<Webauthn, String> {
     let rp_id = EnvVar::ServerWebauthnRpId.value();
-    let server_origin = Url::parse(&EnvVar::ServerWebauthnOrigin.value()).map_err(|error| error.to_string())?;
-    let mut builder = WebauthnBuilder::new(&rp_id, &server_origin)
-        .map_err(|error| error.to_string())?;
+    let server_origin =
+        Url::parse(&EnvVar::ServerWebauthnOrigin.value()).map_err(|error| error.to_string())?;
+    let mut builder =
+        WebauthnBuilder::new(&rp_id, &server_origin).map_err(|error| error.to_string())?;
     builder = builder.rp_name("Battle Control");
 
     for allowed_origin in webauthn_allowed_origins() {
@@ -282,12 +337,11 @@ fn simplify_registration_options(options: &mut serde_json::Value) {
     }
 }
 
-fn extract_public_key_json<T: ::serde::Serialize>(options: T) -> Result<serde_json::Value, serde_json::Error> {
+fn extract_public_key_json<T: ::serde::Serialize>(
+    options: T,
+) -> Result<serde_json::Value, serde_json::Error> {
     let value = serde_json::to_value(options)?;
-    Ok(value
-        .get("publicKey")
-        .cloned()
-        .unwrap_or(value))
+    Ok(value.get("publicKey").cloned().unwrap_or(value))
 }
 
 #[cfg(test)]
@@ -295,7 +349,7 @@ mod tests {
     use super::*;
     use crate::ports::AuthDrivingPort;
     use crate::test_helpers::FakeUserRepository;
-    use crate::test_helpers::sample_data::{test_registration_request, TEST_PLAYER_NAME};
+    use crate::test_helpers::sample_data::{TEST_PLAYER_NAME, test_registration_request};
 
     struct FakeDrivenPorts;
     impl AuthenticatorDrivenPorts for FakeDrivenPorts {
@@ -308,10 +362,13 @@ mod tests {
             std::env::remove_var("MATTER_SERVER_WEBAUTHN_ALLOWED_ORIGINS");
         }
 
-        assert_eq!(webauthn_allowed_origins(), vec![
-            "http://localhost:5173".to_string(),
-            "http://localhost:5175".to_string(),
-        ]);
+        assert_eq!(
+            webauthn_allowed_origins(),
+            vec![
+                "http://localhost:5173".to_string(),
+                "http://localhost:5175".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -323,10 +380,13 @@ mod tests {
             );
         }
 
-        assert_eq!(webauthn_allowed_origins(), vec![
-            "https://battlecontrol.io".to_string(),
-            "https://www.battlecontrol.io".to_string(),
-        ]);
+        assert_eq!(
+            webauthn_allowed_origins(),
+            vec![
+                "https://battlecontrol.io".to_string(),
+                "https://www.battlecontrol.io".to_string(),
+            ]
+        );
 
         unsafe {
             std::env::remove_var("MATTER_SERVER_WEBAUTHN_ALLOWED_ORIGINS");
@@ -339,7 +399,9 @@ mod tests {
             .with_existing_user(crate::test_helpers::sample_data::test_user());
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
         let result = auth
-            .login_user(LoginRequestDto { name: TEST_PLAYER_NAME.to_string() })
+            .login_user(LoginRequestDto {
+                name: TEST_PLAYER_NAME.to_string(),
+            })
             .await;
         assert!(matches!(result, Err(Error::UserAlreadyExists(_))));
     }
@@ -350,7 +412,9 @@ mod tests {
         let repo_clone = repo.clone();
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
         let _ = auth
-            .login_user(LoginRequestDto { name: TEST_PLAYER_NAME.to_string() })
+            .login_user(LoginRequestDto {
+                name: TEST_PLAYER_NAME.to_string(),
+            })
             .await
             .unwrap();
         assert_eq!(repo_clone.save_user_calls().len(), 1);
@@ -380,7 +444,9 @@ mod tests {
         let repo = FakeUserRepository::new();
         let repo_clone = repo.clone();
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
-        auth.register_user(test_registration_request()).await.unwrap();
+        auth.register_user(test_registration_request())
+            .await
+            .unwrap();
         let calls = repo_clone.save_user_calls();
         assert_eq!(calls.len(), 1);
     }
@@ -390,7 +456,10 @@ mod tests {
         let repo = FakeUserRepository::new()
             .with_existing_user(crate::test_helpers::sample_data::test_user());
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
-        let result = auth.create_recovery_code(TEST_PLAYER_NAME.to_string()).await.unwrap();
+        let result = auth
+            .create_recovery_code(TEST_PLAYER_NAME.to_string())
+            .await
+            .unwrap();
         assert!(!result.recovery_code.is_empty());
     }
 }

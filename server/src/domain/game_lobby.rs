@@ -17,20 +17,33 @@ pub struct GameLobby<DP: GameLobbyDrivenPorts> {
 
 impl<DP: GameLobbyDrivenPorts> GameLobby<DP> {
     pub fn new(game_repo: DP::GameRepo, game_rooms: DP::GameRooms) -> Self {
-        Self { game_repo, game_rooms }
+        Self {
+            game_repo,
+            game_rooms,
+        }
     }
 }
 
 #[async_trait]
 impl<DP: GameLobbyDrivenPorts> GameDrivingPort for GameLobby<DP> {
-    async fn create_game(&self, creator_name: String, request: CreateGameRequestDto) -> Result<GameDto, Error> {
+    async fn create_game(
+        &self,
+        creator_name: String,
+        request: CreateGameRequestDto,
+    ) -> Result<GameDto, Error> {
         let game = self.game_repo.save_game(&creator_name, &request).await?;
         self.game_rooms.create_room(&game);
         Ok(game)
     }
 
-    async fn join_game(&self, game_id: String, player_name: String, request: JoinGameRequestDto) -> Result<GameDto, Error> {
-        let game = self.game_repo
+    async fn join_game(
+        &self,
+        game_id: String,
+        player_name: String,
+        request: JoinGameRequestDto,
+    ) -> Result<GameDto, Error> {
+        let game = self
+            .game_repo
             .join_game(&game_id, &player_name, &request)
             .await?
             .ok_or_else(|| Error::RoomNotFound(RoomNotFoundError::new(game_id.clone())))?;
@@ -39,7 +52,8 @@ impl<DP: GameLobbyDrivenPorts> GameDrivingPort for GameLobby<DP> {
     }
 
     async fn leave_game(&self, game_id: String, player_name: String) -> Result<(), Error> {
-        let game = self.game_repo
+        let game = self
+            .game_repo
             .leave_game(&game_id, &player_name)
             .await?
             .ok_or_else(|| Error::RoomNotFound(RoomNotFoundError::new(game_id.clone())))?;
@@ -61,15 +75,22 @@ impl<DP: GameLobbyDrivenPorts> GameDrivingPort for GameLobby<DP> {
     }
 
     async fn start_game(&self, game_id: String, player_name: String) -> Result<GameDto, Error> {
-        let game = self.game_repo
+        let game = self
+            .game_repo
             .start_game(&game_id, &player_name)
             .await?
             .ok_or_else(|| Error::RoomNotFound(RoomNotFoundError::new(game_id.clone())))?;
         Ok(game)
     }
 
-    async fn save_selected_race(&self, game_id: String, player_name: String, request: SaveSelectedRaceRequestDto) -> Result<GameDto, Error> {
-        let game = self.game_repo
+    async fn save_selected_race(
+        &self,
+        game_id: String,
+        player_name: String,
+        request: SaveSelectedRaceRequestDto,
+    ) -> Result<GameDto, Error> {
+        let game = self
+            .game_repo
             .save_selected_race(&game_id, &player_name, &request)
             .await?
             .ok_or_else(|| Error::RoomNotFound(RoomNotFoundError::new(game_id.clone())))?;
@@ -86,7 +107,8 @@ impl<DP: GameLobbyDrivenPorts> GameDrivingPort for GameLobby<DP> {
     }
 
     async fn find_game(&self, game_id: String) -> Result<GameDto, Error> {
-        let game = self.game_repo
+        let game = self
+            .game_repo
             .find_game(&game_id)
             .await?
             .ok_or_else(|| Error::RoomNotFound(RoomNotFoundError::new(game_id)))?;
@@ -99,16 +121,11 @@ impl<DP: GameLobbyDrivenPorts> GameDrivingPort for GameLobby<DP> {
 mod tests {
     use super::*;
     use crate::test_helpers::{
+        FakeGameRepository, FakeGameRoomDrivenPort,
         sample_data::{
-            test_create_game_request,
-            test_game,
-            test_join_game_request,
-            test_save_selected_race_request,
-            TEST_GAME_ID,
-            TEST_PLAYER_NAME,
+            TEST_GAME_ID, TEST_PLAYER_NAME, test_create_game_request, test_game,
+            test_join_game_request, test_save_selected_race_request,
         },
-        FakeGameRepository,
-        FakeGameRoomDrivenPort,
     };
 
     struct TestGameLobbyDrivenPorts;
@@ -136,7 +153,13 @@ mod tests {
             self
         }
 
-        fn build(self) -> (GameLobby<TestGameLobbyDrivenPorts>, FakeGameRepository, FakeGameRoomDrivenPort) {
+        fn build(
+            self,
+        ) -> (
+            GameLobby<TestGameLobbyDrivenPorts>,
+            FakeGameRepository,
+            FakeGameRoomDrivenPort,
+        ) {
             let game_repo = self.game_repo;
             let game_rooms = self.game_rooms;
             (
@@ -159,7 +182,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(game_rooms.created_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.created_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 
     #[tokio::test]
@@ -178,7 +204,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(game_rooms.updated_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.updated_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 
     #[tokio::test]
@@ -194,7 +223,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(game_rooms.cancelled_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.cancelled_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 
     #[tokio::test]
@@ -208,7 +240,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(game_rooms.cancelled_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.cancelled_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 
     #[tokio::test]
@@ -240,7 +275,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(game_rooms.updated_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.updated_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 
     #[tokio::test]
@@ -252,7 +290,10 @@ mod tests {
 
         lobby.list_games().await.unwrap();
 
-        assert_eq!(game_rooms.updated_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.updated_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 
     #[tokio::test]
@@ -263,6 +304,9 @@ mod tests {
 
         lobby.find_game(TEST_GAME_ID.to_string()).await.unwrap();
 
-        assert_eq!(game_rooms.updated_room_ids(), vec![TEST_GAME_ID.to_string()]);
+        assert_eq!(
+            game_rooms.updated_room_ids(),
+            vec![TEST_GAME_ID.to_string()]
+        );
     }
 }

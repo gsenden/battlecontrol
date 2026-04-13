@@ -79,7 +79,6 @@ impl FakeGameRepository {
         self.found_game = game;
         self
     }
-
 }
 
 #[async_trait]
@@ -88,19 +87,32 @@ impl GameRepositoryDrivenPort for FakeGameRepository {
         Ok(self.stale_game_ids.clone())
     }
 
-    async fn save_game(&self, creator_name: &str, request: &CreateGameRequestDto) -> Result<GameDto, Error> {
+    async fn save_game(
+        &self,
+        creator_name: &str,
+        request: &CreateGameRequestDto,
+    ) -> Result<GameDto, Error> {
         self.create_game_calls
             .lock()
             .unwrap()
             .push((creator_name.to_string(), request.clone()));
-        Ok(self.created_game.clone().expect("created game not configured"))
+        Ok(self
+            .created_game
+            .clone()
+            .expect("created game not configured"))
     }
 
-    async fn join_game(&self, game_id: &str, player_name: &str, request: &JoinGameRequestDto) -> Result<Option<GameDto>, Error> {
-        self.join_game_calls
-            .lock()
-            .unwrap()
-            .push((game_id.to_string(), player_name.to_string(), request.clone()));
+    async fn join_game(
+        &self,
+        game_id: &str,
+        player_name: &str,
+        request: &JoinGameRequestDto,
+    ) -> Result<Option<GameDto>, Error> {
+        self.join_game_calls.lock().unwrap().push((
+            game_id.to_string(),
+            player_name.to_string(),
+            request.clone(),
+        ));
         Ok(self.joined_game.clone())
     }
 
@@ -112,15 +124,28 @@ impl GameRepositoryDrivenPort for FakeGameRepository {
         Ok(self.left_game.clone())
     }
 
-    async fn cancel_game(&self, _game_id: &str, _player_name: &str) -> Result<Option<GameDto>, Error> {
+    async fn cancel_game(
+        &self,
+        _game_id: &str,
+        _player_name: &str,
+    ) -> Result<Option<GameDto>, Error> {
         Ok(self.cancelled_game.clone())
     }
 
-    async fn start_game(&self, _game_id: &str, _player_name: &str) -> Result<Option<GameDto>, Error> {
+    async fn start_game(
+        &self,
+        _game_id: &str,
+        _player_name: &str,
+    ) -> Result<Option<GameDto>, Error> {
         Ok(self.started_game.clone())
     }
 
-    async fn save_selected_race(&self, _game_id: &str, _player_name: &str, _request: &SaveSelectedRaceRequestDto) -> Result<Option<GameDto>, Error> {
+    async fn save_selected_race(
+        &self,
+        _game_id: &str,
+        _player_name: &str,
+        _request: &SaveSelectedRaceRequestDto,
+    ) -> Result<Option<GameDto>, Error> {
         Ok(self.selected_race_game.clone())
     }
 

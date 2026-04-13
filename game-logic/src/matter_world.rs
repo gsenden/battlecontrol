@@ -89,14 +89,19 @@ impl MatterWorld {
         }
 
         MatterStepResult {
-            bodies: self.engine.bodies.iter().map(|body| MatterBodyState {
-                id: body.id,
-                x: body.position.x,
-                y: body.position.y,
-                vx: body.velocity.x,
-                vy: body.velocity.y,
-                angle: body.angle,
-            }).collect(),
+            bodies: self
+                .engine
+                .bodies
+                .iter()
+                .map(|body| MatterBodyState {
+                    id: body.id,
+                    x: body.position.x,
+                    y: body.position.y,
+                    vx: body.velocity.x,
+                    vy: body.velocity.y,
+                    angle: body.angle,
+                })
+                .collect(),
             collisions,
         }
     }
@@ -107,7 +112,13 @@ impl MatterWorld {
         };
 
         let position = body.position;
-        body.apply_force(&position, &Vec2 { x: force_x, y: force_y });
+        body.apply_force(
+            &position,
+            &Vec2 {
+                x: force_x,
+                y: force_y,
+            },
+        );
     }
 
     pub fn rotate_body(&mut self, body_id: usize, angle: f64) {
@@ -118,7 +129,14 @@ impl MatterWorld {
         body.rotate(angle, None, false);
     }
 
-    pub fn create_ship_body(&mut self, x: f64, y: f64, radius: f64, mass: f64, restitution: f64) -> usize {
+    pub fn create_ship_body(
+        &mut self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        mass: f64,
+        restitution: f64,
+    ) -> usize {
         let handle = BodyHandle(self.engine.bodies.len());
         let mut body = Bodies::circle(handle, x, y, radius);
         body.set_mass(mass);
@@ -196,7 +214,12 @@ impl MatterWorld {
         body.set_angle(angle, false);
     }
 
-    pub fn wrap_body(&mut self, body_id: usize, width: f64, height: f64) -> Option<MatterBodyState> {
+    pub fn wrap_body(
+        &mut self,
+        body_id: usize,
+        width: f64,
+        height: f64,
+    ) -> Option<MatterBodyState> {
         let body = self.engine.bodies.get_mut(body_id)?;
 
         let x = wrap_axis(body.position.x, width);
@@ -240,7 +263,13 @@ impl MatterWorld {
         };
 
         body.set_velocity(Vec2 { x: 0.0, y: 0.0 });
-        body.set_position(Vec2 { x: -10000.0, y: -10000.0 }, false);
+        body.set_position(
+            Vec2 {
+                x: -10000.0,
+                y: -10000.0,
+            },
+            false,
+        );
         body.set_static(true);
     }
 }
@@ -250,8 +279,9 @@ fn flatten_collisions(events: &[PhysicsEvent]) -> Vec<MatterCollisionPair> {
 
     for event in events {
         let collisions = match event {
-            PhysicsEvent::CollisionStart { pairs }
-            | PhysicsEvent::CollisionActive { pairs } => pairs,
+            PhysicsEvent::CollisionStart { pairs } | PhysicsEvent::CollisionActive { pairs } => {
+                pairs
+            }
             PhysicsEvent::CollisionEnd { .. } => continue,
         };
 

@@ -1,7 +1,7 @@
 use game_logic::battle::{Battle as CoreBattle, BattleSnapshot};
+use game_logic::matter_world::{MatterStepResult, MatterWorld as CoreMatterWorld};
 use game_logic::ship::{AnyShip, PhysicsCommand, ShipInput, VelocityVector};
-use game_logic::matter_world::{MatterWorld as CoreMatterWorld, MatterStepResult};
-use game_logic::ships::{build_ship, ALL_SHIP_TYPES, apply_collision_between};
+use game_logic::ships::{ALL_SHIP_TYPES, apply_collision_between, build_ship};
 use game_logic::wrap::shortest_wrapped_delta;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -107,6 +107,7 @@ struct BattleShipSnapshotDto {
     crew: i32,
     energy: i32,
     facing: f64,
+    turret_facing: f64,
     thrusting: bool,
     dead: bool,
     cloaked: bool,
@@ -218,7 +219,13 @@ impl GameLogic {
         vel_y: f64,
         allow_beyond_max_speed: bool,
     ) -> JsValue {
-        let input = ShipInput { left, right, thrust, weapon, special };
+        let input = ShipInput {
+            left,
+            right,
+            thrust,
+            weapon,
+            special,
+        };
         let velocity = VelocityVector { x: vel_x, y: vel_y };
         let commands = self.ships[ship_id].update(&input, &velocity, allow_beyond_max_speed);
 
@@ -312,7 +319,8 @@ impl GameLogic {
     }
 
     fn build_ship(ship_type: &str) -> Result<AnyShip, JsError> {
-        build_ship(ship_type).ok_or_else(|| JsError::new(&format!("unknown ship type: {ship_type}")))
+        build_ship(ship_type)
+            .ok_or_else(|| JsError::new(&format!("unknown ship type: {ship_type}")))
     }
 
     fn stats_to_js(ship: &AnyShip) -> JsValue {
@@ -438,6 +446,11 @@ impl Battle {
         self.battle.set_player_special_target_point(x, y);
     }
 
+    #[wasm_bindgen(js_name = "setPlayerSpecialTargetShip")]
+    pub fn set_player_special_target_ship(&mut self) {
+        self.battle.set_player_special_target_ship();
+    }
+
     #[wasm_bindgen(js_name = "clearPlayerWeaponTarget")]
     pub fn clear_player_weapon_target(&mut self) {
         self.battle.clear_player_weapon_target();
@@ -490,7 +503,14 @@ impl MatterWorld {
     }
 
     #[wasm_bindgen(js_name = "createShipBody")]
-    pub fn create_ship_body(&mut self, x: f64, y: f64, radius: f64, mass: f64, restitution: f64) -> usize {
+    pub fn create_ship_body(
+        &mut self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        mass: f64,
+        restitution: f64,
+    ) -> usize {
         self.world.create_ship_body(x, y, radius, mass, restitution)
     }
 
@@ -511,16 +531,16 @@ impl MatterWorld {
 
     #[wasm_bindgen(js_name = "wrapBody")]
     pub fn wrap_body(&mut self, body_id: usize, width: f64, height: f64) -> JsValue {
-        serde_wasm_bindgen::to_value(
-            &self.world.wrap_body(body_id, width, height).map(|body| MatterBodyStateDto {
+        serde_wasm_bindgen::to_value(&self.world.wrap_body(body_id, width, height).map(|body| {
+            MatterBodyStateDto {
                 id: body.id,
                 x: body.x,
                 y: body.y,
                 vx: body.vx,
                 vy: body.vy,
                 angle: body.angle,
-            }),
-        )
+            }
+        }))
         .unwrap()
     }
 
@@ -542,18 +562,26 @@ impl Default for MatterWorld {
 
 fn to_matter_step_dto(result: MatterStepResult) -> MatterStepDto {
     MatterStepDto {
-        bodies: result.bodies.into_iter().map(|body| MatterBodyStateDto {
-            id: body.id,
-            x: body.x,
-            y: body.y,
-            vx: body.vx,
-            vy: body.vy,
-            angle: body.angle,
-        }).collect(),
-        collisions: result.collisions.into_iter().map(|pair| MatterCollisionPairDto {
-            body_a: pair.body_a,
-            body_b: pair.body_b,
-        }).collect(),
+        bodies: result
+            .bodies
+            .into_iter()
+            .map(|body| MatterBodyStateDto {
+                id: body.id,
+                x: body.x,
+                y: body.y,
+                vx: body.vx,
+                vy: body.vy,
+                angle: body.angle,
+            })
+            .collect(),
+        collisions: result
+            .collisions
+            .into_iter()
+            .map(|pair| MatterCollisionPairDto {
+                body_a: pair.body_a,
+                body_b: pair.body_b,
+            })
+            .collect(),
     }
 }
 
@@ -568,6 +596,7 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             crew: snapshot.player.crew,
             energy: snapshot.player.energy,
             facing: snapshot.player.facing,
+            turret_facing: snapshot.player.turret_facing,
             thrusting: snapshot.player.thrusting,
             dead: snapshot.player.dead,
             cloaked: snapshot.player.cloaked,
@@ -582,48 +611,69 @@ fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
             crew: snapshot.target.crew,
             energy: snapshot.target.energy,
             facing: snapshot.target.facing,
+            turret_facing: snapshot.target.turret_facing,
             thrusting: snapshot.target.thrusting,
             dead: snapshot.target.dead,
             cloaked: snapshot.target.cloaked,
             texture_prefix: snapshot.target.texture_prefix.to_string(),
         },
-        meteors: snapshot.meteors.into_iter().map(|meteor| MeteorSnapshotDto {
-            id: meteor.id,
-            x: meteor.x,
-            y: meteor.y,
-            vx: meteor.vx,
-            vy: meteor.vy,
-            frame_index: meteor.frame_index,
-            texture_prefix: meteor.texture_prefix.to_string(),
-        }).collect(),
-        projectiles: snapshot.projectiles.into_iter().map(|projectile| ProjectileSnapshotDto {
-            id: projectile.id,
-            x: projectile.x,
-            y: projectile.y,
-            vx: projectile.vx,
-            vy: projectile.vy,
-            life: projectile.life,
-            texture_prefix: projectile.texture_prefix.to_string(),
-        }).collect(),
-        explosions: snapshot.explosions.into_iter().map(|explosion| ExplosionSnapshotDto {
-            id: explosion.id,
-            x: explosion.x,
-            y: explosion.y,
-            frame_index: explosion.frame_index,
-            texture_prefix: explosion.texture_prefix.to_string(),
-        }).collect(),
-        lasers: snapshot.lasers.into_iter().map(|laser| LaserSnapshotDto {
-            id: laser.id,
-            start_x: laser.start_x,
-            start_y: laser.start_y,
-            end_x: laser.end_x,
-            end_y: laser.end_y,
-            color: laser.color,
-            width: laser.width,
-        }).collect(),
-        audio_events: snapshot.audio_events.into_iter().map(|event| AudioEventSnapshotDto {
-            key: event.key.to_string(),
-        }).collect(),
+        meteors: snapshot
+            .meteors
+            .into_iter()
+            .map(|meteor| MeteorSnapshotDto {
+                id: meteor.id,
+                x: meteor.x,
+                y: meteor.y,
+                vx: meteor.vx,
+                vy: meteor.vy,
+                frame_index: meteor.frame_index,
+                texture_prefix: meteor.texture_prefix.to_string(),
+            })
+            .collect(),
+        projectiles: snapshot
+            .projectiles
+            .into_iter()
+            .map(|projectile| ProjectileSnapshotDto {
+                id: projectile.id,
+                x: projectile.x,
+                y: projectile.y,
+                vx: projectile.vx,
+                vy: projectile.vy,
+                life: projectile.life,
+                texture_prefix: projectile.texture_prefix.to_string(),
+            })
+            .collect(),
+        explosions: snapshot
+            .explosions
+            .into_iter()
+            .map(|explosion| ExplosionSnapshotDto {
+                id: explosion.id,
+                x: explosion.x,
+                y: explosion.y,
+                frame_index: explosion.frame_index,
+                texture_prefix: explosion.texture_prefix.to_string(),
+            })
+            .collect(),
+        lasers: snapshot
+            .lasers
+            .into_iter()
+            .map(|laser| LaserSnapshotDto {
+                id: laser.id,
+                start_x: laser.start_x,
+                start_y: laser.start_y,
+                end_x: laser.end_x,
+                end_y: laser.end_y,
+                color: laser.color,
+                width: laser.width,
+            })
+            .collect(),
+        audio_events: snapshot
+            .audio_events
+            .into_iter()
+            .map(|event| AudioEventSnapshotDto {
+                key: event.key.to_string(),
+            })
+            .collect(),
     }
 }
 

@@ -9,6 +9,7 @@ export interface BattleShipSnapshot {
   crew: number;
   energy: number;
   facing: number;
+  turretFacing: number;
   thrusting: boolean;
   dead: boolean;
   cloaked: boolean;
@@ -89,6 +90,7 @@ export type BattleWorkerMessage =
   | { type: 'setPlayerWeaponTargetPoint'; x: number; y: number }
   | { type: 'setPlayerWeaponTargetShip' }
   | { type: 'setPlayerSpecialTargetPoint'; x: number; y: number }
+  | { type: 'setPlayerSpecialTargetShip' }
   | { type: 'clearPlayerWeaponTarget' }
   | { type: 'clearPlayerSpecialTarget' }
   | { type: 'switchPlayerShip'; shipType: string };

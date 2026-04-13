@@ -1,6 +1,6 @@
-use common::dto::UserSettingsDto;
 use super::row::Row;
 use super::table_entity::TableEntity;
+use common::dto::UserSettingsDto;
 
 pub struct UserSettingsTable;
 

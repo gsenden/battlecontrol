@@ -38,6 +38,11 @@ import humanVictorySound from '../assets/audio/human-victory.ogg';
 import yehatPrimarySound from '../assets/audio/yehat-primary.wav';
 import yehatSpecialSound from '../assets/audio/yehat-special.wav';
 import battleShipDiesSound from '../assets/audio/battle-shipdies.wav';
+import orzPrimarySound from '../assets/audio/orz-primary.wav';
+import orzSecondarySound from '../assets/audio/orz-secondary.wav';
+import orzIntruderSound from '../assets/audio/orz-intruder.wav';
+import orzZapSound from '../assets/audio/orz-zap.wav';
+import orzArghSound from '../assets/audio/orz-argh.wav';
 import battleBoom23Sound from '../assets/audio/battle-boom-23.wav';
 import battleBoom45Sound from '../assets/audio/battle-boom-45.wav';
 import { projectileFrameFor } from './projectile-frame.js';
@@ -155,6 +160,8 @@ export class BattleScene extends Phaser.Scene {
   private projectileTraceStopped = false;
   private lastWeaponDown = false;
   private finishedEventSent = false;
+  private lastAimPointX: number | null = null;
+  private lastAimPointY: number | null = null;
 
   constructor() {
     super('BattleScene');
@@ -201,6 +208,11 @@ export class BattleScene extends Phaser.Scene {
     this.load.audio('human-special', humanSpecialSound);
     this.load.audio('human-victory', humanVictorySound);
     this.load.audio('battle-shipdies', battleShipDiesSound);
+    this.load.audio('orz-primary', orzPrimarySound);
+    this.load.audio('orz-secondary', orzSecondarySound);
+    this.load.audio('orz-intruder', orzIntruderSound);
+    this.load.audio('orz-zap', orzZapSound);
+    this.load.audio('orz-argh', orzArghSound);
     this.load.audio('battle-boom-23', battleBoom23Sound);
     this.load.audio('battle-boom-45', battleBoom45Sound);
 
@@ -336,20 +348,15 @@ export class BattleScene extends Phaser.Scene {
       const x = Math.round(pointer.worldX);
       const y = Math.round(pointer.worldY);
       if (pointer.rightButtonDown()) {
-        this.sendBattleMessage({ type: 'setPlayerSpecialTargetPoint', x, y });
-        appendDebugLine(`teleport x=${x} y=${y}`);
-        return;
-      }
-
-      const targetType = this.targetShip.containsPoint(pointer.worldX, pointer.worldY)
-        ? 'ship'
-        : 'point';
-      if (targetType === 'ship') {
-        this.sendBattleMessage({ type: 'setPlayerWeaponTargetShip' });
+        if (this.targetShip.containsPoint(x, y)) {
+          this.sendBattleMessage({ type: 'setPlayerSpecialTargetShip' });
+        } else {
+          this.sendBattleMessage({ type: 'setPlayerSpecialTargetPoint', x, y });
+        }
+        appendDebugLine(`special x=${x} y=${y}`);
       } else {
-        this.sendBattleMessage({ type: 'setPlayerWeaponTargetPoint', x, y });
+        appendDebugLine(`aim x=${x} y=${y}`);
       }
-      appendDebugLine(`${targetType} x=${x} y=${y}`);
     });
 
     window.dispatchEvent(new Event('battlecontrol:scene-ready'));
@@ -364,6 +371,13 @@ export class BattleScene extends Phaser.Scene {
       special: false,
     };
     const pointer = this.input.activePointer;
+    const aimX = Math.round(pointer.worldX);
+    const aimY = Math.round(pointer.worldY);
+    if (this.started && (aimX !== this.lastAimPointX || aimY !== this.lastAimPointY)) {
+      this.sendBattleMessage({ type: 'setPlayerWeaponTargetPoint', x: aimX, y: aimY });
+      this.lastAimPointX = aimX;
+      this.lastAimPointY = aimY;
+    }
     const hudInput = {
       ...input,
       weapon: pointer.leftButtonDown(),
@@ -589,6 +603,21 @@ export class BattleScene extends Phaser.Scene {
           break;
         case 'battle-shipdies':
           this.playSfx(event.key, 0.75);
+          break;
+        case 'orz-primary':
+          this.playSfx(event.key, 0.55);
+          break;
+        case 'orz-secondary':
+          this.playSfx(event.key, 0.6);
+          break;
+        case 'orz-intruder':
+          this.playSfx(event.key, 0.62);
+          break;
+        case 'orz-zap':
+          this.playSfx(event.key, 0.58);
+          break;
+        case 'orz-argh':
+          this.playSfx(event.key, 0.58);
           break;
         case 'battle-boom-23':
           this.playSfx(event.key, 0.5);
@@ -1121,6 +1150,9 @@ export class BattleScene extends Phaser.Scene {
         break;
       case 'setPlayerSpecialTargetPoint':
         this.battleSocket.send(JSON.stringify({ type: 'setSpecialTargetPoint', x: message.x, y: message.y }));
+        break;
+      case 'setPlayerSpecialTargetShip':
+        this.battleSocket.send(JSON.stringify({ type: 'setSpecialTargetShip' }));
         break;
       case 'clearPlayerWeaponTarget':
         this.battleSocket.send(JSON.stringify({ type: 'clearWeaponTarget' }));

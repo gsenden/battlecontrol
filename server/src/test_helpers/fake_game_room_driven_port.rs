@@ -33,7 +33,6 @@ impl FakeGameRoomDrivenPort {
     pub fn cancelled_room_ids(&self) -> Vec<String> {
         self.cancelled_room_ids.lock().unwrap().clone()
     }
-
 }
 
 impl GameRoomDrivenPort for FakeGameRoomDrivenPort {
@@ -48,10 +47,16 @@ impl GameRoomDrivenPort for FakeGameRoomDrivenPort {
     fn start_room(&self, _game: &GameDto) {}
 
     fn cancel_room(&self, game_id: &str) {
-        self.cancelled_room_ids.lock().unwrap().push(game_id.to_string());
+        self.cancelled_room_ids
+            .lock()
+            .unwrap()
+            .push(game_id.to_string());
     }
 
     fn remove_rooms(&self, game_ids: &[String]) {
-        self.removed_room_ids.lock().unwrap().push(game_ids.to_vec());
+        self.removed_room_ids
+            .lock()
+            .unwrap()
+            .push(game_ids.to_vec());
     }
 }

@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
-use common::domain::Error;
 use crate::ports::LoggerDrivingPort;
+use common::domain::Error;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct FakeLoggerDrivingPort {

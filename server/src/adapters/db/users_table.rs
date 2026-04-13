@@ -1,6 +1,6 @@
-use common::dto::UserDto;
 use super::row::Row;
 use super::table_entity::TableEntity;
+use common::dto::UserDto;
 
 pub struct UsersTable;
 
@@ -45,7 +45,9 @@ mod tests {
     fn ensure_table_creates_users_table() {
         let adapter = SqliteAdapter::new(":memory:").unwrap();
         adapter.ensure_table::<UsersTable>().unwrap();
-        let rows = adapter.query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").unwrap();
+        let rows = adapter
+            .query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            .unwrap();
         assert_eq!(rows.len(), 1);
     }
 }

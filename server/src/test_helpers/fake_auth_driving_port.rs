@@ -1,13 +1,14 @@
-use std::sync::{Arc, Mutex};
+use super::sample_data::test_user;
+use crate::ports::AuthDrivingPort;
 use async_trait::async_trait;
 use common::domain::Error;
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
-    RecoverUserRequestDto, RecoveryCodeDto, RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
+    RecoverUserRequestDto, RecoveryCodeDto, RegistrationRequestDto, UpdateUserProfileRequestDto,
+    UserDto, UserSettingsDto,
 };
-use crate::ports::AuthDrivingPort;
-use super::sample_data::test_user;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct FakeAuthDrivingPort {
@@ -56,27 +57,49 @@ impl AuthDrivingPort for FakeAuthDrivingPort {
         }
     }
 
-    async fn register_user(&self, registration_request: RegistrationRequestDto) -> Result<UserDto, Error> {
-        self.register_user_calls.lock().unwrap().push(registration_request);
+    async fn register_user(
+        &self,
+        registration_request: RegistrationRequestDto,
+    ) -> Result<UserDto, Error> {
+        self.register_user_calls
+            .lock()
+            .unwrap()
+            .push(registration_request);
         match &self.register_user_error {
             Some(error) => Err(error.clone()),
             None => Ok(test_user()),
         }
     }
 
-    async fn start_passkey_registration(&self, _request: PasskeyStartRegistrationRequestDto) -> Result<PasskeyOptionsDto, Error> {
-        Ok(PasskeyOptionsDto { public_key: serde_json::json!({}) })
+    async fn start_passkey_registration(
+        &self,
+        _request: PasskeyStartRegistrationRequestDto,
+    ) -> Result<PasskeyOptionsDto, Error> {
+        Ok(PasskeyOptionsDto {
+            public_key: serde_json::json!({}),
+        })
     }
 
-    async fn finish_passkey_registration(&self, _request: PasskeyFinishRegistrationRequestDto) -> Result<UserDto, Error> {
+    async fn finish_passkey_registration(
+        &self,
+        _request: PasskeyFinishRegistrationRequestDto,
+    ) -> Result<UserDto, Error> {
         Ok(test_user())
     }
 
-    async fn start_passkey_login(&self, _request: PasskeyStartLoginRequestDto) -> Result<PasskeyOptionsDto, Error> {
-        Ok(PasskeyOptionsDto { public_key: serde_json::json!({}) })
+    async fn start_passkey_login(
+        &self,
+        _request: PasskeyStartLoginRequestDto,
+    ) -> Result<PasskeyOptionsDto, Error> {
+        Ok(PasskeyOptionsDto {
+            public_key: serde_json::json!({}),
+        })
     }
 
-    async fn finish_passkey_login(&self, _request: PasskeyFinishLoginRequestDto) -> Result<UserDto, Error> {
+    async fn finish_passkey_login(
+        &self,
+        _request: PasskeyFinishLoginRequestDto,
+    ) -> Result<UserDto, Error> {
         Ok(test_user())
     }
 
@@ -91,7 +114,11 @@ impl AuthDrivingPort for FakeAuthDrivingPort {
         Ok(test_user())
     }
 
-    async fn update_user_profile(&self, _current_user_name: String, request: UpdateUserProfileRequestDto) -> Result<UserDto, Error> {
+    async fn update_user_profile(
+        &self,
+        _current_user_name: String,
+        request: UpdateUserProfileRequestDto,
+    ) -> Result<UserDto, Error> {
         Ok(UserDto {
             id: test_user().id,
             name: request.name,
@@ -115,7 +142,11 @@ impl AuthDrivingPort for FakeAuthDrivingPort {
         })
     }
 
-    async fn save_user_settings(&self, _user_name: String, settings: UserSettingsDto) -> Result<UserSettingsDto, Error> {
+    async fn save_user_settings(
+        &self,
+        _user_name: String,
+        settings: UserSettingsDto,
+    ) -> Result<UserSettingsDto, Error> {
         Ok(settings)
     }
 }
