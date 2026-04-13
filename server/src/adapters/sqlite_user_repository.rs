@@ -3,7 +3,7 @@ use common::domain::Error;
 use common::domain::error::DatabaseErrorError;
 use common::dto::{CreateGameRequestDto, GameDto, GamePlayerDto, JoinGameRequestDto, SaveSelectedRaceRequestDto, UserDto, UserSettingsDto};
 use crate::ports::{GameRepositoryDrivenPort, UserRepositoryDrivenPort};
-use super::db::{GamePlayersTable, GamesTable, PasskeysTable, SqliteAdapter, TableEntity, UserSettingsTable, UsersTable};
+use super::db::{GamePlayersTable, GamesTable, PasskeysTable, RecoveryCodesTable, SqliteAdapter, TableEntity, UserSettingsTable, UsersTable};
 use uuid::Uuid;
 use webauthn_rs::prelude::Passkey;
 
@@ -23,6 +23,7 @@ impl SqliteUserRepository {
     pub fn new(sqlite: SqliteAdapter) -> Result<Self, String> {
         sqlite.ensure_table::<UsersTable>()?;
         sqlite.ensure_table::<PasskeysTable>()?;
+        sqlite.ensure_table::<RecoveryCodesTable>()?;
         sqlite.ensure_table::<GamesTable>()?;
         sqlite.ensure_table::<GamePlayersTable>()?;
         sqlite.ensure_table::<UserSettingsTable>()?;
@@ -274,6 +275,53 @@ impl UserRepositoryDrivenPort for SqliteUserRepository {
             ),
             &[&passkey_json as &dyn rusqlite::types::ToSql, &name, &credential_id],
         ).map_err(|_| db_error())?;
+        Ok(())
+    }
+
+    async fn create_recovery_code(&self, user_name: &str, recovery_code: &str, expires_at: i64) -> Result<(), Error> {
+        self.sqlite.execute_with_params(
+            &format!("DELETE FROM {} WHERE user_name = ?", RecoveryCodesTable::table_name()),
+            &[&user_name as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())?;
+
+        self.sqlite.execute_with_params(
+            &format!(
+                "INSERT INTO {} (recovery_code, user_name, expires_at, used_at) VALUES (?, ?, ?, NULL)",
+                RecoveryCodesTable::table_name()
+            ),
+            &[&recovery_code as &dyn rusqlite::types::ToSql, &user_name, &expires_at],
+        ).map_err(|_| db_error())?;
+
+        Ok(())
+    }
+
+    async fn find_by_recovery_code(&self, recovery_code: &str, now: i64) -> Result<Option<UserDto>, Error> {
+        self.sqlite.execute_with_params(
+            &format!("DELETE FROM {} WHERE expires_at < ? OR used_at IS NOT NULL", RecoveryCodesTable::table_name()),
+            &[&now as &dyn rusqlite::types::ToSql],
+        ).map_err(|_| db_error())?;
+
+        let rows = self.sqlite.query_with_params(
+            &format!(
+                "SELECT u.* FROM {} rc JOIN {} u ON u.name = rc.user_name WHERE rc.recovery_code = ? AND rc.expires_at >= ? AND rc.used_at IS NULL",
+                RecoveryCodesTable::table_name(),
+                UsersTable::table_name()
+            ),
+            &[&recovery_code as &dyn rusqlite::types::ToSql, &now],
+        ).map_err(|_| db_error())?;
+
+        match rows.first() {
+            Some(row) => Ok(Some(UsersTable::from_row(row).map_err(|_| db_error())?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn mark_recovery_code_used(&self, recovery_code: &str) -> Result<(), Error> {
+        self.sqlite.execute_with_params(
+            &format!("UPDATE {} SET used_at = ? WHERE recovery_code = ?", RecoveryCodesTable::table_name()),
+            &[&Self::current_timestamp()? as &dyn rusqlite::types::ToSql, &recovery_code],
+        ).map_err(|_| db_error())?;
+
         Ok(())
     }
 
@@ -556,6 +604,15 @@ mod tests {
     fn repo_in_memory() -> SqliteUserRepository {
         let sqlite = SqliteAdapter::new(":memory:").unwrap();
         SqliteUserRepository::new(sqlite).unwrap()
+    }
+
+    #[tokio::test]
+    async fn create_recovery_code_can_be_found_by_code() {
+        let repo = repo_in_memory();
+        let user = repo.save_user("TestPlayer", Uuid::new_v4()).await.unwrap();
+        repo.create_recovery_code(&user.name, "RECOVERY123", 9_999_999_999).await.unwrap();
+        let found = repo.find_by_recovery_code("RECOVERY123", 0).await.unwrap();
+        assert_eq!(found.unwrap().name, user.name);
     }
 
     #[tokio::test]

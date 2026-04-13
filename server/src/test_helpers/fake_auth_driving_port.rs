@@ -4,7 +4,7 @@ use common::domain::Error;
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
-    RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
+    RecoverUserRequestDto, RecoveryCodeDto, RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
 };
 use crate::ports::AuthDrivingPort;
 use super::sample_data::test_user;
@@ -77,6 +77,17 @@ impl AuthDrivingPort for FakeAuthDrivingPort {
     }
 
     async fn finish_passkey_login(&self, _request: PasskeyFinishLoginRequestDto) -> Result<UserDto, Error> {
+        Ok(test_user())
+    }
+
+    async fn create_recovery_code(&self, _user_name: String) -> Result<RecoveryCodeDto, Error> {
+        Ok(RecoveryCodeDto {
+            recovery_code: "RECOVERY123".to_string(),
+            expires_at: 9_999_999_999,
+        })
+    }
+
+    async fn recover_user(&self, _request: RecoverUserRequestDto) -> Result<UserDto, Error> {
         Ok(test_user())
     }
 

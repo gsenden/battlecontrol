@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use common::domain::EnvVar;
 use common::domain::Error;
-use common::domain::error::{AuthenticationFailedError, UserNotFoundError};
+use common::domain::error::{AuthenticationFailedError, UserAlreadyExistsError, UserNotFoundError};
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyOptionsDto, PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto,
-    RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
+    RecoverUserRequestDto, RecoveryCodeDto, RegistrationRequestDto, UpdateUserProfileRequestDto, UserDto, UserSettingsDto,
 };
 use crate::ports::{AuthDrivingPort, UserRepositoryDrivenPort};
 use std::collections::HashMap;
@@ -15,6 +15,8 @@ use webauthn_rs::prelude::{
     PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential,
     Url, Webauthn, WebauthnBuilder,
 };
+
+const RECOVERY_CODE_TTL_SECONDS: i64 = 15 * 60;
 
 struct PendingPasskeyRegistration {
     user_handle: Uuid,
@@ -60,15 +62,23 @@ impl<DP: AuthenticatorDrivenPorts> Authenticator<DP> {
             sound_effects_volume: 60,
         }
     }
+
+    fn current_timestamp() -> Result<i64, Error> {
+        Ok(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| Error::AuthenticationFailed(AuthenticationFailedError::new()))?
+            .as_secs() as i64)
+    }
 }
 
 #[async_trait]
 impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
     async fn login_user(&self, login_request: LoginRequestDto) -> Result<UserDto, Error> {
-        self.user_repo
-            .find_by_name(&login_request.name)
-            .await?
-            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(login_request.name)))
+        if self.user_repo.find_by_name(&login_request.name).await?.is_some() {
+            return Err(Error::UserAlreadyExists(UserAlreadyExistsError::new(login_request.name)));
+        }
+
+        self.user_repo.save_user(&login_request.name, Uuid::new_v4()).await
     }
 
     async fn register_user(&self, registration_request: RegistrationRequestDto) -> Result<UserDto, Error> {
@@ -183,6 +193,29 @@ impl<DP: AuthenticatorDrivenPorts> AuthDrivingPort for Authenticator<DP> {
             .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(request.name)))
     }
 
+    async fn create_recovery_code(&self, user_name: String) -> Result<RecoveryCodeDto, Error> {
+        let recovery_code = Uuid::new_v4().simple().to_string().to_uppercase();
+        let expires_at = Self::current_timestamp()? + RECOVERY_CODE_TTL_SECONDS;
+        self.user_repo
+            .create_recovery_code(&user_name, &recovery_code, expires_at)
+            .await?;
+
+        Ok(RecoveryCodeDto {
+            recovery_code,
+            expires_at,
+        })
+    }
+
+    async fn recover_user(&self, request: RecoverUserRequestDto) -> Result<UserDto, Error> {
+        let now = Self::current_timestamp()?;
+        let user = self.user_repo
+            .find_by_recovery_code(&request.recovery_code, now)
+            .await?
+            .ok_or_else(|| Error::UserNotFound(UserNotFoundError::new(request.recovery_code.clone())))?;
+        self.user_repo.mark_recovery_code_used(&request.recovery_code).await?;
+        Ok(user)
+    }
+
     async fn update_user_profile(&self, current_user_name: String, request: UpdateUserProfileRequestDto) -> Result<UserDto, Error> {
         if request.name != current_user_name
             && self.user_repo.find_by_name(&request.name).await?.is_some()
@@ -271,6 +304,10 @@ mod tests {
 
     #[test]
     fn webauthn_allowed_origins_returns_default_origins() {
+        unsafe {
+            std::env::remove_var("MATTER_SERVER_WEBAUTHN_ALLOWED_ORIGINS");
+        }
+
         assert_eq!(webauthn_allowed_origins(), vec![
             "http://localhost:5173".to_string(),
             "http://localhost:5175".to_string(),
@@ -297,25 +334,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_user_returns_existing_user() {
+    async fn login_user_returns_error_when_user_exists() {
         let repo = FakeUserRepository::new()
             .with_existing_user(crate::test_helpers::sample_data::test_user());
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
         let result = auth
             .login_user(LoginRequestDto { name: TEST_PLAYER_NAME.to_string() })
-            .await
-            .unwrap();
-        assert_eq!(result.name, TEST_PLAYER_NAME);
+            .await;
+        assert!(matches!(result, Err(Error::UserAlreadyExists(_))));
     }
 
     #[tokio::test]
-    async fn login_user_returns_error_when_user_does_not_exist() {
+    async fn login_user_saves_user_when_name_is_available() {
         let repo = FakeUserRepository::new();
+        let repo_clone = repo.clone();
         let auth = Authenticator::<FakeDrivenPorts>::new(repo);
-        let result = auth
+        let _ = auth
             .login_user(LoginRequestDto { name: TEST_PLAYER_NAME.to_string() })
-            .await;
-        assert!(matches!(result, Err(Error::UserNotFound(_))));
+            .await
+            .unwrap();
+        assert_eq!(repo_clone.save_user_calls().len(), 1);
     }
 
     #[tokio::test]
@@ -345,5 +383,14 @@ mod tests {
         auth.register_user(test_registration_request()).await.unwrap();
         let calls = repo_clone.save_user_calls();
         assert_eq!(calls.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn create_recovery_code_returns_code() {
+        let repo = FakeUserRepository::new()
+            .with_existing_user(crate::test_helpers::sample_data::test_user());
+        let auth = Authenticator::<FakeDrivenPorts>::new(repo);
+        let result = auth.create_recovery_code(TEST_PLAYER_NAME.to_string()).await.unwrap();
+        assert!(!result.recovery_code.is_empty());
     }
 }

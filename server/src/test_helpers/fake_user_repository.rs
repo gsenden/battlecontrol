@@ -68,6 +68,18 @@ impl UserRepositoryDrivenPort for FakeUserRepository {
         Ok(())
     }
 
+    async fn create_recovery_code(&self, _user_name: &str, _recovery_code: &str, _expires_at: i64) -> Result<(), Error> {
+        Ok(())
+    }
+
+    async fn find_by_recovery_code(&self, _recovery_code: &str, _now: i64) -> Result<Option<UserDto>, Error> {
+        Ok(self.existing_user.clone())
+    }
+
+    async fn mark_recovery_code_used(&self, _recovery_code: &str) -> Result<(), Error> {
+        Ok(())
+    }
+
     async fn update_user_profile(&self, _current_name: &str, name: &str, profile_image_url: &str) -> Result<UserDto, Error> {
         Ok(UserDto {
             id: test_user().id,

@@ -74,6 +74,26 @@ paths:
           description: Settings saved
         "401":
           description: No active session
+  /auth/recovery-code:
+    post:
+      summary: Create a one-time recovery code for the current player
+      responses:
+        "200":
+          description: Recovery code created
+        "401":
+          description: No active session
+  /auth/recover:
+    post:
+      summary: Restore a player session from a recovery code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoverUserRequest"
+      responses:
+        "200":
+          description: Player restored
   /auth/passkey/register/start:
     post:
       summary: Start passkey registration for a new player
@@ -226,4 +246,21 @@ components:
         sound_effects_enabled:
           type: boolean
         sound_effects_volume:
+          type: integer
+    RecoverUserRequest:
+      type: object
+      required:
+        - recovery_code
+      properties:
+        recovery_code:
+          type: string
+    RecoveryCode:
+      type: object
+      required:
+        - recovery_code
+        - expires_at
+      properties:
+        recovery_code:
+          type: string
+        expires_at:
           type: integer

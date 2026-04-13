@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
-	import { getCurrentUser, toReadableErrorMessage, updateUserProfile, uploadProfileImage } from '$lib/auth/auth.js';
+	import { createRecoveryCode, getCurrentUser, toReadableErrorMessage, updateUserProfile, uploadProfileImage } from '$lib/auth/auth.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
@@ -27,6 +27,10 @@
 	let dragStartOffsetX = 0;
 	let dragStartOffsetY = 0;
 	let redirectTimeout: ReturnType<typeof setTimeout> | null = null;
+	let recoveryCode = $state('');
+	let recoveryCodeExpiresAt = $state<number | null>(null);
+	let isCreatingRecoveryCode = $state(false);
+	let profileImageInput = $state<HTMLInputElement | null>(null);
 	const CROP_SIZE = 256;
 
 	onMount(() => {
@@ -207,6 +211,30 @@
 			}, 'image/webp', 0.9);
 		});
 	}
+
+	async function generateRecoveryCode() {
+		errorMessage = '';
+		successMessage = '';
+		isCreatingRecoveryCode = true;
+
+		try {
+			const createdRecoveryCode = await createRecoveryCode();
+			recoveryCode = createdRecoveryCode.recovery_code;
+			recoveryCodeExpiresAt = createdRecoveryCode.expires_at;
+		} catch (error) {
+			errorMessage = toReadableErrorMessage(error);
+		} finally {
+			isCreatingRecoveryCode = false;
+		}
+	}
+
+	function formatRecoveryCodeExpiry(expiresAt: number): string {
+		return new Date(expiresAt * 1000).toLocaleString();
+	}
+
+	function openProfileImagePicker() {
+		profileImageInput?.click();
+	}
 </script>
 
 {#if successMessage}
@@ -233,26 +261,56 @@
 			event.preventDefault();
 			void saveProfileForm();
 		}}>
-			<label class="block text-[15px] text-[#d9e3ee]">
-				<div class="mb-2">{t('PLAYER_NAME', $currentLanguage)}</div>
-				<input
-					bind:value={name}
-					class="w-full rounded-[12px] border border-[#3d5570] bg-[#08111d] px-4 py-3 text-[16px] text-[#f3f7fb] outline-none transition focus:border-[#83c5ff]"
-					required
-					type="text"
-				/>
-			</label>
+			<div class="text-[15px] text-[#d9e3ee]">
+				{#if !cropImageUrl}
+					<div class="flex justify-center">
+						<div class="relative h-24 w-24">
+							{#if profileImageUrl}
+								<img
+									alt={name}
+									class="h-24 w-24 rounded-full border border-[#4b5f79] object-cover"
+									src={profileImageUrl}
+								/>
+							{:else}
+								<div class="flex h-24 w-24 items-center justify-center rounded-full border border-[#4b5f79] bg-[#08111d] text-[28px] font-[700] uppercase text-[#d6e7ff]">
+									{name.trim().slice(0, 1) || '?'}
+								</div>
+							{/if}
 
-			<label class="block text-[15px] text-[#d9e3ee]">
-				<div class="mb-2">{t('PROFILE_IMAGE', $currentLanguage)}</div>
-				<input
-					class="w-full rounded-[12px] border border-[#3d5570] bg-[#08111d] px-4 py-3 text-[16px] text-[#f3f7fb] outline-none transition focus:border-[#83c5ff]"
-					accept="image/*"
-					disabled={isUploadingImage}
-					onchange={(event) => void handleProfileImageChange(event)}
-					type="file"
-				/>
-			</label>
+							<button
+								aria-label={t('PROFILE_IMAGE', $currentLanguage)}
+								class="absolute -right-2 -top-2 flex h-10 w-10 items-center justify-center rounded-full border border-[#3d5570] bg-[#08111d] text-[#d6e7ff] transition hover:border-[#83c5ff] hover:text-[#ffffff]"
+								disabled={isUploadingImage}
+								onclick={openProfileImagePicker}
+								type="button"
+							>
+								<svg aria-hidden="true" class="h-4 w-4" fill="none" viewBox="0 0 24 24">
+									<path d="M4 20h4l10-10-4-4L4 16v4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+									<path d="m12 6 4 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" />
+								</svg>
+							</button>
+
+							<input
+								bind:this={profileImageInput}
+								class="hidden"
+								accept="image/*"
+								disabled={isUploadingImage}
+								onchange={(event) => void handleProfileImageChange(event)}
+								type="file"
+							/>
+						</div>
+					</div>
+				{:else}
+					<input
+						bind:this={profileImageInput}
+						class="hidden"
+						accept="image/*"
+						disabled={isUploadingImage}
+						onchange={(event) => void handleProfileImageChange(event)}
+						type="file"
+					/>
+				{/if}
+			</div>
 
 			{#if cropImageUrl}
 				<div class="space-y-4">
@@ -279,19 +337,21 @@
 						max={Math.max(cropMinScale * 3, cropMinScale)}
 						min={cropMinScale}
 						oninput={handleCropScaleChange}
-						step="0.01"
+						step="any"
 						type="range"
 					/>
 				</div>
-			{:else if profileImageUrl}
-				<div class="flex justify-center">
-					<img
-						alt={name}
-						class="h-24 w-24 rounded-full border border-[#4b5f79] object-cover"
-						src={profileImageUrl}
-					/>
-				</div>
 			{/if}
+
+			<label class="block text-[15px] text-[#d9e3ee]">
+				<div class="mb-2">{t('PLAYER_NAME', $currentLanguage)}</div>
+				<input
+					bind:value={name}
+					class="w-full rounded-[12px] border border-[#3d5570] bg-[#08111d] px-4 py-3 text-[16px] text-[#f3f7fb] outline-none transition focus:border-[#83c5ff]"
+					required
+					type="text"
+				/>
+			</label>
 
 			{#if errorMessage}
 				<div class="rounded-[12px] border border-[#8f3e45] bg-[#2a1115] px-4 py-3 text-[14px] text-[#ffbcc2]">
@@ -306,9 +366,36 @@
 					type="submit"
 				/>
 				<LandingTextLink
+					className="mt-4"
 					label={t('CANCEL', $currentLanguage)}
 					onclick={() => goto('/menu')}
 				/>
+			</div>
+
+			<div class="pt-10 text-center">
+				<LandingTextLink
+					className="text-[14px] uppercase tracking-[0.08em] text-[#9cb2c9] no-underline hover:text-[#d6e7ff]"
+					label={isCreatingRecoveryCode ? `${t('CREATE_RECOVERY_CODE', $currentLanguage)}...` : t('CREATE_RECOVERY_CODE', $currentLanguage)}
+					onclick={() => {
+						if (!isCreatingRecoveryCode) {
+							void generateRecoveryCode();
+						}
+					}}
+				/>
+				<div class="mt-3 text-[13px] text-[#9cb2c9]">
+					{t('RECOVERY_CODE_HINT', $currentLanguage)}
+				</div>
+
+				{#if recoveryCode}
+					<div class="mt-4 rounded-[12px] border border-[#3f6f52] bg-[#0d1d16] px-4 py-3 text-[14px] text-[#b8f0c7]">
+						<div class="font-[700] uppercase tracking-[0.12em]">{recoveryCode}</div>
+						{#if recoveryCodeExpiresAt}
+							<div class="mt-2 text-[12px] text-[#9fdbaf]">
+								{t('RECOVERY_CODE_EXPIRES', $currentLanguage)}: {formatRecoveryCodeExpiry(recoveryCodeExpiresAt)}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</form>
 	</div>

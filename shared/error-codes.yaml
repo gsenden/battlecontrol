@@ -2,8 +2,8 @@
 - ROOM_NOT_FOUND # Requested game room does not exist
 
 # User errors
-- USER_ALREADY_EXISTS # A user with this email address already exists
-- USER_NOT_FOUND # No user exists for this email address
+- USER_ALREADY_EXISTS # A user with this name already exists
+- USER_NOT_FOUND # No user exists for this name
 - AUTHENTICATION_FAILED # Authentication or passkey verification failed
 
 # Database errors

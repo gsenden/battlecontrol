@@ -1,12 +1,15 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { getCurrentUser } from '$lib/auth/auth.js';
+	import { getCurrentUser, loginUser, toReadableErrorMessage } from '$lib/auth/auth.js';
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import AppTitle from '$lib/ui/AppTitle.svelte';
 	import LandingActionButton from '$lib/ui/LandingActionButton.svelte';
 	import LandingTextLink from '$lib/ui/LandingTextLink.svelte';
+
+	let name = $state('');
+	let errorMessage = $state('');
+	let isSubmitting = $state(false);
 
 	onMount(() => {
 		void redirectLoggedInUserToLobby();
@@ -22,45 +25,76 @@
 			// The landing page should remain usable when the session probe fails.
 		}
 	}
+
+	async function submitLogin() {
+		errorMessage = '';
+		isSubmitting = true;
+
+		try {
+			await loginUser(name.trim());
+			window.location.assign('/menu');
+		} catch (error) {
+			errorMessage = toReadableErrorMessage(error);
+		} finally {
+			isSubmitting = false;
+		}
+	}
 </script>
 
 <div class="relative flex h-full items-start justify-center px-6 pt-[18vh]">
 	<div class="w-full max-w-[760px] text-[#ecf1f7]">
 		<div class="mb-12 text-center">
 			<div class="mx-auto inline-flex flex-col items-stretch">
-
 				<p class="mt-4 whitespace-nowrap text-[16px] leading-7 text-[#a7bacf]">
 					{t('HOME_SUBTITLE', $currentLanguage)}
 				</p>
 				<div class="mt-8">
 					<AppTitle className="uppercase" title={t('APP_NAME', $currentLanguage)} />
 				</div>
-
 			</div>
 		</div>
 
-		<div class="mt-50 flex flex-col items-center">
-			<div class="flex flex-wrap items-center justify-center gap-8">
+		<form
+			class="mt-40 flex flex-col items-center"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void submitLogin();
+			}}
+		>
+			<div class="w-full max-w-[560px]">
+				<input
+					aria-label={t('PLAYER_NAME', $currentLanguage)}
+					bind:value={name}
+					class="w-full rounded-[12px] border border-[#3d5570] bg-[#08111d] px-4 py-3 text-[16px] text-[#f3f7fb] outline-none transition focus:border-[#83c5ff]"
+					maxlength="32"
+					placeholder={t('PLAYER_NAME', $currentLanguage)}
+					required
+				/>
+			</div>
+
+			{#if errorMessage}
+				<div class="mt-5 w-full max-w-[560px] rounded-[12px] border border-[#8f3e45] bg-[#2a1115] px-4 py-3 text-[14px] text-[#ffbcc2]">
+					{errorMessage}
+				</div>
+			{/if}
+
+			<div class="mt-8">
 				<LandingActionButton
 					label={t('LOGIN', $currentLanguage)}
-					onclick={() => goto('/login')}
-				/>
-
-				<LandingActionButton
-					label={t('REGISTER', $currentLanguage)}
-					onclick={() => goto('/register')}
+					disabled={isSubmitting}
+					type="submit"
 				/>
 			</div>
 
 			<div class="mt-4">
 				<LandingTextLink
-					label={t('LOGIN_WITH_ONE_TIME_CODE', $currentLanguage)}
+					label={t('RECOVER_PLAYER', $currentLanguage)}
+					onclick={() => {
+						window.location.assign('/recover');
+					}}
 				/>
-
 			</div>
-
-			
-		</div>
+		</form>
 	</div>
 
 	<div class="absolute bottom-8 left-1/2 -translate-x-1/2">

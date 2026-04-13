@@ -19,6 +19,11 @@ export interface UserSettingsDto {
 	sound_effects_volume: number;
 }
 
+export interface RecoveryCodeDto {
+	recovery_code: string;
+	expires_at: number;
+}
+
 interface LoginRequestDto {
 	name: string;
 }
@@ -43,6 +48,10 @@ interface UpdateUserProfileRequestDto {
 
 interface ProfileImageUploadDto {
 	profile_image_url: string;
+}
+
+interface RecoverUserRequestDto {
+	recovery_code: string;
 }
 
 interface ApiError {
@@ -237,6 +246,38 @@ export async function uploadProfileImage(image: Blob): Promise<string> {
 
 	const body = await response.json() as ProfileImageUploadDto;
 	return body.profile_image_url;
+}
+
+export async function createRecoveryCode(): Promise<RecoveryCodeDto> {
+	const response = await fetch('/auth/recovery-code', {
+		method: 'POST',
+		credentials: 'same-origin',
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
+
+	return response.json() as Promise<RecoveryCodeDto>;
+}
+
+export async function recoverUser(recoveryCode: string): Promise<UserDto> {
+	const response = await fetch('/auth/recover', {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify({
+			recovery_code: recoveryCode,
+		} satisfies RecoverUserRequestDto),
+	});
+
+	if (!response.ok) {
+		throw await parseApiError(response);
+	}
+
+	return response.json() as Promise<UserDto>;
 }
 
 export async function getUserSettings(): Promise<UserSettingsDto> {

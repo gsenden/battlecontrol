@@ -12,16 +12,17 @@ use cookie::time::Duration;
 use common::dto::{
     LoginRequestDto, PasskeyFinishLoginRequestDto, PasskeyFinishRegistrationRequestDto,
     PasskeyStartLoginRequestDto, PasskeyStartRegistrationRequestDto, ProfileImageUploadDto,
-    RegistrationRequestDto, UserDto, UpdateUserProfileRequestDto, UserSettingsDto,
+    RecoverUserRequestDto, RegistrationRequestDto, UserDto, UpdateUserProfileRequestDto, UserSettingsDto,
 };
 use image::codecs::webp::WebPEncoder;
 use image::{ExtendedColorType, ImageEncoder};
 use uuid::Uuid;
 use super::ApiAdapter;
-use crate::adapters::db::{SessionsTable, SqliteAdapter, TableEntity};
+use crate::adapters::db::{SessionsTable, SqliteAdapter, TableEntity, TrustedPlayersTable, UsersTable};
 use crate::ports::{AuthDrivingPort, LoggerDrivingPort};
 
 const SESSION_INACTIVITY_TIMEOUT_SECONDS: i64 = 8 * 24 * 60 * 60;
+const BROWSER_COOKIE_NAME: &str = "battlecontrol-browser";
 
 pub struct AuthApiAdapter<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> {
     auth: AuthPort,
@@ -31,8 +32,12 @@ pub struct AuthApiAdapter<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> 
 
 impl<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort> AuthApiAdapter<AuthPort, Logger> {
     pub fn new(auth: AuthPort, logger: Logger, sqlite: SqliteAdapter) -> Self {
+        sqlite.ensure_table::<UsersTable>()
+            .expect("Failed to initialize users table");
         sqlite.ensure_table::<SessionsTable>()
             .expect("Failed to initialize sessions table");
+        sqlite.ensure_table::<TrustedPlayersTable>()
+            .expect("Failed to initialize trusted players table");
         migrate_sessions_table(&sqlite)
             .expect("Failed to migrate sessions table");
         Self { auth, logger, sqlite }
@@ -77,6 +82,14 @@ where
                 get(current_user_settings::<AuthPort, Logger>).put(save_user_settings::<AuthPort, Logger>),
             )
             .route(
+                common::domain::Resource::AuthRecoveryCode.path(),
+                post(create_recovery_code::<AuthPort, Logger>),
+            )
+            .route(
+                common::domain::Resource::AuthRecover.path(),
+                post(recover_user::<AuthPort, Logger>),
+            )
+            .route(
                 common::domain::Resource::AuthUser.path(),
                 post(register_user::<AuthPort, Logger>),
             )
@@ -109,8 +122,28 @@ async fn login_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     jar: CookieJar,
     Json(body): Json<LoginRequestDto>,
 ) -> Response {
-    match state.auth.login_user(body).await {
-        Ok(user) => login_response(jar, &state, user),
+    let browser_id = browser_id(&jar).unwrap_or_else(|| Uuid::new_v4().to_string());
+    match find_user_by_name(&state.sqlite, &body.name) {
+        Ok(Some(user)) if browser_trusts_user(&state.sqlite, &browser_id, &body.name) => {
+            login_response_with_browser(jar, &state, user, &browser_id)
+        }
+        Ok(Some(_)) => {
+            let error = common::domain::Error::UserAlreadyExists(
+                common::domain::error::UserAlreadyExistsError::new(body.name),
+            );
+            state.logger.log_error(&error);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
+        }
+        Ok(None) => match state.auth.login_user(body).await {
+            Ok(user) => {
+                let _ = trust_browser_for_user(&state.sqlite, &browser_id, &user.name);
+                login_response_with_browser(jar, &state, user, &browser_id)
+            }
+            Err(error) => {
+                state.logger.log_error(&error);
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
+            }
+        },
         Err(error) => {
             state.logger.log_error(&error);
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
@@ -136,8 +169,12 @@ async fn finish_passkey_registration<AuthPort: AuthDrivingPort, Logger: LoggerDr
     jar: CookieJar,
     Json(body): Json<PasskeyFinishRegistrationRequestDto>,
 ) -> Response {
+    let browser_id = browser_id(&jar).unwrap_or_else(|| Uuid::new_v4().to_string());
     match state.auth.finish_passkey_registration(body).await {
-        Ok(user) => login_response(jar, &state, user),
+        Ok(user) => {
+            let _ = trust_browser_for_user(&state.sqlite, &browser_id, &user.name);
+            login_response_with_browser(jar, &state, user, &browser_id)
+        }
         Err(error) => {
             state.logger.log_error(&error);
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
@@ -163,8 +200,12 @@ async fn finish_passkey_login<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPo
     jar: CookieJar,
     Json(body): Json<PasskeyFinishLoginRequestDto>,
 ) -> Response {
+    let browser_id = browser_id(&jar).unwrap_or_else(|| Uuid::new_v4().to_string());
     match state.auth.finish_passkey_login(body).await {
-        Ok(user) => login_response(jar, &state, user),
+        Ok(user) => {
+            let _ = trust_browser_for_user(&state.sqlite, &browser_id, &user.name);
+            login_response_with_browser(jar, &state, user, &browser_id)
+        }
         Err(error) => {
             state.logger.log_error(&error);
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
@@ -177,8 +218,12 @@ async fn register_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     jar: CookieJar,
     Json(body): Json<RegistrationRequestDto>,
 ) -> Response {
+    let browser_id = browser_id(&jar).unwrap_or_else(|| Uuid::new_v4().to_string());
     match state.auth.register_user(body).await {
-        Ok(user) => login_response(jar, &state, user),
+        Ok(user) => {
+            let _ = trust_browser_for_user(&state.sqlite, &browser_id, &user.name);
+            login_response_with_browser(jar, &state, user, &browser_id)
+        }
         Err(error) => {
             state.logger.log_error(&error);
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
@@ -246,6 +291,41 @@ async fn save_user_settings<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort
     }
 }
 
+async fn create_recovery_code<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
+) -> Response {
+    let Some(user) = session_user(&state, &jar) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+
+    match state.auth.create_recovery_code(user.name).await {
+        Ok(recovery_code) => Json(recovery_code).into_response(),
+        Err(error) => {
+            state.logger.log_error(&error);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
+        }
+    }
+}
+
+async fn recover_user<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    State(state): State<Arc<AppState<AuthPort, Logger>>>,
+    jar: CookieJar,
+    Json(body): Json<RecoverUserRequestDto>,
+) -> Response {
+    match state.auth.recover_user(body).await {
+        Ok(user) => {
+            let browser_id = browser_id(&jar).unwrap_or_else(|| Uuid::new_v4().to_string());
+            let _ = trust_browser_for_user(&state.sqlite, &browser_id, &user.name);
+            login_response_with_browser(jar, &state, user, &browser_id)
+        }
+        Err(error) => {
+            state.logger.log_error(&error);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
+        }
+    }
+}
+
 async fn save_user_profile<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     State(state): State<Arc<AppState<AuthPort, Logger>>>,
     jar: CookieJar,
@@ -254,11 +334,15 @@ async fn save_user_profile<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>
     let Some(user) = session_user(&state, &jar) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
+    let current_user_name = user.name.clone();
 
-    match state.auth.update_user_profile(user.name, body).await {
+    match state.auth.update_user_profile(current_user_name.clone(), body).await {
         Ok(updated_user) => {
             if let Some(session_id) = session_id(&jar) {
                 let _ = store_session(&state.sqlite, &session_id, &updated_user);
+            }
+            if let Some(browser_id) = browser_id(&jar) {
+                let _ = update_trusted_user_name(&state.sqlite, &browser_id, &current_user_name, &updated_user.name);
             }
             Json(updated_user).into_response()
         }
@@ -343,10 +427,21 @@ fn login_response<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
     state: &AppState<AuthPort, Logger>,
     user: UserDto,
 ) -> Response {
+    login_response_with_browser(jar, state, user, &Uuid::new_v4().to_string())
+}
+
+fn login_response_with_browser<AuthPort: AuthDrivingPort, Logger: LoggerDrivingPort>(
+    jar: CookieJar,
+    state: &AppState<AuthPort, Logger>,
+    user: UserDto,
+    browser_id: &str,
+) -> Response {
     let session_id = Uuid::new_v4().to_string();
     store_session(&state.sqlite, &session_id, &user)
         .expect("Failed to store session");
-    let jar = jar.add(session_cookie(&session_id));
+    let jar = jar
+        .add(session_cookie(&session_id))
+        .add(browser_cookie(browser_id));
     (jar, Json(user)).into_response()
 }
 
@@ -363,6 +458,11 @@ fn session_id(jar: &CookieJar) -> Option<String> {
         .map(|cookie| cookie.value().to_string())
 }
 
+fn browser_id(jar: &CookieJar) -> Option<String> {
+    jar.get(BROWSER_COOKIE_NAME)
+        .map(|cookie| cookie.value().to_string())
+}
+
 fn session_cookie(session_id: &str) -> Cookie<'static> {
     Cookie::build(("battlecontrol-session", session_id.to_string()))
         .path("/")
@@ -370,6 +470,58 @@ fn session_cookie(session_id: &str) -> Cookie<'static> {
         .same_site(SameSite::Lax)
         .max_age(Duration::days(30))
         .build()
+}
+
+fn browser_cookie(browser_id: &str) -> Cookie<'static> {
+    Cookie::build((BROWSER_COOKIE_NAME, browser_id.to_string()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(Duration::days(365))
+        .build()
+}
+
+fn find_user_by_name(sqlite: &SqliteAdapter, name: &str) -> Result<Option<UserDto>, common::domain::Error> {
+    let rows = sqlite.query_with_params(
+        &format!("SELECT * FROM {} WHERE name = ?", UsersTable::table_name()),
+        &[&name as &dyn rusqlite::types::ToSql],
+    ).map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?;
+
+    match rows.first() {
+        Some(row) => Ok(Some(UsersTable::from_row(row)
+            .map_err(|_| common::domain::Error::DatabaseError(common::domain::error::DatabaseErrorError::new()))?)),
+        None => Ok(None),
+    }
+}
+
+fn browser_trusts_user(sqlite: &SqliteAdapter, browser_id: &str, user_name: &str) -> bool {
+    sqlite.query_with_params(
+        &format!(
+            "SELECT * FROM {} WHERE browser_id = ? AND user_name = ?",
+            TrustedPlayersTable::table_name()
+        ),
+        &[&browser_id as &dyn rusqlite::types::ToSql, &user_name],
+    ).map(|rows| !rows.is_empty()).unwrap_or(false)
+}
+
+fn trust_browser_for_user(sqlite: &SqliteAdapter, browser_id: &str, user_name: &str) -> Result<(), String> {
+    sqlite.execute_with_params(
+        &format!(
+            "INSERT OR IGNORE INTO {} (browser_id, user_name) VALUES (?, ?)",
+            TrustedPlayersTable::table_name()
+        ),
+        &[&browser_id as &dyn rusqlite::types::ToSql, &user_name],
+    )
+}
+
+fn update_trusted_user_name(sqlite: &SqliteAdapter, browser_id: &str, current_name: &str, updated_name: &str) -> Result<(), String> {
+    sqlite.execute_with_params(
+        &format!(
+            "UPDATE {} SET user_name = ? WHERE browser_id = ? AND user_name = ?",
+            TrustedPlayersTable::table_name()
+        ),
+        &[&updated_name as &dyn rusqlite::types::ToSql, &browser_id, &current_name],
+    )
 }
 
 fn store_session(sqlite: &SqliteAdapter, session_id: &str, user: &UserDto) -> Result<(), String> {
@@ -471,6 +623,17 @@ mod tests {
             .unwrap()
     }
 
+    fn login_request_with_browser(name: &str, browser_id: &str) -> axum::http::Request<Body> {
+        let body = format!(r#"{{"name":"{name}"}}"#);
+        axum::http::Request::builder()
+            .method("POST")
+            .uri(common::domain::Resource::AuthLogin.path())
+            .header("content-type", "application/json")
+            .header("cookie", format!("{BROWSER_COOKIE_NAME}={browser_id}"))
+            .body(Body::from(body))
+            .unwrap()
+    }
+
     fn register_request() -> axum::http::Request<Body> {
         let body = format!(r#"{{"name":"{TEST_PLAYER_NAME}"}}"#);
         axum::http::Request::builder()
@@ -488,6 +651,18 @@ mod tests {
             .header("cookie", session_cookie)
             .body(Body::empty())
             .unwrap()
+    }
+
+    fn extract_session_cookie(response: &axum::http::Response<Body>) -> String {
+        response
+            .headers()
+            .get_all(SET_COOKIE)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .find(|value| value.starts_with("battlecontrol-session="))
+            .and_then(|value| value.split(';').next())
+            .unwrap()
+            .to_string()
     }
 
     async fn post_login_user() -> (axum::http::Response<Body>, FakeAuthDrivingPort) {
@@ -525,10 +700,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn login_user_skips_port_for_trusted_browser() {
+        let sqlite = sqlite_in_memory();
+        sqlite.ensure_table::<UsersTable>().unwrap();
+        sqlite.ensure_table::<TrustedPlayersTable>().unwrap();
+        sqlite.execute_with_params(
+            "INSERT INTO users (name, user_handle) VALUES (?, ?)",
+            &[&TEST_PLAYER_NAME as &dyn rusqlite::types::ToSql, &Uuid::new_v4().to_string()],
+        ).unwrap();
+        sqlite.execute_with_params(
+            "INSERT INTO trusted_players (browser_id, user_name) VALUES (?, ?)",
+            &[&"browser-1" as &dyn rusqlite::types::ToSql, &TEST_PLAYER_NAME],
+        ).unwrap();
+        let fake_port = FakeAuthDrivingPort::new();
+        let port_clone = fake_port.clone();
+        let app = AuthApiAdapter::new(fake_port, FakeLoggerDrivingPort::new(), sqlite).routes();
+
+        let _ = app.oneshot(login_request_with_browser(TEST_PLAYER_NAME, "browser-1")).await.unwrap();
+
+        assert_eq!(port_clone.login_user_calls().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn login_user_rejects_existing_name_for_other_browser() {
+        let sqlite = sqlite_in_memory();
+        sqlite.ensure_table::<UsersTable>().unwrap();
+        sqlite.ensure_table::<TrustedPlayersTable>().unwrap();
+        sqlite.execute_with_params(
+            "INSERT INTO users (name, user_handle) VALUES (?, ?)",
+            &[&TEST_PLAYER_NAME as &dyn rusqlite::types::ToSql, &Uuid::new_v4().to_string()],
+        ).unwrap();
+        sqlite.execute_with_params(
+            "INSERT INTO trusted_players (browser_id, user_name) VALUES (?, ?)",
+            &[&"browser-1" as &dyn rusqlite::types::ToSql, &TEST_PLAYER_NAME],
+        ).unwrap();
+        let app = AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new(), sqlite).routes();
+
+        let response = app.oneshot(login_request_with_browser(TEST_PLAYER_NAME, "browser-2")).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["code"], "UserAlreadyExists");
+    }
+
+    #[tokio::test]
     async fn login_user_sets_session_cookie() {
         let (response, _) = post_login_user().await;
-        let set_cookie = response.headers().get(SET_COOKIE).unwrap().to_str().unwrap();
-        assert!(set_cookie.contains("battlecontrol-session="));
+        let session_cookie = extract_session_cookie(&response);
+        assert!(session_cookie.starts_with("battlecontrol-session="));
     }
 
     #[tokio::test]
@@ -538,10 +757,9 @@ mod tests {
         let app = adapter.routes();
 
         let login_response = app.clone().oneshot(login_request()).await.unwrap();
-        let set_cookie = login_response.headers().get(SET_COOKIE).unwrap().to_str().unwrap();
-        let session_cookie = set_cookie.split(';').next().unwrap();
+        let session_cookie = extract_session_cookie(&login_response);
 
-        let response = app.oneshot(auth_me_request(session_cookie)).await.unwrap();
+        let response = app.oneshot(auth_me_request(&session_cookie)).await.unwrap();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let user: common::dto::UserDto = serde_json::from_slice(&body).unwrap();
         assert_eq!(user.id, TEST_USER_ID);
@@ -553,8 +771,7 @@ mod tests {
         let first_app = AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new(), sqlite.clone()).routes();
 
         let login_response = first_app.oneshot(login_request()).await.unwrap();
-        let set_cookie = login_response.headers().get(SET_COOKIE).unwrap().to_str().unwrap();
-        let session_cookie = set_cookie.split(';').next().unwrap().to_string();
+        let session_cookie = extract_session_cookie(&login_response);
 
         let second_app = AuthApiAdapter::new(FakeAuthDrivingPort::new(), FakeLoggerDrivingPort::new(), sqlite).routes();
         let response = second_app.oneshot(auth_me_request(&session_cookie)).await.unwrap();
