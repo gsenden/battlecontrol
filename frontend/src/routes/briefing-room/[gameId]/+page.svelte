@@ -121,7 +121,7 @@
 	}
 
 	function canStartGame(): boolean {
-		return (game?.players.length ?? 0) === 2;
+		return (game?.players.length ?? 0) >= 2;
 	}
 
 	async function cancelOrLeaveGame() {

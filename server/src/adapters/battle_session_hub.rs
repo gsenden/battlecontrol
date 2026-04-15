@@ -158,8 +158,8 @@ impl BattleSessionHub {
     }
 
     pub fn start_battle(&self, game: &GameDto) -> Result<(), String> {
-        if game.players.len() != 2 {
-            return Err("Only 2-player battles are currently supported".to_string());
+        if game.players.len() < 2 {
+            return Err("At least 2 players are required".to_string());
         }
 
         let player = &game.players[0];
@@ -184,7 +184,7 @@ impl BattleSessionHub {
                 player_name: player.user.name.clone(),
                 target_name: target.user.name.clone(),
                 ready_players: HashSet::new(),
-                total_players: game.players.len(),
+                total_players: 2,
                 battle_started: false,
             }),
         });
@@ -533,13 +533,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_battle_requires_exactly_two_players() {
+    async fn start_battle_requires_at_least_two_players() {
         let hub = BattleSessionHub::new();
         let game = one_player_game();
 
         let result = hub.start_battle(&game);
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn start_battle_accepts_more_than_two_players() {
+        let hub = BattleSessionHub::new();
+        let mut game = two_player_game();
+        game.players.push(GamePlayerDto {
+            user: user(3, "PilotThree"),
+            selected_race: Some("androsynth-guardian".to_string()),
+        });
+
+        let result = hub.start_battle(&game);
+        hub.remove_battle(&game.id);
+
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
