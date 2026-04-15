@@ -29,11 +29,25 @@
 			}
 		};
 		const onBattleReadyState = (event: Event) => {
-			const customEvent = event as CustomEvent<{ battleStarted: boolean; readyPlayers: number; totalPlayers: number }>;
+			const customEvent = event as CustomEvent<{
+				battleStarted: boolean;
+				readyPlayers: number;
+				totalPlayers: number;
+				battleCompleted?: boolean;
+				winnerName?: string;
+			}>;
 			readyPlayers = customEvent.detail.readyPlayers;
 			totalPlayers = customEvent.detail.totalPlayers;
 			if (customEvent.detail.battleStarted) {
 				triggerBattleStart();
+			}
+			if (customEvent.detail.battleCompleted && !battleCompleted) {
+				battleCompleted = true;
+				resultWinner = customEvent.detail.winnerName ?? '';
+				window.setTimeout(() => {
+					void completeGame(activeGameId ?? '').catch(() => {});
+					void goto(`/battle-result?winner=${encodeURIComponent(resultWinner)}`);
+				}, 2500);
 			}
 		};
 		const onConnectionFailed = (event: Event) => {

@@ -542,6 +542,8 @@ async fn battle_socket<BattlePort: BattleSessionDrivenPort + Send + Sync + 'stat
             battle_started: ready_state.battle_started,
             ready_players: ready_state.ready_players,
             total_players: ready_state.total_players,
+            battle_completed: ready_state.battle_completed,
+            winner_name: ready_state.winner_name,
         };
         if socket
             .send(Message::Text(

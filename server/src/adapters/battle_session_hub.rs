@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -29,11 +29,16 @@ struct BattleSession {
 
 struct BattleRuntime {
     battle: CoreBattle,
+    participant_names: HashSet<String>,
+    selected_races: HashMap<String, String>,
+    waiting_players: VecDeque<String>,
     player_name: String,
     target_name: String,
     ready_players: HashSet<String>,
     total_players: usize,
     battle_started: bool,
+    battle_completed: bool,
+    winner_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -67,6 +72,8 @@ pub struct BattleServerMessage {
     pub battle_started: bool,
     pub ready_players: usize,
     pub total_players: usize,
+    pub battle_completed: bool,
+    pub winner_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -164,6 +171,30 @@ impl BattleSessionHub {
 
         let player = &game.players[0];
         let target = &game.players[1];
+        let selected_races = game
+            .players
+            .iter()
+            .map(|player| {
+                (
+                    player.user.name.clone(),
+                    player
+                        .selected_race
+                        .clone()
+                        .unwrap_or_else(|| "human-cruiser".to_string()),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let waiting_players = game
+            .players
+            .iter()
+            .skip(2)
+            .map(|player| player.user.name.clone())
+            .collect::<VecDeque<_>>();
+        let participant_names = game
+            .players
+            .iter()
+            .map(|player| player.user.name.clone())
+            .collect::<HashSet<_>>();
         let battle = CoreBattle::new(
             player.selected_race.as_deref().unwrap_or("human-cruiser"),
             target.selected_race.as_deref().unwrap_or("human-cruiser"),
@@ -181,11 +212,16 @@ impl BattleSessionHub {
             stopped: AtomicBool::new(false),
             runtime: Mutex::new(BattleRuntime {
                 battle,
+                participant_names,
+                selected_races,
+                waiting_players,
                 player_name: player.user.name.clone(),
                 target_name: target.user.name.clone(),
                 ready_players: HashSet::new(),
-                total_players: 2,
+                total_players: game.players.len(),
                 battle_started: false,
+                battle_completed: false,
+                winner_name: None,
             }),
         });
 
@@ -199,6 +235,7 @@ impl BattleSessionHub {
                 if let Ok(mut runtime) = session.runtime.lock() {
                     if runtime.battle_started {
                         runtime.battle.tick(PHYSICS_DELTA);
+                        runtime.advance_round_if_needed();
                     }
                 }
                 sleep(Duration::from_millis(PHYSICS_DELTA as u64)).await;
@@ -235,12 +272,14 @@ impl BattleSessionHub {
             .cloned()?;
         let runtime = session.runtime.lock().ok()?;
         let snapshot = runtime.battle.snapshot();
-        if runtime.player_name == user_name {
+        if !runtime.participant_names.contains(user_name) {
+            None
+        } else if runtime.player_name == user_name {
             Some(to_snapshot_dto(snapshot))
         } else if runtime.target_name == user_name {
             Some(to_snapshot_dto(swapped_snapshot(snapshot)))
         } else {
-            None
+            Some(to_snapshot_dto(snapshot))
         }
     }
 
@@ -261,13 +300,11 @@ impl BattleSessionHub {
             .runtime
             .lock()
             .map_err(|_| "battle runtime lock poisoned".to_string())?;
-        let is_player = if runtime.player_name == user_name {
-            true
-        } else if runtime.target_name == user_name {
-            false
-        } else {
+        if !runtime.participant_names.contains(user_name) {
             return Err("player not in battle".to_string());
-        };
+        }
+        let is_player = runtime.player_name == user_name;
+        let is_target = runtime.target_name == user_name;
 
         match message {
             BattleClientMessage::PlayerReady => {
@@ -286,49 +323,49 @@ impl BattleSessionHub {
                 };
                 if is_player {
                     runtime.battle.set_player_input(input);
-                } else {
+                } else if is_target {
                     runtime.battle.set_target_input(input);
                 }
             }
             BattleClientMessage::SetWeaponTargetPoint { x, y } => {
                 if is_player {
                     runtime.battle.set_player_weapon_target_point(x, y);
-                } else {
+                } else if is_target {
                     runtime.battle.set_target_weapon_target_point(x, y);
                 }
             }
             BattleClientMessage::SetWeaponTargetShip => {
                 if is_player {
                     runtime.battle.set_player_weapon_target_ship();
-                } else {
+                } else if is_target {
                     runtime.battle.set_target_weapon_target_ship();
                 }
             }
             BattleClientMessage::SetSpecialTargetPoint { x, y } => {
                 if is_player {
                     runtime.battle.set_player_special_target_point(x, y);
-                } else {
+                } else if is_target {
                     runtime.battle.set_target_special_target_point(x, y);
                 }
             }
             BattleClientMessage::SetSpecialTargetShip => {
                 if is_player {
                     runtime.battle.set_player_special_target_ship();
-                } else {
+                } else if is_target {
                     runtime.battle.set_target_special_target_ship();
                 }
             }
             BattleClientMessage::ClearWeaponTarget => {
                 if is_player {
                     runtime.battle.clear_player_weapon_target();
-                } else {
+                } else if is_target {
                     runtime.battle.clear_target_weapon_target();
                 }
             }
             BattleClientMessage::ClearSpecialTarget => {
                 if is_player {
                     runtime.battle.clear_player_special_target();
-                } else {
+                } else if is_target {
                     runtime.battle.clear_target_special_target();
                 }
             }
@@ -345,22 +382,132 @@ impl BattleSessionHub {
             .get(game_id)
             .cloned()?;
         let runtime = session.runtime.lock().ok()?;
-        if runtime.player_name != user_name && runtime.target_name != user_name {
+        if !runtime.participant_names.contains(user_name) {
             return None;
         }
         Some(BattleReadyStateDto {
             battle_started: runtime.battle_started,
             ready_players: runtime.ready_players.len(),
             total_players: runtime.total_players,
+            battle_completed: runtime.battle_completed,
+            winner_name: runtime.winner_name.clone(),
         })
     }
 }
 
-#[derive(Clone, Copy)]
+impl BattleRuntime {
+    fn advance_round_if_needed(&mut self) {
+        if self.battle_completed {
+            return;
+        }
+        let snapshot = self.battle.snapshot();
+        let player_dead = snapshot.player.dead;
+        let target_dead = snapshot.target.dead;
+        if !player_dead && !target_dead {
+            return;
+        }
+
+        match (player_dead, target_dead) {
+            (true, true) => self.replace_both_slots_or_finish(None),
+            (true, false) => self.replace_dead_slot_or_finish(false),
+            (false, true) => self.replace_dead_slot_or_finish(true),
+            (false, false) => {}
+        }
+    }
+
+    fn replace_both_slots_or_finish(&mut self, fallback_winner: Option<String>) {
+        let Some(new_player) = self.waiting_players.pop_front() else {
+            self.battle_completed = true;
+            self.winner_name = fallback_winner;
+            return;
+        };
+        let Some(new_target) = self.waiting_players.pop_front() else {
+            self.battle_completed = true;
+            self.winner_name = Some(new_player);
+            return;
+        };
+
+        let Some(player_ship_type) = self.selected_races.get(&new_player).cloned() else {
+            return;
+        };
+        let Some(target_ship_type) = self.selected_races.get(&new_target).cloned() else {
+            return;
+        };
+
+        if self.battle.switch_player_ship(&player_ship_type).is_err() {
+            return;
+        }
+        if self.battle.switch_target_ship(&target_ship_type).is_err() {
+            return;
+        }
+        self.player_name = new_player;
+        self.target_name = new_target;
+        self.battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+        self.battle.set_target_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+    }
+
+    fn replace_dead_slot_or_finish(&mut self, player_alive: bool) {
+        let winner = if player_alive {
+            self.player_name.clone()
+        } else {
+            self.target_name.clone()
+        };
+        let Some(next_player) = self.waiting_players.pop_front() else {
+            self.battle_completed = true;
+            self.winner_name = Some(winner);
+            return;
+        };
+        let Some(next_ship_type) = self.selected_races.get(&next_player).cloned() else {
+            return;
+        };
+
+        if player_alive {
+            if self.battle.switch_target_ship(&next_ship_type).is_err() {
+                return;
+            }
+            self.target_name = next_player;
+        } else {
+            if self.battle.switch_player_ship(&next_ship_type).is_err() {
+                return;
+            }
+            self.player_name = next_player;
+        }
+        self.battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+        self.battle.set_target_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+    }
+}
+
+#[derive(Clone)]
 pub struct BattleReadyStateDto {
     pub battle_started: bool,
     pub ready_players: usize,
     pub total_players: usize,
+    pub battle_completed: bool,
+    pub winner_name: Option<String>,
 }
 
 impl BattleSessionDrivenPort for BattleSessionHub {
@@ -530,6 +677,44 @@ mod tests {
         game.id = "game-1p".to_string();
         game.players.truncate(1);
         game
+    }
+
+    #[tokio::test]
+    async fn snapshot_for_additional_player_returns_some() {
+        let hub = BattleSessionHub::new();
+        let mut game = two_player_game();
+        game.players.push(GamePlayerDto {
+            user: user(3, "PilotThree"),
+            selected_race: Some("androsynth-guardian".to_string()),
+        });
+        hub.start_battle(&game).expect("start battle");
+
+        let snapshot = hub.snapshot_for(&game.id, "PilotThree");
+        hub.remove_battle(&game.id);
+
+        assert!(snapshot.is_some());
+    }
+
+    #[tokio::test]
+    async fn ready_state_counts_all_game_players() {
+        let hub = BattleSessionHub::new();
+        let mut game = two_player_game();
+        game.players.push(GamePlayerDto {
+            user: user(3, "PilotThree"),
+            selected_race: Some("androsynth-guardian".to_string()),
+        });
+        hub.start_battle(&game).expect("start battle");
+
+        hub.apply_message(&game.id, "PilotOne", BattleClientMessage::PlayerReady)
+            .expect("player one ready");
+        hub.apply_message(&game.id, "PilotTwo", BattleClientMessage::PlayerReady)
+            .expect("player two ready");
+        let ready_state = hub
+            .ready_state_for(&game.id, "PilotThree")
+            .expect("ready state");
+        hub.remove_battle(&game.id);
+
+        assert_eq!((ready_state.ready_players, ready_state.total_players), (2, 3));
     }
 
     #[tokio::test]

@@ -477,7 +477,55 @@ impl Battle {
         self.ships[self.player.ship_id] = next_ship;
         self.player.body_id = next_body_id;
         self.player.thrusting = false;
+        self.player.dead = false;
+        self.player.special_active = false;
+        self.player.special_contacting = false;
         self.player.primary_mount_facing = self.ships[self.player.ship_id].facing();
+        self.player_input = ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        };
+        self.player_weapon_target = ProjectileTarget::None;
+        self.player_special_target = SpecialTarget::None;
+        Ok(())
+    }
+
+    pub fn switch_target_ship(&mut self, ship_type: &str) -> Result<(), String> {
+        let current = self
+            .matter_world
+            .body_state(self.target.body_id)
+            .ok_or_else(|| "missing target body state".to_string())?;
+        let next_ship =
+            build_ship(ship_type).ok_or_else(|| format!("unknown ship type: {ship_type}"))?;
+        let next_body_id = create_ship_body_for(
+            &mut self.matter_world,
+            &next_ship,
+            current.x,
+            current.y,
+            self.target.special_active,
+        );
+        self.matter_world
+            .set_body_velocity(next_body_id, current.vx, current.vy);
+        self.matter_world.disable_body(self.target.body_id);
+        self.ships[self.target.ship_id] = next_ship;
+        self.target.body_id = next_body_id;
+        self.target.thrusting = false;
+        self.target.dead = false;
+        self.target.special_active = false;
+        self.target.special_contacting = false;
+        self.target.primary_mount_facing = self.ships[self.target.ship_id].facing();
+        self.target_input = ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        };
+        self.target_weapon_target = ProjectileTarget::None;
+        self.target_special_target = SpecialTarget::None;
         Ok(())
     }
 

@@ -529,7 +529,7 @@ export class BattleScene extends Phaser.Scene {
     this.syncLasers(snapshot);
     this.syncTargetOpponent(snapshot);
     this.playAudioEvents(snapshot);
-    if ((snapshot.player.dead || snapshot.target.dead) && !this.finishedEventSent) {
+    if (!this.battleSocket && (snapshot.player.dead || snapshot.target.dead) && !this.finishedEventSent) {
       this.finishedEventSent = true;
       window.dispatchEvent(new CustomEvent('battlecontrol:battle-finished'));
     }
@@ -1135,6 +1135,8 @@ export class BattleScene extends Phaser.Scene {
         battleStarted?: boolean;
         readyPlayers?: number;
         totalPlayers?: number;
+        battleCompleted?: boolean;
+        winnerName?: string | null;
       };
       if (payload.type !== 'snapshot') {
         return;
@@ -1144,8 +1146,16 @@ export class BattleScene extends Phaser.Scene {
           battleStarted: Boolean(payload.battleStarted),
           readyPlayers: payload.readyPlayers ?? 0,
           totalPlayers: payload.totalPlayers ?? 0,
+          battleCompleted: Boolean(payload.battleCompleted),
+          winnerName: payload.winnerName ?? '',
         },
       }));
+      if (payload.battleCompleted && !this.finishedEventSent) {
+        this.finishedEventSent = true;
+        window.dispatchEvent(new CustomEvent('battlecontrol:battle-completed', {
+          detail: { winnerName: payload.winnerName ?? '' },
+        }));
+      }
 
       this.applySnapshot(payload.snapshot);
     };
