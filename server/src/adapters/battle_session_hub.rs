@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -31,11 +31,15 @@ struct BattleRuntime {
     battle: CoreBattle,
     player_name: String,
     target_name: String,
+    ready_players: HashSet<String>,
+    total_players: usize,
+    battle_started: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum BattleClientMessage {
+    PlayerReady,
     SetInput { input: ShipInputDto },
     SetWeaponTargetPoint { x: f64, y: f64 },
     SetWeaponTargetShip,
@@ -60,6 +64,9 @@ pub struct BattleServerMessage {
     #[serde(rename = "type")]
     pub message_type: &'static str,
     pub snapshot: BattleSnapshotDto,
+    pub battle_started: bool,
+    pub ready_players: usize,
+    pub total_players: usize,
 }
 
 #[derive(Clone, Copy, Serialize)]
@@ -176,6 +183,9 @@ impl BattleSessionHub {
                 battle,
                 player_name: player.user.name.clone(),
                 target_name: target.user.name.clone(),
+                ready_players: HashSet::new(),
+                total_players: game.players.len(),
+                battle_started: false,
             }),
         });
 
@@ -187,7 +197,9 @@ impl BattleSessionHub {
         tokio::spawn(async move {
             while !session.stopped.load(Ordering::Relaxed) {
                 if let Ok(mut runtime) = session.runtime.lock() {
-                    runtime.battle.tick(PHYSICS_DELTA);
+                    if runtime.battle_started {
+                        runtime.battle.tick(PHYSICS_DELTA);
+                    }
                 }
                 sleep(Duration::from_millis(PHYSICS_DELTA as u64)).await;
             }
@@ -258,6 +270,12 @@ impl BattleSessionHub {
         };
 
         match message {
+            BattleClientMessage::PlayerReady => {
+                runtime.ready_players.insert(user_name.to_string());
+                if runtime.ready_players.len() >= runtime.total_players {
+                    runtime.battle_started = true;
+                }
+            }
             BattleClientMessage::SetInput { input } => {
                 let input = ShipInput {
                     left: input.left,
@@ -318,6 +336,31 @@ impl BattleSessionHub {
 
         Ok(())
     }
+
+    pub fn ready_state_for(&self, game_id: &str, user_name: &str) -> Option<BattleReadyStateDto> {
+        let session = self
+            .sessions
+            .lock()
+            .expect("battle sessions lock poisoned")
+            .get(game_id)
+            .cloned()?;
+        let runtime = session.runtime.lock().ok()?;
+        if runtime.player_name != user_name && runtime.target_name != user_name {
+            return None;
+        }
+        Some(BattleReadyStateDto {
+            battle_started: runtime.battle_started,
+            ready_players: runtime.ready_players.len(),
+            total_players: runtime.total_players,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct BattleReadyStateDto {
+    pub battle_started: bool,
+    pub ready_players: usize,
+    pub total_players: usize,
 }
 
 impl BattleSessionDrivenPort for BattleSessionHub {
@@ -335,6 +378,10 @@ impl BattleSessionDrivenPort for BattleSessionHub {
 
     fn snapshot_for(&self, game_id: &str, user_name: &str) -> Option<BattleSnapshotDto> {
         BattleSessionHub::snapshot_for(self, game_id, user_name)
+    }
+
+    fn ready_state_for(&self, game_id: &str, user_name: &str) -> Option<BattleReadyStateDto> {
+        BattleSessionHub::ready_state_for(self, game_id, user_name)
     }
 
     fn apply_message(

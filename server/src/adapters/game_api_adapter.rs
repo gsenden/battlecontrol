@@ -533,9 +533,15 @@ async fn battle_socket<BattlePort: BattleSessionDrivenPort + Send + Sync + 'stat
     let mut socket = socket;
 
     while let Some(snapshot) = battle_sessions.snapshot_for(&game_id, &user_name) {
+        let Some(ready_state) = battle_sessions.ready_state_for(&game_id, &user_name) else {
+            break;
+        };
         let message = BattleServerMessage {
             message_type: "snapshot",
             snapshot,
+            battle_started: ready_state.battle_started,
+            ready_players: ready_state.ready_players,
+            total_players: ready_state.total_players,
         };
         if socket
             .send(Message::Text(

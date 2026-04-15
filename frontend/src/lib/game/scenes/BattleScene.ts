@@ -125,6 +125,8 @@ export class BattleScene extends Phaser.Scene {
   private battleWorker?: Worker;
   private battleSocket: WebSocket | null = null;
   private battleSocketFailed = false;
+  private playerReadySent = false;
+  private playerReadyPending = false;
   private planetBase!: string;
   private planetX = BATTLE_WIDTH / 2;
   private planetY = BATTLE_HEIGHT / 2;
@@ -272,7 +274,7 @@ export class BattleScene extends Phaser.Scene {
     this.targetHitPolygon = this.add.graphics();
     this.targetHitPolygon.setDepth(20);
     if (battleSetup?.gameId) {
-      this.started = true;
+      this.started = false;
       this.connectBattleSocket(battleSetup.gameId);
     } else {
       this.battleWorker = new Worker(new URL('../workers/battle-worker.ts', import.meta.url), { type: 'module' });
@@ -302,10 +304,15 @@ export class BattleScene extends Phaser.Scene {
     this.battleMusic.volume = userSettings.music_enabled ? userSettings.music_volume / 100 : 0;
     this.battleMusic.preload = 'auto';
     window.addEventListener('battlecontrol:start-game', this.startBattleMusic);
+    const onPlayerReady = () => {
+      this.signalPlayerReady();
+    };
+    window.addEventListener('battlecontrol:player-ready', onPlayerReady);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.battleWorker?.terminate();
       this.battleSocket?.close();
       window.removeEventListener('battlecontrol:start-game', this.startBattleMusic);
+      window.removeEventListener('battlecontrol:player-ready', onPlayerReady);
       if (this.battleMusic) {
         this.battleMusic.pause();
         this.battleMusic.currentTime = 0;
@@ -1115,17 +1122,46 @@ export class BattleScene extends Phaser.Scene {
     this.battleSocket.onerror = () => {
       notifyFailure('Battle connection failed');
     };
+    this.battleSocket.onopen = () => {
+      if (this.playerReadyPending && !this.playerReadySent) {
+        this.signalPlayerReady();
+      }
+    };
     this.battleSocket.onclose = () => {
       notifyFailure('Battle connection lost');
     };
     this.battleSocket.onmessage = (event: MessageEvent<string>) => {
-      const payload = JSON.parse(event.data) as BattleWorkerResponse;
+      const payload = JSON.parse(event.data) as BattleWorkerResponse & {
+        battleStarted?: boolean;
+        readyPlayers?: number;
+        totalPlayers?: number;
+      };
       if (payload.type !== 'snapshot') {
         return;
       }
+      window.dispatchEvent(new CustomEvent('battlecontrol:battle-ready-state', {
+        detail: {
+          battleStarted: Boolean(payload.battleStarted),
+          readyPlayers: payload.readyPlayers ?? 0,
+          totalPlayers: payload.totalPlayers ?? 0,
+        },
+      }));
 
       this.applySnapshot(payload.snapshot);
     };
+  }
+
+  private signalPlayerReady() {
+    if (this.playerReadySent) {
+      return;
+    }
+    if (!this.battleSocket || this.battleSocket.readyState !== WebSocket.OPEN) {
+      this.playerReadyPending = true;
+      return;
+    }
+    this.playerReadyPending = false;
+    this.playerReadySent = true;
+    this.battleSocket.send(JSON.stringify({ type: 'playerReady' }));
   }
 
   private sendBattleMessage(message: BattleWorkerMessage) {

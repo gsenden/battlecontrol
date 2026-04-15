@@ -14,7 +14,7 @@ pub use api_adapter::ApiAdapter;
 pub use auth_api_adapter::AuthApiAdapter;
 pub use axum_adapter::AxumAdapter;
 pub use battle_session_hub::BattleSessionHub;
-pub use battle_session_hub::{BattleClientMessage, BattleSnapshotDto};
+pub use battle_session_hub::{BattleClientMessage, BattleReadyStateDto, BattleSnapshotDto};
 pub use game_api_adapter::GameApiAdapter;
 pub use game_room_hub::GameRoomHub;
 pub use sqlite_game_repository::SqliteGameRepository;

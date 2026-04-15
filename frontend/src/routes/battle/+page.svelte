@@ -16,6 +16,8 @@
 	let activeGameId = $state<string | null>(null);
 	let battleSetup = $state<BattleSetup | undefined>(undefined);
 	let battleStarted = $state(false);
+	let readyPlayers = $state(0);
+	let totalPlayers = $state(0);
 	let resultWinner = $state('');
 	let battleCompleted = $state(false);
 
@@ -23,6 +25,14 @@
 		const onReady = () => {
 			sceneReady = true;
 			if (activeGameId) {
+				window.dispatchEvent(new Event('battlecontrol:player-ready'));
+			}
+		};
+		const onBattleReadyState = (event: Event) => {
+			const customEvent = event as CustomEvent<{ battleStarted: boolean; readyPlayers: number; totalPlayers: number }>;
+			readyPlayers = customEvent.detail.readyPlayers;
+			totalPlayers = customEvent.detail.totalPlayers;
+			if (customEvent.detail.battleStarted) {
 				triggerBattleStart();
 			}
 		};
@@ -35,7 +45,7 @@
 				return;
 			}
 			const customEvent = event as CustomEvent<{ message?: string }>;
-			errorMessage = customEvent.detail?.message ?? 'Battle connection failed';
+			errorMessage = customEvent.detail?.message ?? t('BATTLE_CONNECTION_FAILED', $currentLanguage);
 		};
 		const onBattleFinished = () => {
 			if (!activeGameId) {
@@ -60,18 +70,20 @@
 				return;
 			}
 			event.preventDefault();
-			if (!window.confirm('Weet je zeker dat je het spel wilt stoppen?')) {
+			if (!window.confirm(t('STOP_BATTLE_CONFIRM', $currentLanguage))) {
 				return;
 			}
 			void stopBattle();
 		};
 		window.addEventListener('battlecontrol:scene-ready', onReady, { once: true });
+		window.addEventListener('battlecontrol:battle-ready-state', onBattleReadyState as EventListener);
 		window.addEventListener('battlecontrol:battle-connection-failed', onConnectionFailed as EventListener);
 		window.addEventListener('battlecontrol:battle-finished', onBattleFinished);
 		window.addEventListener('keydown', onKeyDown);
 		void loadBattle();
 		return () => {
 			window.removeEventListener('battlecontrol:scene-ready', onReady);
+			window.removeEventListener('battlecontrol:battle-ready-state', onBattleReadyState as EventListener);
 			window.removeEventListener('battlecontrol:battle-connection-failed', onConnectionFailed as EventListener);
 			window.removeEventListener('battlecontrol:battle-finished', onBattleFinished);
 			window.removeEventListener('keydown', onKeyDown);
@@ -161,7 +173,7 @@
 				};
 			}
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'Battle setup failed';
+			errorMessage = error instanceof Error ? error.message : t('BATTLE_SETUP_FAILED', $currentLanguage);
 			if (activeGameId) {
 				return;
 			}
@@ -170,7 +182,7 @@
 		try {
 			game = await createBattleGame(gameContainer, hudContainer, userSettings ?? undefined, battleSetup);
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'Battle startup failed';
+			errorMessage = error instanceof Error ? error.message : t('BATTLE_STARTUP_FAILED', $currentLanguage);
 		}
 	}
 </script>
@@ -196,8 +208,19 @@
 			disabled={!sceneReady}
 			onclick={startGame}
 		>
-			{sceneReady ? 'Start Game' : 'Loading...'}
+			{sceneReady ? t('START_GAME', $currentLanguage) : t('LOADING', $currentLanguage)}
 		</button>
+	</div>
+{/if}
+
+{#if activeGameId && !battleStarted}
+	<div class="fixed inset-0 z-[100] flex items-center justify-center bg-[radial-gradient(circle_at_center,rgb(10_18_34/55%),rgb(0_0_0/88%))]">
+		<div class="min-w-[280px] rounded-[12px] border border-[#8c8c8c] bg-[#111927] px-6 py-5 text-center text-[#f1f1f1]">
+			<div class="font-mono text-[22px] uppercase tracking-wider">{t('LOADING', $currentLanguage)}</div>
+			<div class="mt-3 text-[14px] text-[#c3d0e2]">
+				{t('WAITING_FOR_PLAYERS', $currentLanguage)} ({readyPlayers}/{totalPlayers || 2})
+			</div>
+		</div>
 	</div>
 {/if}
 
