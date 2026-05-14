@@ -59,6 +59,7 @@ export interface AudioEventSnapshot {
 }
 
 export interface BattleSnapshot {
+  ships: BattleShipSnapshot[];
   player: BattleShipSnapshot;
   target: BattleShipSnapshot;
   meteors: MeteorSnapshot[];
@@ -88,9 +89,9 @@ export type BattleWorkerMessage =
   | { type: 'triggerTargetWeaponAtPlayer' }
   | { type: 'setTargetWeaponTargetShip' }
   | { type: 'setPlayerWeaponTargetPoint'; x: number; y: number }
-  | { type: 'setPlayerWeaponTargetShip' }
+  | { type: 'setPlayerWeaponTargetShip'; shipId?: number }
   | { type: 'setPlayerSpecialTargetPoint'; x: number; y: number }
-  | { type: 'setPlayerSpecialTargetShip' }
+  | { type: 'setPlayerSpecialTargetShip'; shipId?: number }
   | { type: 'clearPlayerWeaponTarget' }
   | { type: 'clearPlayerSpecialTarget' }
   | { type: 'switchPlayerShip'; shipType: string };

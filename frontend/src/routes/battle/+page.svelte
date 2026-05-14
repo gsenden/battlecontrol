@@ -6,6 +6,7 @@
 	import { currentLanguage } from '$lib/i18n/i18n.js';
 	import { t } from '$lib/i18n/translations.js';
 	import type { BattleSetup } from '$lib/game/boot.js';
+	import { completeBattleAndNavigate } from './complete-battle-helper.js';
 
 	let gameContainer: HTMLDivElement;
 	let hudContainer: HTMLDivElement;
@@ -45,8 +46,10 @@
 				battleCompleted = true;
 				resultWinner = customEvent.detail.winnerName ?? '';
 				window.setTimeout(() => {
-					void completeGame(activeGameId ?? '').catch(() => {});
-					void goto(`/battle-result?winner=${encodeURIComponent(resultWinner)}`);
+					if (!activeGameId) {
+						return;
+					}
+					void completeBattleAndNavigate(completeGame, goto, activeGameId, resultWinner);
 				}, 2500);
 			}
 		};
@@ -75,8 +78,7 @@
 				: battleSetup?.playerCaptainName ?? '';
 
 			window.setTimeout(() => {
-				void completeGame(activeGameId).catch(() => {});
-				void goto(`/battle-result?winner=${encodeURIComponent(resultWinner)}`);
+				void completeBattleAndNavigate(completeGame, goto, activeGameId, resultWinner);
 			}, 2500);
 		};
 		const onKeyDown = (event: KeyboardEvent) => {

@@ -106,6 +106,7 @@ pub struct ProjectileSnapshot {
     velocity_sign_width: i32,
     velocity_sign_height: i32,
     bubble_rng: u32,
+    owner_ship_id: u64,
     owner_is_player: bool,
     target: ProjectileTarget,
     marine_returning: bool,
@@ -154,6 +155,7 @@ pub struct AudioEventSnapshot {
 }
 
 pub struct BattleSnapshot {
+    pub ships: Vec<BattleShipSnapshot>,
     pub player: BattleShipSnapshot,
     pub target: BattleShipSnapshot,
     pub meteors: Vec<MeteorSnapshot>,
@@ -167,21 +169,19 @@ pub struct BattleSnapshot {
 enum ProjectileTarget {
     None,
     Point { x: f64, y: f64 },
-    PlayerShip,
-    TargetShip,
+    Ship { id: u64 },
 }
 
 #[derive(Clone, Copy)]
 enum SpecialTarget {
     None,
     Point { x: f64, y: f64 },
-    PlayerShip,
-    TargetShip,
+    Ship { id: u64 },
 }
 
 struct MarineBoarderState {
-    defender_is_player: bool,
-    owner_is_player: bool,
+    defender_ship_id: u64,
+    owner_ship_id: u64,
     ticks_until_next_roll: i32,
 }
 
@@ -219,10 +219,8 @@ struct BlazerCollisionInput<'a> {
 
 #[derive(Default)]
 struct BattleOutcome {
-    player_died: bool,
-    target_died: bool,
-    player_won: bool,
-    target_won: bool,
+    died_ship_ids: Vec<u64>,
+    winner_ship_ids: Vec<u64>,
 }
 
 struct BattleShipState {
@@ -248,8 +246,13 @@ pub struct Battle {
     matter_world: MatterWorld,
     player: BattleShipState,
     target: BattleShipState,
+    additional_active_ships: Vec<BattleShipState>,
     player_input: ShipInput,
     target_input: ShipInput,
+    additional_inputs: Vec<ShipInput>,
+    additional_meteor_contacts: Vec<Vec<bool>>,
+    additional_weapon_targets: Vec<ProjectileTarget>,
+    additional_special_targets: Vec<SpecialTarget>,
     queued_target_weapon: bool,
     player_weapon_target: ProjectileTarget,
     target_weapon_target: ProjectileTarget,
@@ -281,7 +284,160 @@ struct CollisionBody {
     mass: f64,
 }
 
+#[derive(Clone, Copy)]
+struct ActiveShipControl {
+    game_object_id: u64,
+    ship_id: usize,
+    body_id: usize,
+    input: ShipInput,
+    role: Option<bool>,
+}
+
 impl Battle {
+    fn active_ship_states(&self) -> Vec<&BattleShipState> {
+        let mut ships = Vec::with_capacity(2 + self.additional_active_ships.len());
+        ships.push(&self.player);
+        ships.push(&self.target);
+        ships.extend(self.additional_active_ships.iter());
+        ships
+    }
+
+    pub fn active_ship_ids(&self) -> Vec<u64> {
+        self.active_ship_states()
+            .into_iter()
+            .map(|ship| ship.game_object_id())
+            .collect()
+    }
+
+    fn is_player_ship_id(&self, ship_id: u64) -> bool {
+        self.player.game_object_id() == ship_id
+    }
+
+    fn opposing_active_ship_id(&self, ship_id: u64) -> Option<u64> {
+        self.active_ship_states()
+            .into_iter()
+            .find(|state| state.game_object_id() != ship_id && !state.dead)
+            .map(|state| state.game_object_id())
+    }
+
+    fn active_ship_controls(&self) -> Vec<ActiveShipControl> {
+        let mut controls = Vec::with_capacity(2 + self.additional_active_ships.len());
+        controls.push(ActiveShipControl {
+            game_object_id: self.player.game_object_id(),
+            ship_id: self.player.ship_id,
+            body_id: self.player.body_id,
+            input: self.player_input,
+            role: Some(true),
+        });
+        controls.push(ActiveShipControl {
+            game_object_id: self.target.game_object_id(),
+            ship_id: self.target.ship_id,
+            body_id: self.target.body_id,
+            input: ShipInput {
+                weapon: self.target_input.weapon || self.queued_target_weapon,
+                ..self.target_input
+            },
+            role: Some(false),
+        });
+        controls.extend(
+            self.additional_active_ships
+                .iter()
+                .zip(self.additional_inputs.iter())
+                .map(|(ship, input)| ActiveShipControl {
+                    game_object_id: ship.game_object_id(),
+                    ship_id: ship.ship_id,
+                    body_id: ship.body_id,
+                    input: *input,
+                    role: None,
+                }),
+        );
+        controls
+    }
+
+    fn ship_state_by_game_object_id(&self, ship_id: u64) -> Option<&BattleShipState> {
+        if self.player.game_object_id() == ship_id {
+            Some(&self.player)
+        } else if self.target.game_object_id() == ship_id {
+            Some(&self.target)
+        } else {
+            self.additional_active_ships
+                .iter()
+                .find(|ship| ship.game_object_id() == ship_id)
+        }
+    }
+
+    fn ship_state_by_game_object_id_mut(&mut self, ship_id: u64) -> Option<&mut BattleShipState> {
+        if self.player.game_object_id() == ship_id {
+            Some(&mut self.player)
+        } else if self.target.game_object_id() == ship_id {
+            Some(&mut self.target)
+        } else {
+            self.additional_active_ships
+                .iter_mut()
+                .find(|ship| ship.game_object_id() == ship_id)
+        }
+    }
+
+    fn ship_state_by_body_id(&self, body_id: usize) -> Option<&BattleShipState> {
+        self.active_ship_states()
+            .into_iter()
+            .find(|ship| ship.body_id == body_id)
+    }
+
+    fn active_enemy_target_for_ship(&self, ship_id: u64) -> Option<u64> {
+        self.active_ship_states()
+            .into_iter()
+            .find(|state| state.game_object_id() != ship_id && self.ship_is_targetable_by_id(state.game_object_id()))
+            .map(|state| state.game_object_id())
+    }
+
+    fn record_ship_destroyed(&self, outcome: &mut BattleOutcome, ship_id: u64) {
+        if !outcome.died_ship_ids.contains(&ship_id) {
+            outcome.died_ship_ids.push(ship_id);
+        }
+    }
+
+    fn record_ship_victory(&self, outcome: &mut BattleOutcome, ship_id: u64) {
+        if !outcome.winner_ship_ids.contains(&ship_id) {
+            outcome.winner_ship_ids.push(ship_id);
+        }
+    }
+
+    fn mark_ship_dead_by_id(&mut self, ship_id: u64) {
+        if self.player.game_object_id() == ship_id {
+            self.mark_ship_dead(true);
+        } else if self.target.game_object_id() == ship_id {
+            self.mark_ship_dead(false);
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.mark_additional_ship_dead(index);
+        }
+    }
+
+    fn apply_damage_to_ship_by_id(
+        &mut self,
+        defender_ship_id: u64,
+        attacker_ship_id: u64,
+        damage: i32,
+        outcome: &mut BattleOutcome,
+    ) -> bool {
+        let Some(defender_logic_ship_id) = self
+            .ship_state_by_game_object_id(defender_ship_id)
+            .map(|state| state.ship_id)
+        else {
+            return false;
+        };
+        let died = self.ships[defender_logic_ship_id].take_damage(damage);
+        if died {
+            self.record_ship_destroyed(outcome, defender_ship_id);
+            self.record_ship_victory(outcome, attacker_ship_id);
+        }
+        died
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         player_ship_type: &str,
@@ -346,6 +502,7 @@ impl Battle {
                 previous_y: target_y,
                 primary_mount_facing: target_initial_mount_facing,
             },
+            additional_active_ships: Vec::new(),
             player_input: ShipInput {
                 left: false,
                 right: false,
@@ -360,6 +517,10 @@ impl Battle {
                 weapon: false,
                 special: false,
             },
+            additional_inputs: Vec::new(),
+            additional_meteor_contacts: Vec::new(),
+            additional_weapon_targets: Vec::new(),
+            additional_special_targets: Vec::new(),
             queued_target_weapon: false,
             player_weapon_target: ProjectileTarget::None,
             target_weapon_target: ProjectileTarget::None,
@@ -405,6 +566,58 @@ impl Battle {
         self.target_input = input;
     }
 
+    pub fn set_input_for_ship(&mut self, ship_id: u64, input: ShipInput) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_input = input;
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_input = input;
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_inputs[index] = input;
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
+    pub fn add_active_ship(&mut self, ship_type: &str, x: f64, y: f64) -> Result<u64, String> {
+        let ship = build_ship(ship_type).ok_or_else(|| format!("unknown ship type: {ship_type}"))?;
+        let ship_id = self.ships.len();
+        let body_id = create_ship_body_for(&mut self.matter_world, &ship, x, y, false);
+        let primary_mount_facing = ship.facing();
+        self.ships.push(ship);
+        let game_object_id = self.next_game_object_id();
+        self.additional_active_ships.push(BattleShipState {
+            id: game_object_id,
+            ship_id,
+            body_id,
+            thrusting: false,
+            dead: false,
+            special_active: false,
+            special_contacting: false,
+            previous_x: x,
+            previous_y: y,
+            primary_mount_facing,
+        });
+        self.additional_inputs.push(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: false,
+            special: false,
+        });
+        self.additional_meteor_contacts
+            .push(vec![false; self.meteors.len()]);
+        self.additional_weapon_targets.push(ProjectileTarget::None);
+        self.additional_special_targets.push(SpecialTarget::None);
+        Ok(game_object_id)
+    }
+
     pub fn trigger_target_weapon(&mut self) {
         self.queued_target_weapon = true;
     }
@@ -414,7 +627,7 @@ impl Battle {
     }
 
     pub fn set_player_weapon_target_ship(&mut self) {
-        self.player_weapon_target = ProjectileTarget::TargetShip;
+        self.player_weapon_target = ProjectileTarget::Ship { id: self.target.id };
     }
 
     pub fn clear_player_weapon_target(&mut self) {
@@ -426,7 +639,7 @@ impl Battle {
     }
 
     pub fn set_target_weapon_target_ship(&mut self) {
-        self.target_weapon_target = ProjectileTarget::PlayerShip;
+        self.target_weapon_target = ProjectileTarget::Ship { id: self.player.id };
     }
 
     pub fn clear_target_weapon_target(&mut self) {
@@ -438,7 +651,7 @@ impl Battle {
     }
 
     pub fn set_player_special_target_ship(&mut self) {
-        self.player_special_target = SpecialTarget::TargetShip;
+        self.player_special_target = SpecialTarget::Ship { id: self.target.id };
     }
 
     pub fn clear_player_special_target(&mut self) {
@@ -450,11 +663,143 @@ impl Battle {
     }
 
     pub fn set_target_special_target_ship(&mut self) {
-        self.target_special_target = SpecialTarget::PlayerShip;
+        self.target_special_target = SpecialTarget::Ship { id: self.player.id };
     }
 
     pub fn clear_target_special_target(&mut self) {
         self.target_special_target = SpecialTarget::None;
+    }
+
+    pub fn set_weapon_target_ship_for(
+        &mut self,
+        ship_id: u64,
+        target_ship_id: u64,
+    ) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_weapon_target = ProjectileTarget::Ship { id: target_ship_id };
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_weapon_target = ProjectileTarget::Ship { id: target_ship_id };
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_weapon_targets[index] = ProjectileTarget::Ship { id: target_ship_id };
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
+    pub fn set_weapon_target_point_for(
+        &mut self,
+        ship_id: u64,
+        x: f64,
+        y: f64,
+    ) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_weapon_target = ProjectileTarget::Point { x, y };
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_weapon_target = ProjectileTarget::Point { x, y };
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_weapon_targets[index] = ProjectileTarget::Point { x, y };
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
+    pub fn clear_weapon_target_for(&mut self, ship_id: u64) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_weapon_target = ProjectileTarget::None;
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_weapon_target = ProjectileTarget::None;
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_weapon_targets[index] = ProjectileTarget::None;
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
+    pub fn set_special_target_ship_for(
+        &mut self,
+        ship_id: u64,
+        target_ship_id: u64,
+    ) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_special_target = SpecialTarget::Ship { id: target_ship_id };
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_special_target = SpecialTarget::Ship { id: target_ship_id };
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_special_targets[index] = SpecialTarget::Ship { id: target_ship_id };
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
+    pub fn clear_special_target_for(&mut self, ship_id: u64) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_special_target = SpecialTarget::None;
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_special_target = SpecialTarget::None;
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_special_targets[index] = SpecialTarget::None;
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
+    pub fn set_special_target_point_for(
+        &mut self,
+        ship_id: u64,
+        x: f64,
+        y: f64,
+    ) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.player_special_target = SpecialTarget::Point { x, y };
+            Ok(())
+        } else if self.target.game_object_id() == ship_id {
+            self.target_special_target = SpecialTarget::Point { x, y };
+            Ok(())
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_id)
+        {
+            self.additional_special_targets[index] = SpecialTarget::Point { x, y };
+            Ok(())
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
     }
 
     pub fn switch_player_ship(&mut self, ship_type: &str) -> Result<(), String> {
@@ -529,6 +874,16 @@ impl Battle {
         Ok(())
     }
 
+    pub fn switch_ship_for(&mut self, ship_id: u64, ship_type: &str) -> Result<(), String> {
+        if self.player.game_object_id() == ship_id {
+            self.switch_player_ship(ship_type)
+        } else if self.target.game_object_id() == ship_id {
+            self.switch_target_ship(ship_type)
+        } else {
+            Err(format!("unknown ship id: {ship_id}"))
+        }
+    }
+
     pub fn tick(&mut self, delta: f64) {
         self.audio_events.clear();
         self.lasers.clear();
@@ -536,8 +891,8 @@ impl Battle {
         self.tick_explosions();
         self.tick_projectiles();
         self.step_meteors();
-        let target_input = self.step_ships();
-        self.handle_point_defense(target_input);
+        let active_ship_controls = self.step_ships();
+        self.handle_point_defense(active_ship_controls);
 
         let mut outcome = BattleOutcome::default();
         self.resolve_projectile_hits(&mut outcome);
@@ -560,17 +915,24 @@ impl Battle {
     fn tick_projectiles(&mut self) {
         let player_body = self.matter_world.body_state(self.player.body_id);
         let target_body = self.matter_world.body_state(self.target.body_id);
+        let active_ship_target_bodies: Vec<(u64, Option<MatterBodyState>)> = self
+            .active_ship_states()
+            .into_iter()
+            .map(|ship| (ship.game_object_id(), self.matter_world.body_state(ship.body_id)))
+            .collect();
         let mut returning_arrivals = Vec::new();
 
         for projectile in &mut self.projectiles {
             projectile.previous_x = projectile.x;
             projectile.previous_y = projectile.y;
+            let target_position =
+                projectile_target_position_from_states(projectile.target, &active_ship_target_bodies);
             match projectile.behavior {
                 ProjectileBehaviorSpec::WobbleTracking { .. } => {
-                    step_wobble_tracking_projectile(projectile, player_body, target_body);
+                    step_wobble_tracking_projectile(projectile, target_position);
                 }
                 ProjectileBehaviorSpec::Tracking => {
-                    track_projectile(projectile, player_body, target_body);
+                    track_projectile(projectile, target_position);
                     projectile.speed = (projectile.speed + projectile.acceleration as i32)
                         .min(projectile.max_speed as i32);
                     let (raw_vx, raw_vy) =
@@ -624,56 +986,50 @@ impl Battle {
                     let dy = shortest_wrapped_delta(projectile.y, owner.y, self.height);
                     if ((dx * dx) + (dy * dy)).sqrt() <= 40.0 {
                         projectile.life = -1;
-                        returning_arrivals.push(projectile.owner_is_player);
+                        returning_arrivals.push(projectile.owner_ship_id);
                     }
                 }
             }
         }
 
-        for owner_is_player in returning_arrivals {
-            self.increment_ship_crew(owner_is_player, 1);
+        for owner_ship_id in returning_arrivals {
+            self.increment_ship_crew_by_ship_id(owner_ship_id, 1);
         }
     }
 
-    fn step_ships(&mut self) -> ShipInput {
-        self.step_ship(
-            self.player.ship_id,
-            self.player.body_id,
-            self.player_input,
-            true,
-        );
-        let target_input = ShipInput {
-            weapon: self.target_input.weapon || self.queued_target_weapon,
-            ..self.target_input
-        };
-        self.step_ship(
-            self.target.ship_id,
-            self.target.body_id,
-            target_input,
-            false,
-        );
+    fn step_ships(&mut self) -> Vec<ActiveShipControl> {
+        let active_ship_controls = self.active_ship_controls();
+        for control in active_ship_controls.iter().copied() {
+            self.step_ship(control);
+        }
         self.queued_target_weapon = false;
-        target_input
+        active_ship_controls
     }
 
-    fn handle_point_defense(&mut self, target_input: ShipInput) {
-        self.handle_human_point_defense(true, self.player_input);
-        self.handle_human_point_defense(false, target_input);
+    fn handle_point_defense(&mut self, active_ship_controls: Vec<ActiveShipControl>) {
+        for control in active_ship_controls {
+            if let Some(is_player) = control.role {
+                self.handle_human_point_defense(is_player, control.input);
+            }
+        }
     }
 
     fn wrap_bodies(&mut self) {
-        let _ = self
-            .matter_world
-            .wrap_body(self.player.body_id, self.width, self.height);
-        let _ = self
-            .matter_world
-            .wrap_body(self.target.body_id, self.width, self.height);
+        let body_ids: Vec<usize> = self
+            .active_ship_states()
+            .into_iter()
+            .map(|ship| ship.body_id)
+            .collect();
+        for body_id in body_ids {
+            let _ = self.matter_world.wrap_body(body_id, self.width, self.height);
+        }
     }
 
     fn resolve_projectile_hits(&mut self, outcome: &mut BattleOutcome) {
         struct ProjectileHit {
             index: usize,
-            defender_is_player: bool,
+            defender_ship_id: u64,
+            owner_ship_id: u64,
             owner_is_player: bool,
             is_orz_marine: bool,
             marine_returning: bool,
@@ -691,9 +1047,9 @@ impl Battle {
             .iter()
             .enumerate()
             .filter_map(|(index, projectile)| {
-                let defender_is_player = if projectile.marine_returning {
+                let defender_ship_id = if projectile.marine_returning {
                     if self.projectile_hits_ship(projectile, projectile.owner_is_player) {
-                        projectile.owner_is_player
+                        projectile.owner_ship_id
                     } else {
                         return None;
                     }
@@ -702,7 +1058,8 @@ impl Battle {
                 };
                 Some(ProjectileHit {
                     index,
-                    defender_is_player,
+                    defender_ship_id,
+                    owner_ship_id: projectile.owner_ship_id,
                     owner_is_player: projectile.owner_is_player,
                     is_orz_marine: projectile.texture_prefix == "orz-turret",
                     marine_returning: projectile.marine_returning,
@@ -721,15 +1078,15 @@ impl Battle {
         let mut hit_explosions = Vec::new();
         for hit in hits {
             if hit.marine_returning {
-                self.increment_ship_crew(hit.owner_is_player, 1);
+                self.increment_ship_crew_by_ship_id(hit.owner_ship_id, 1);
                 hit_projectile_indexes.push(hit.index);
                 continue;
             }
 
             if hit.is_orz_marine {
-                if !self.ship_blocks_damage(hit.defender_is_player) {
+                if !self.ship_blocks_damage_by_ship_id(hit.defender_ship_id) {
                     self.apply_marine_boarding_hit(
-                        hit.defender_is_player,
+                        self.is_player_ship_id(hit.defender_ship_id),
                         hit.owner_is_player,
                         outcome,
                     );
@@ -738,16 +1095,13 @@ impl Battle {
                 continue;
             }
 
-            if !self.ship_blocks_damage(hit.defender_is_player) {
-                if hit.defender_is_player {
-                    let died = self.ships[self.player.ship_id].take_damage(hit.damage);
-                    outcome.player_died |= died;
-                    outcome.target_won |= died && !hit.owner_is_player;
-                } else {
-                    let died = self.ships[self.target.ship_id].take_damage(hit.damage);
-                    outcome.target_died |= died;
-                    outcome.player_won |= died && hit.owner_is_player;
-                }
+            if !self.ship_blocks_damage_by_ship_id(hit.defender_ship_id) {
+                self.apply_projectile_damage(
+                    hit.defender_ship_id,
+                    hit.owner_ship_id,
+                    hit.damage,
+                    outcome,
+                );
             }
             hit_explosions.push(ExplosionSnapshot {
                 id: 0,
@@ -784,14 +1138,44 @@ impl Battle {
         self.ships[ship_id].set_crew(next_crew);
     }
 
+    fn increment_ship_crew_by_ship_id(&mut self, ship_id: u64, amount: i32) {
+        if self.player.game_object_id() == ship_id {
+            self.increment_ship_crew(true, amount);
+        } else if self.target.game_object_id() == ship_id {
+            self.increment_ship_crew(false, amount);
+        }
+    }
+
+    fn ship_blocks_damage_by_ship_id(&self, ship_id: u64) -> bool {
+        if self.player.game_object_id() == ship_id {
+            self.ship_blocks_damage(true)
+        } else if self.target.game_object_id() == ship_id {
+            self.ship_blocks_damage(false)
+        } else {
+            false
+        }
+    }
+
+    fn apply_projectile_damage(
+        &mut self,
+        defender_ship_id: u64,
+        attacker_ship_id: u64,
+        damage: i32,
+        outcome: &mut BattleOutcome,
+    ) {
+        let _ = self.apply_damage_to_ship_by_id(defender_ship_id, attacker_ship_id, damage, outcome);
+    }
+
     fn tick_marine_boarders(&mut self, outcome: &mut BattleOutcome) {
         let mut next_boarders = Vec::with_capacity(self.marine_boarders.len());
         let mut active_boarders = std::mem::take(&mut self.marine_boarders);
 
         for mut boarder in active_boarders.drain(..) {
-            let ship_state = self.ship_state(boarder.defender_is_player);
+            let Some(ship_state) = self.ship_state_by_game_object_id(boarder.defender_ship_id) else {
+                continue;
+            };
             if ship_state.dead {
-                self.launch_returning_marine(boarder.defender_is_player, boarder.owner_is_player);
+                self.launch_returning_marine(boarder.defender_ship_id, boarder.owner_ship_id);
                 continue;
             }
 
@@ -812,7 +1196,7 @@ impl Battle {
             }
 
             if roll < ORZ_MARINE_DAMAGE_CHANCE_MAX {
-                self.apply_marine_periodic_damage(boarder.defender_is_player, outcome);
+                self.apply_marine_periodic_damage(boarder.defender_ship_id, boarder.owner_ship_id, outcome);
             }
 
             next_boarders.push(boarder);
@@ -829,8 +1213,16 @@ impl Battle {
     ) {
         self.apply_orz_marine_damage(defender_is_player, attacker_is_player, outcome);
         self.marine_boarders.push(MarineBoarderState {
-            defender_is_player,
-            owner_is_player: attacker_is_player,
+            defender_ship_id: if defender_is_player {
+                self.player.game_object_id()
+            } else {
+                self.target.game_object_id()
+            },
+            owner_ship_id: if attacker_is_player {
+                self.player.game_object_id()
+            } else {
+                self.target.game_object_id()
+            },
             ticks_until_next_roll: ORZ_MARINE_WAIT_TICKS,
         });
         self.audio_events.push(AudioEventSnapshot {
@@ -838,8 +1230,13 @@ impl Battle {
         });
     }
 
-    fn apply_marine_periodic_damage(&mut self, defender_is_player: bool, outcome: &mut BattleOutcome) {
-        self.apply_orz_marine_damage(defender_is_player, !defender_is_player, outcome);
+    fn apply_marine_periodic_damage(
+        &mut self,
+        defender_ship_id: u64,
+        attacker_ship_id: u64,
+        outcome: &mut BattleOutcome,
+    ) {
+        self.apply_orz_marine_damage_by_ship_id(defender_ship_id, attacker_ship_id, outcome);
         self.audio_events.push(AudioEventSnapshot { key: AUDIO_ORZ_ZAP });
     }
 
@@ -855,22 +1252,48 @@ impl Battle {
             self.target.ship_id
         };
         let died = self.ships[defender_ship_id].take_damage(ORZ_MARINE_DAMAGE);
-        if defender_is_player {
-            outcome.player_died |= died;
-            outcome.target_won |= died && !attacker_is_player;
-        } else {
-            outcome.target_died |= died;
-            outcome.player_won |= died && attacker_is_player;
+        if died {
+            let defender_game_object_id = if defender_is_player {
+                self.player.game_object_id()
+            } else {
+                self.target.game_object_id()
+            };
+            let attacker_game_object_id = if attacker_is_player {
+                self.player.game_object_id()
+            } else {
+                self.target.game_object_id()
+            };
+            self.record_ship_destroyed(outcome, defender_game_object_id);
+            self.record_ship_victory(outcome, attacker_game_object_id);
         }
     }
 
-    fn launch_returning_marine(&mut self, defender_is_player: bool, owner_is_player: bool) {
-        if self.ship_state(owner_is_player).dead {
+    fn apply_orz_marine_damage_by_ship_id(
+        &mut self,
+        defender_ship_id: u64,
+        attacker_ship_id: u64,
+        outcome: &mut BattleOutcome,
+    ) {
+        let _ = self.apply_damage_to_ship_by_id(
+            defender_ship_id,
+            attacker_ship_id,
+            ORZ_MARINE_DAMAGE,
+            outcome,
+        );
+    }
+
+    fn launch_returning_marine(&mut self, defender_ship_id: u64, owner_ship_id: u64) {
+        let Some(owner_state) = self.ship_state_by_game_object_id(owner_ship_id) else {
+            return;
+        };
+        if owner_state.dead {
             return;
         }
-        let defender_state = self.ship_state(defender_is_player);
+        let defender_state = self
+            .ship_state_by_game_object_id(defender_ship_id)
+            .expect("checked active defender ship");
         let defender_body_id = defender_state.body_id;
-        let owner_body_id = self.ship_state(owner_is_player).body_id;
+        let owner_body_id = owner_state.body_id;
         let (start_x, start_y) = self
             .matter_world
             .body_state(defender_body_id)
@@ -921,12 +1344,9 @@ impl Battle {
             velocity_sign_width: 1,
             velocity_sign_height: 1,
             bubble_rng: 0,
-            owner_is_player,
-            target: if owner_is_player {
-                ProjectileTarget::PlayerShip
-            } else {
-                ProjectileTarget::TargetShip
-            },
+            owner_ship_id,
+            owner_is_player: self.is_player_ship_id(owner_ship_id),
+            target: ProjectileTarget::Ship { id: owner_ship_id },
             marine_returning: true,
         };
         set_projectile_velocity_components(&mut projectile, raw_vx, raw_vy);
@@ -962,6 +1382,19 @@ impl Battle {
         for collision in state.collisions {
             let ids = [collision.body_a, collision.body_b];
             if !ids.contains(&self.player.body_id) || !ids.contains(&self.target.body_id) {
+                let Some(ship_a_id) = self
+                    .ship_state_by_body_id(collision.body_a)
+                    .map(|ship| ship.ship_id)
+                else {
+                    continue;
+                };
+                let Some(ship_b_id) = self
+                    .ship_state_by_body_id(collision.body_b)
+                    .map(|ship| ship.ship_id)
+                else {
+                    continue;
+                };
+                apply_collision_between(&mut self.ships, ship_a_id, ship_b_id);
                 continue;
             }
 
@@ -1048,21 +1481,23 @@ impl Battle {
             });
         }
         apply_collision_between(&mut self.ships, self.player.ship_id, self.target.ship_id);
-        let defender_is_player = !is_player;
-        if !self.ship_blocks_damage(defender_is_player) {
-            let defender_ship_id = if is_player {
-                self.target.ship_id
+        let defender_game_object_id = if is_player {
+            self.target.game_object_id()
+        } else {
+            self.player.game_object_id()
+        };
+        if !self.ship_blocks_damage_by_ship_id(defender_game_object_id) {
+            let attacker_game_object_id = if is_player {
+                self.player.game_object_id()
             } else {
-                self.player.ship_id
+                self.target.game_object_id()
             };
-            let died = self.ships[defender_ship_id].take_damage(spec.damage);
-            if is_player {
-                outcome.target_died |= died;
-                outcome.player_won |= died;
-            } else {
-                outcome.player_died |= died;
-                outcome.target_won |= died;
-            }
+            let _ = self.apply_damage_to_ship_by_id(
+                defender_game_object_id,
+                attacker_game_object_id,
+                spec.damage,
+                outcome,
+            );
         }
         self.audio_events.push(AudioEventSnapshot {
             key: spec.impact_sound_key,
@@ -1164,20 +1599,23 @@ impl Battle {
             return;
         }
         let Some(spec) = blazer_spec else { return };
-        if !self.ship_blocks_damage(defender_is_player) {
-            let defender_ship_id = if defender_is_player {
-                self.player.ship_id
+        let defender_game_object_id = if defender_is_player {
+            self.player.game_object_id()
+        } else {
+            self.target.game_object_id()
+        };
+        if !self.ship_blocks_damage_by_ship_id(defender_game_object_id) {
+            let attacker_game_object_id = if defender_is_player {
+                self.target.game_object_id()
             } else {
-                self.target.ship_id
+                self.player.game_object_id()
             };
-            let died = self.ships[defender_ship_id].take_damage(spec.damage);
-            if defender_is_player {
-                outcome.player_died |= died;
-                outcome.target_won |= died;
-            } else {
-                outcome.target_died |= died;
-                outcome.player_won |= died;
-            }
+            let _ = self.apply_damage_to_ship_by_id(
+                defender_game_object_id,
+                attacker_game_object_id,
+                spec.damage,
+                outcome,
+            );
         }
         self.audio_events.push(AudioEventSnapshot {
             key: spec.impact_sound_key,
@@ -1185,28 +1623,38 @@ impl Battle {
     }
 
     fn resolve_death_and_victory(&mut self, outcome: &BattleOutcome) {
-        if outcome.player_died {
-            self.mark_ship_dead(true);
+        for ship_id in &outcome.died_ship_ids {
+            self.mark_ship_dead_by_id(*ship_id);
         }
-        if outcome.target_died {
-            self.mark_ship_dead(false);
-        }
-        if outcome.player_won
-            && let Some(key) = self.ships[self.player.ship_id].victory_sound_key()
-        {
-            self.audio_events.push(AudioEventSnapshot { key });
-        }
-        if outcome.target_won
-            && let Some(key) = self.ships[self.target.ship_id].victory_sound_key()
-        {
-            self.audio_events.push(AudioEventSnapshot { key });
+        for ship_id in &outcome.winner_ship_ids {
+            if self.player.game_object_id() == *ship_id
+                && let Some(key) = self.ships[self.player.ship_id].victory_sound_key()
+            {
+                self.audio_events.push(AudioEventSnapshot { key });
+            } else if self.target.game_object_id() == *ship_id
+                && let Some(key) = self.ships[self.target.ship_id].victory_sound_key()
+            {
+                self.audio_events.push(AudioEventSnapshot { key });
+            } else if let Some(state) = self.ship_state_by_game_object_id(*ship_id)
+                && let Some(key) = self.ships[state.ship_id].victory_sound_key()
+            {
+                self.audio_events.push(AudioEventSnapshot { key });
+            }
         }
     }
 
     pub fn snapshot(&self) -> BattleSnapshot {
+        let player = self.snapshot_for(&self.player);
+        let target = self.snapshot_for(&self.target);
+        let ships = self
+            .active_ship_states()
+            .into_iter()
+            .map(|ship| self.snapshot_for(ship))
+            .collect();
         BattleSnapshot {
-            player: self.snapshot_for(&self.player),
-            target: self.snapshot_for(&self.target),
+            ships,
+            player,
+            target,
             meteors: self.meteors.clone(),
             projectiles: self.projectiles.clone(),
             explosions: self.explosions.clone(),
@@ -1215,75 +1663,133 @@ impl Battle {
         }
     }
 
-    fn step_ship(&mut self, ship_id: usize, body_id: usize, input: ShipInput, is_player: bool) {
-        if self.ship_state(is_player).dead {
+    fn step_ship(&mut self, control: ActiveShipControl) {
+        if self
+            .ship_state_by_game_object_id(control.game_object_id)
+            .is_none_or(|ship| ship.dead)
+        {
             return;
         }
 
-        if self.ship_state(is_player).special_active && self.blazer_spec_for(is_player).is_some() {
-            self.step_androsynth_blazer(ship_id, body_id, input, is_player);
+        if let Some(is_player) = control.role
+            && self.ship_state(is_player).special_active
+            && self.blazer_spec_for(is_player).is_some()
+        {
+            self.step_androsynth_blazer(control.ship_id, control.body_id, control.input, is_player);
             return;
         }
 
-        let Some(body) = self.matter_world.body_state(body_id) else {
+        let Some(body) = self.matter_world.body_state(control.body_id) else {
             return;
         };
-        let ship_state = self.ship_state_mut(is_player);
+        let ship_state = self
+            .ship_state_by_game_object_id_mut(control.game_object_id)
+            .expect("active ship state should exist while stepping");
         ship_state.previous_x = body.x;
         ship_state.previous_y = body.y;
 
-        self.apply_gravity(ship_id, body_id, body);
-        let current = self.matter_world.body_state(body_id).unwrap_or(body);
+        self.apply_gravity(control.ship_id, control.body_id, body);
+        let current = self.matter_world.body_state(control.body_id).unwrap_or(body);
         let in_gravity_well = self.in_gravity_well(current.x, current.y);
-        let energy_before = self.ships[ship_id].energy();
-        let energy_counter_before = self.ships[ship_id].energy_counter();
-        let weapon_counter_before = self.ships[ship_id].weapon_counter();
-        let special_counter_before = self.ships[ship_id].special_counter();
-        let mut commands = self.ships[ship_id].update(
-            &input,
+        let energy_before = self.ships[control.ship_id].energy();
+        let energy_counter_before = self.ships[control.ship_id].energy_counter();
+        let weapon_counter_before = self.ships[control.ship_id].weapon_counter();
+        let special_counter_before = self.ships[control.ship_id].special_counter();
+        let mut commands = self.ships[control.ship_id].update(
+            &control.input,
             &VelocityVector {
                 x: current.vx,
                 y: current.vy,
             },
             in_gravity_well,
         );
-        self.update_primary_mount_facing(is_player, current);
+        if let Some(is_player) = control.role {
+            self.update_primary_mount_facing(is_player, current);
+            self.handle_blazer_activation(
+                control.ship_id,
+                control.body_id,
+                &control.input,
+                energy_before,
+                is_player,
+                &mut commands,
+            );
 
-        self.handle_blazer_activation(
-            ship_id,
-            body_id,
-            &input,
-            energy_before,
-            is_player,
-            &mut commands,
+            if is_weapon_triggered(
+                &self.ships[control.ship_id],
+                &control.input,
+                weapon_counter_before,
+                energy_before,
+                energy_counter_before,
+            ) && !self.ship_blocks_damage(is_player)
+            {
+                self.handle_weapon_fire(control.ship_id, current, is_player, &mut commands);
+            }
+
+            if is_special_triggered(
+                &self.ships[control.ship_id],
+                &control.input,
+                special_counter_before,
+                energy_before,
+                energy_counter_before,
+            ) {
+                self.handle_special_activation(
+                    control.ship_id,
+                    control.body_id,
+                    current,
+                    is_player,
+                    &mut commands,
+                );
+            }
+        } else {
+            self.ship_state_by_game_object_id_mut(control.game_object_id)
+                .expect("active ship state should exist while stepping")
+                .primary_mount_facing = self.ships[control.ship_id].facing();
+            if is_weapon_triggered(
+                &self.ships[control.ship_id],
+                &control.input,
+                weapon_counter_before,
+                energy_before,
+                energy_counter_before,
+            ) {
+                self.handle_weapon_fire_for_ship(
+                    control.game_object_id,
+                    control.ship_id,
+                    current,
+                    false,
+                    &mut commands,
+                );
+            }
+            if is_special_triggered(
+                &self.ships[control.ship_id],
+                &control.input,
+                special_counter_before,
+                energy_before,
+                energy_counter_before,
+            ) {
+                self.handle_special_activation_for_ship(
+                    control.game_object_id,
+                    control.ship_id,
+                    control.body_id,
+                    current,
+                    false,
+                    &mut commands,
+                );
+            }
+        }
+
+        let thrusting = apply_commands(&mut self.matter_world, control.body_id, commands);
+        if let Some(is_player) = control.role {
+            self.expire_special_cooldown(control.ship_id, is_player, control.input);
+            self.emit_active_special_audio(control.ship_id, is_player);
+        }
+        self.ship_state_by_game_object_id_mut(control.game_object_id)
+            .expect("active ship state should exist while stepping")
+            .thrusting = thrusting;
+        sync_ship_body_angle(
+            &mut self.matter_world,
+            control.body_id,
+            &self.ships[control.ship_id],
         );
-
-        if is_weapon_triggered(
-            &self.ships[ship_id],
-            &input,
-            weapon_counter_before,
-            energy_before,
-            energy_counter_before,
-        ) && !self.ship_blocks_damage(is_player)
-        {
-            self.handle_weapon_fire(ship_id, current, is_player, &mut commands);
-        }
-
-        if is_special_triggered(
-            &self.ships[ship_id],
-            &input,
-            special_counter_before,
-            energy_before,
-            energy_counter_before,
-        ) {
-            self.handle_special_activation(ship_id, body_id, current, is_player, &mut commands);
-        }
-
-        let thrusting = apply_commands(&mut self.matter_world, body_id, commands);
-        self.expire_special_cooldown(ship_id, is_player, input);
-        self.emit_active_special_audio(ship_id, is_player);
-        self.ship_state_mut(is_player).thrusting = thrusting;
-        sync_ship_body_angle(&mut self.matter_world, body_id, &self.ships[ship_id]);
     }
 
     fn emit_active_special_audio(&mut self, ship_id: usize, is_player: bool) {
@@ -1314,11 +1820,7 @@ impl Battle {
 
     fn primary_mount_target_facing(&self, is_player: bool, current: MatterBodyState) -> f64 {
         let target = self.projectile_target_for(is_player);
-        match projectile_target_position(
-            target,
-            self.matter_world.body_state(self.player.body_id),
-            self.matter_world.body_state(self.target.body_id),
-        ) {
+        match self.projectile_target_position(target) {
             Some((target_x, target_y)) => {
                 let dx = shortest_wrapped_delta(current.x, target_x, self.width);
                 let dy = shortest_wrapped_delta(current.y, target_y, self.height);
@@ -1368,20 +1870,40 @@ impl Battle {
         is_player: bool,
         commands: &mut Vec<PhysicsCommand>,
     ) {
-        let special_active = self.ship_state(is_player).special_active;
-        if self.ships[ship_id].is_cloaked(special_active) {
-            self.ship_state_mut(is_player).special_active = false;
+        let owner_ship_id = self.ship_state(is_player).game_object_id();
+        self.handle_weapon_fire_for_ship(owner_ship_id, ship_id, current, is_player, commands);
+    }
+
+    fn handle_weapon_fire_for_ship(
+        &mut self,
+        owner_ship_id: u64,
+        ship_id: usize,
+        current: MatterBodyState,
+        _is_player: bool,
+        commands: &mut Vec<PhysicsCommand>,
+    ) {
+        let special_active = self
+            .ship_state_by_game_object_id(owner_ship_id)
+            .map(|ship| ship.special_active)
+            .unwrap_or(false);
+        if self.ships[ship_id].is_cloaked(special_active)
+            && let Some(ship_state) = self.ship_state_by_game_object_id_mut(owner_ship_id)
+        {
+            ship_state.special_active = false;
         }
         let inherit_ship_velocity =
             self.ships[ship_id].primary_projectile_inherits_ship_velocity_for_state(special_active);
-        let projectile_target = self.projectile_target_for(is_player);
-        let primary_mount_facing = self.ship_state(is_player).primary_mount_facing;
+        let projectile_target = self.projectile_target_for_ship(owner_ship_id);
+        let primary_mount_facing = self
+            .ship_state_by_game_object_id(owner_ship_id)
+            .map(|ship| ship.primary_mount_facing)
+            .unwrap_or(self.ships[ship_id].facing());
 
         if let Some(volley_spec) = self.ships[ship_id].primary_volley_spec_for_state(special_active)
         {
-            self.spawn_projectile_volley(
+            self.spawn_projectile_volley_for_ship(
                 current,
-                is_player,
+                owner_ship_id,
                 volley_spec,
                 inherit_ship_velocity,
                 primary_mount_facing,
@@ -1389,9 +1911,9 @@ impl Battle {
         } else if let Some(projectile_spec) =
             self.ships[ship_id].primary_projectile_spec_for_state(special_active)
         {
-            self.spawn_projectile_from_spec(
+            self.spawn_projectile_from_spec_for_ship(
                 current,
-                is_player,
+                owner_ship_id,
                 projectile_spec,
                 ProjectileSpawnSpec {
                     facing_offset: 0,
@@ -1410,7 +1932,7 @@ impl Battle {
         } else if let Some(laser_spec) =
             self.ships[ship_id].primary_instant_laser_spec_for_state(special_active)
         {
-            self.fire_instant_laser(current, is_player, laser_spec);
+            self.fire_instant_laser_for_ship(current, owner_ship_id, ship_id, laser_spec);
         }
         let _ = commands;
     }
@@ -1423,13 +1945,35 @@ impl Battle {
         is_player: bool,
         commands: &mut Vec<PhysicsCommand>,
     ) {
+        let owner_ship_id = self.ship_state(is_player).game_object_id();
+        self.handle_special_activation_for_ship(
+            owner_ship_id,
+            ship_id,
+            body_id,
+            current,
+            is_player,
+            commands,
+        );
+    }
+
+    fn handle_special_activation_for_ship(
+        &mut self,
+        owner_ship_id: u64,
+        ship_id: usize,
+        body_id: usize,
+        current: MatterBodyState,
+        is_player: bool,
+        commands: &mut Vec<PhysicsCommand>,
+    ) {
         match self.ships[ship_id].special_ability_spec() {
             SpecialAbilitySpec::Teleport(spec) => {
-                self.activate_teleport_special(is_player, body_id, spec);
-                self.ship_state_mut(is_player).special_active = true;
+                self.activate_teleport_special_for_ship(owner_ship_id, body_id, spec);
+                if let Some(ship_state) = self.ship_state_by_game_object_id_mut(owner_ship_id) {
+                    ship_state.special_active = true;
+                }
             }
             SpecialAbilitySpec::InstantLaser(spec) => {
-                self.fire_instant_laser(current, is_player, spec);
+                self.fire_instant_laser_for_ship(current, owner_ship_id, ship_id, spec);
             }
             SpecialAbilitySpec::Shield(spec) => {
                 if !spec.sound_key.is_empty() {
@@ -1437,7 +1981,9 @@ impl Battle {
                         key: spec.sound_key,
                     });
                 }
-                self.ship_state_mut(is_player).special_active = true;
+                if let Some(ship_state) = self.ship_state_by_game_object_id_mut(owner_ship_id) {
+                    ship_state.special_active = true;
+                }
             }
             SpecialAbilitySpec::DirectionalThrust(spec) => {
                 if !spec.sound_key.is_empty() {
@@ -1455,11 +2001,19 @@ impl Battle {
                 let is_orz_marine = volley.projectile.texture_prefix == "orz-turret";
                 let target = if is_orz_marine {
                     match self.special_target_to_projectile_target(is_player) {
-                        ProjectileTarget::TargetShip if is_player && self.ship_is_targetable(false) => {
-                            ProjectileTarget::TargetShip
+                        ProjectileTarget::Ship { id }
+                            if is_player
+                                && id == self.target.game_object_id()
+                                && self.ship_is_targetable(false) =>
+                        {
+                            ProjectileTarget::Ship { id }
                         }
-                        ProjectileTarget::PlayerShip if !is_player && self.ship_is_targetable(true) => {
-                            ProjectileTarget::PlayerShip
+                        ProjectileTarget::Ship { id }
+                            if !is_player
+                                && id == self.player.game_object_id()
+                                && self.ship_is_targetable(true) =>
+                        {
+                            ProjectileTarget::Ship { id }
                         }
                         _ => return,
                     }
@@ -1516,7 +2070,7 @@ impl Battle {
                 self.activate_transform_special(is_player, spec);
             }
             SpecialAbilitySpec::CrewDrainTransfer(spec) => {
-                self.activate_crew_drain_special(is_player, spec);
+                self.activate_crew_drain_special_for_ship(owner_ship_id, spec);
             }
             SpecialAbilitySpec::PlanetHarvest(spec) => {
                 self.activate_planet_harvest_special(current, ship_id, spec);
@@ -1702,7 +2256,7 @@ impl Battle {
         self.projectiles
             .iter()
             .enumerate()
-            .filter(|(_, projectile)| projectile.owner_is_player != is_player)
+            .filter(|(_, projectile)| projectile.owner_ship_id != self.ship_state(is_player).game_object_id())
             .filter_map(|(index, projectile)| {
                 let dx = shortest_wrapped_delta(ship_x, projectile.x, self.width);
                 let dy = shortest_wrapped_delta(ship_y, projectile.y, self.height);
@@ -1718,6 +2272,17 @@ impl Battle {
         self.projectile_target_for_mode(
             is_player,
             self.ships[ship_id].primary_projectile_target_mode_for_state(special_active),
+        )
+    }
+
+    fn projectile_target_for_ship(&self, ship_game_object_id: u64) -> ProjectileTarget {
+        let Some(ship_state) = self.ship_state_by_game_object_id(ship_game_object_id) else {
+            return ProjectileTarget::None;
+        };
+        let special_active = ship_state.special_active;
+        self.projectile_target_for_mode_for_ship(
+            ship_game_object_id,
+            self.ships[ship_state.ship_id].primary_projectile_target_mode_for_state(special_active),
         )
     }
 
@@ -1753,6 +2318,32 @@ impl Battle {
         }
     }
 
+    fn projectile_target_for_mode_for_ship(
+        &self,
+        ship_game_object_id: u64,
+        mode: ProjectileTargetMode,
+    ) -> ProjectileTarget {
+        let selected_target = self.selected_weapon_target_for_ship(ship_game_object_id);
+        match mode {
+            ProjectileTargetMode::None => selected_target,
+            ProjectileTargetMode::EnemyShip => self.default_enemy_target_for_ship(ship_game_object_id),
+            ProjectileTargetMode::PlayerSelectedOrEnemyShip => {
+                if matches!(selected_target, ProjectileTarget::None) {
+                    self.default_enemy_target_for_ship(ship_game_object_id)
+                } else {
+                    self.normalized_selected_weapon_target_for_ship(ship_game_object_id, selected_target)
+                }
+            }
+            ProjectileTargetMode::PlayerSelectedPointOrForward => {
+                if matches!(selected_target, ProjectileTarget::Point { .. }) {
+                    selected_target
+                } else {
+                    ProjectileTarget::None
+                }
+            }
+        }
+    }
+
     fn selected_weapon_target(&self, is_player: bool) -> ProjectileTarget {
         if is_player {
             self.player_weapon_target
@@ -1761,20 +2352,53 @@ impl Battle {
         }
     }
 
+    fn selected_weapon_target_for_ship(&self, ship_game_object_id: u64) -> ProjectileTarget {
+        if self.player.game_object_id() == ship_game_object_id {
+            self.player_weapon_target
+        } else if self.target.game_object_id() == ship_game_object_id {
+            self.target_weapon_target
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_game_object_id)
+        {
+            self.additional_weapon_targets[index]
+        } else {
+            ProjectileTarget::None
+        }
+    }
+
     fn normalized_selected_weapon_target(
         &self,
         is_player: bool,
         target: ProjectileTarget,
     ) -> ProjectileTarget {
-        let targets_enemy_ship = if is_player {
-            matches!(target, ProjectileTarget::TargetShip)
-        } else {
-            matches!(target, ProjectileTarget::PlayerShip)
-        };
-        if targets_enemy_ship && !self.ship_is_targetable(!is_player) {
-            ProjectileTarget::None
-        } else {
-            target
+        match target {
+            ProjectileTarget::Ship { id } => {
+                let current_target_id = if is_player {
+                    self.target.game_object_id()
+                } else {
+                    self.player.game_object_id()
+                };
+                if id == current_target_id && !self.ship_is_targetable(!is_player) {
+                    ProjectileTarget::None
+                } else {
+                    target
+                }
+            }
+            _ => target,
+        }
+    }
+
+    fn normalized_selected_weapon_target_for_ship(
+        &self,
+        ship_game_object_id: u64,
+        target: ProjectileTarget,
+    ) -> ProjectileTarget {
+        match target {
+            ProjectileTarget::Ship { id } if self.ship_is_targetable_by_id(id) => target,
+            ProjectileTarget::Ship { .. } => self.default_enemy_target_for_ship(ship_game_object_id),
+            _ => target,
         }
     }
 
@@ -1782,10 +2406,20 @@ impl Battle {
         if !self.ship_is_targetable(!is_player) {
             ProjectileTarget::None
         } else if is_player {
-            ProjectileTarget::TargetShip
+            ProjectileTarget::Ship {
+                id: self.target.game_object_id(),
+            }
         } else {
-            ProjectileTarget::PlayerShip
+            ProjectileTarget::Ship {
+                id: self.player.game_object_id(),
+            }
         }
+    }
+
+    fn default_enemy_target_for_ship(&self, ship_game_object_id: u64) -> ProjectileTarget {
+        self.active_enemy_target_for_ship(ship_game_object_id)
+            .map(|id| ProjectileTarget::Ship { id })
+            .unwrap_or(ProjectileTarget::None)
     }
 
     fn special_projectile_target_for_mode(
@@ -1819,26 +2453,25 @@ impl Battle {
         match self.special_target_for(is_player) {
             SpecialTarget::None => ProjectileTarget::None,
             SpecialTarget::Point { x, y } => ProjectileTarget::Point { x, y },
-            SpecialTarget::PlayerShip => ProjectileTarget::PlayerShip,
-            SpecialTarget::TargetShip => ProjectileTarget::TargetShip,
+            SpecialTarget::Ship { id } => ProjectileTarget::Ship { id },
         }
     }
 
-    fn spawn_projectile_volley(
+    fn spawn_projectile_volley_for_ship(
         &mut self,
         current: MatterBodyState,
-        is_player: bool,
+        owner_ship_id: u64,
         volley_spec: ProjectileVolleySpec,
         inherit_ship_velocity: bool,
         base_facing: f64,
     ) {
         for spawn in volley_spec.spawns {
-            self.spawn_projectile_from_spec(
+            self.spawn_projectile_from_spec_for_ship(
                 current,
-                is_player,
+                owner_ship_id,
                 volley_spec.projectile,
                 *spawn,
-                self.projectile_target_for_mode(is_player, volley_spec.target_mode),
+                self.projectile_target_for_mode_for_ship(owner_ship_id, volley_spec.target_mode),
                 inherit_ship_velocity,
                 base_facing,
             );
@@ -1855,6 +2488,28 @@ impl Battle {
         &mut self,
         current: MatterBodyState,
         is_player: bool,
+        projectile_spec: PrimaryProjectileSpec,
+        spawn: ProjectileSpawnSpec,
+        target: ProjectileTarget,
+        inherit_ship_velocity: bool,
+        base_facing: f64,
+    ) {
+        let owner_ship_id = self.ship_state(is_player).game_object_id();
+        self.spawn_projectile_from_spec_for_ship(
+            current,
+            owner_ship_id,
+            projectile_spec,
+            spawn,
+            target,
+            inherit_ship_velocity,
+            base_facing,
+        );
+    }
+
+    fn spawn_projectile_from_spec_for_ship(
+        &mut self,
+        current: MatterBodyState,
+        owner_ship_id: u64,
         projectile_spec: PrimaryProjectileSpec,
         spawn: ProjectileSpawnSpec,
         target: ProjectileTarget,
@@ -1943,7 +2598,8 @@ impl Battle {
             } else {
                 0
             },
-            owner_is_player: is_player,
+            owner_ship_id,
+            owner_is_player: self.is_player_ship_id(owner_ship_id),
             target,
             marine_returning: false,
         };
@@ -1971,8 +2627,19 @@ impl Battle {
             .iter()
             .map(|meteor| self.meteor_hits_ship(meteor, false))
             .collect();
+        let additional_hits: Vec<Vec<bool>> = self
+            .additional_active_ships
+            .iter()
+            .map(|ship| {
+                self.meteors
+                    .iter()
+                    .map(|meteor| self.meteor_hits_ship_by_id(meteor, ship.game_object_id()))
+                    .collect()
+            })
+            .collect();
 
-        let (player_died, target_died) = self.resolve_meteor_ship_hits(player_hits, target_hits);
+        let (player_died, target_died, additional_died_ship_ids) =
+            self.resolve_meteor_ship_hits(player_hits, target_hits, additional_hits);
         self.resolve_meteor_projectile_hits();
 
         if player_died {
@@ -1981,15 +2648,20 @@ impl Battle {
         if target_died {
             self.mark_ship_dead(false);
         }
+        for ship_id in additional_died_ship_ids {
+            self.mark_ship_dead_by_id(ship_id);
+        }
     }
 
     fn resolve_meteor_ship_hits(
         &mut self,
         player_hits: Vec<bool>,
         target_hits: Vec<bool>,
-    ) -> (bool, bool) {
+        additional_hits: Vec<Vec<bool>>,
+    ) -> (bool, bool, Vec<u64>) {
         let mut player_died = false;
         let mut target_died = false;
+        let mut additional_died_ship_ids = Vec::new();
 
         for index in 0..self.meteors.len() {
             let player_hit = player_hits[index];
@@ -2002,9 +2674,19 @@ impl Battle {
 
             self.meteors[index].player_contacting = player_hit;
             self.meteors[index].target_contacting = target_hit;
+
+            for (ship_index, ship_hits) in additional_hits.iter().enumerate() {
+                let ship_hit = ship_hits[index];
+                let was_contacting = self.additional_meteor_contacts[ship_index][index];
+                let ship_id = self.additional_active_ships[ship_index].game_object_id();
+                if self.apply_meteor_ship_hit_by_id(index, ship_id, ship_hit, was_contacting) {
+                    additional_died_ship_ids.push(ship_id);
+                }
+                self.additional_meteor_contacts[ship_index][index] = ship_hit;
+            }
         }
 
-        (player_died, target_died)
+        (player_died, target_died, additional_died_ship_ids)
     }
 
     fn apply_meteor_ship_hit(
@@ -2021,17 +2703,56 @@ impl Battle {
         let meteor_x = self.meteors[index].x;
         let meteor_y = self.meteors[index].y;
 
-        let died = if self.ship_blocks_damage(is_player) {
+        let defender_game_object_id = self.ship_state(is_player).game_object_id();
+        let attacker_game_object_id = self
+            .opposing_active_ship_id(defender_game_object_id)
+            .unwrap_or(defender_game_object_id);
+        let died = if self.ship_blocks_damage_by_ship_id(defender_game_object_id) {
             false
         } else {
-            let ship_id = if is_player {
-                self.player.ship_id
-            } else {
-                self.target.ship_id
-            };
-            let died = self.ships[ship_id].take_damage(METEOR_DAMAGE);
+            let died = self.apply_damage_to_ship_by_id(
+                defender_game_object_id,
+                attacker_game_object_id,
+                METEOR_DAMAGE,
+                &mut BattleOutcome::default(),
+            );
             self.spawn_meteor_impact_effect(meteor_x, meteor_y);
             self.push_ship_from_meteor(is_player, meteor_x, meteor_y);
+            died
+        };
+
+        self.meteors[index].vx = -self.meteors[index].vx;
+        self.meteors[index].vy = -self.meteors[index].vy;
+        died
+    }
+
+    fn apply_meteor_ship_hit_by_id(
+        &mut self,
+        index: usize,
+        defender_game_object_id: u64,
+        ship_hit: bool,
+        was_contacting: bool,
+    ) -> bool {
+        if !ship_hit || was_contacting {
+            return false;
+        }
+
+        let meteor_x = self.meteors[index].x;
+        let meteor_y = self.meteors[index].y;
+        let attacker_game_object_id = self
+            .opposing_active_ship_id(defender_game_object_id)
+            .unwrap_or(defender_game_object_id);
+        let died = if self.ship_blocks_damage_by_ship_id(defender_game_object_id) {
+            false
+        } else {
+            let died = self.apply_damage_to_ship_by_id(
+                defender_game_object_id,
+                attacker_game_object_id,
+                METEOR_DAMAGE,
+                &mut BattleOutcome::default(),
+            );
+            self.spawn_meteor_impact_effect(meteor_x, meteor_y);
+            self.push_ship_from_meteor_by_id(defender_game_object_id, meteor_x, meteor_y);
             died
         };
 
@@ -2119,6 +2840,13 @@ impl Battle {
 
     fn push_ship_from_meteor(&mut self, is_player: bool, meteor_x: f64, meteor_y: f64) {
         let ship = self.ship_state(is_player);
+        self.push_ship_from_meteor_by_id(ship.game_object_id(), meteor_x, meteor_y);
+    }
+
+    fn push_ship_from_meteor_by_id(&mut self, ship_id: u64, meteor_x: f64, meteor_y: f64) {
+        let Some(ship) = self.ship_state_by_game_object_id(ship_id) else {
+            return;
+        };
         let Some(body) = self.matter_world.body_state(ship.body_id) else {
             return;
         };
@@ -2135,40 +2863,31 @@ impl Battle {
         );
     }
 
-    fn fire_instant_laser(
+    fn fire_instant_laser_for_ship(
         &mut self,
         current: MatterBodyState,
-        is_player: bool,
+        attacker_game_object_id: u64,
+        attacker_ship_id: usize,
         laser_spec: InstantLaserSpec,
     ) {
-        let (attacker_ship_id, defender_ship_id, defender_body_id, defender_dead) = if is_player {
-            (
-                self.player.ship_id,
-                self.target.ship_id,
-                self.target.body_id,
-                self.target.dead,
-            )
-        } else {
-            (
-                self.target.ship_id,
-                self.player.ship_id,
-                self.player.body_id,
-                self.player.dead,
-            )
-        };
         let facing = self.ships[attacker_ship_id].facing();
         let start_x = current.x + (facing.cos() * laser_spec.offset);
         let start_y = current.y + (facing.sin() * laser_spec.offset);
-        let (aim_end_x, aim_end_y) =
-            self.instant_laser_end_for_mode(start_x, start_y, facing, is_player, laser_spec);
+        let (aim_end_x, aim_end_y) = self.instant_laser_end_for_mode_for_ship(
+            start_x,
+            start_y,
+            facing,
+            attacker_game_object_id,
+            laser_spec,
+        );
         let ray = LaserRay {
             start_x,
             start_y,
             end_x: aim_end_x,
             end_y: aim_end_y,
         };
-        let (end_x, end_y, ship_hit) =
-            self.instant_laser_hit_result(&ray, is_player, defender_body_id, defender_dead);
+        let (end_x, end_y, hit_ship_id) =
+            self.instant_laser_hit_result_for_ship(&ray, attacker_game_object_id);
 
         let laser_id = self.next_game_object_id();
         self.lasers.push(LaserSnapshot {
@@ -2186,86 +2905,86 @@ impl Battle {
             });
         }
 
-        if !ship_hit {
+        let Some(defender_game_object_id) = hit_ship_id else {
+            return;
+        };
+
+        if self.ship_blocks_damage_by_ship_id(defender_game_object_id) {
             return;
         }
 
-        if self.ship_blocks_damage(!is_player) {
-            return;
-        }
-
-        self.apply_instant_laser_ship_hit(
+        self.apply_instant_laser_ship_hit_by_id(
             attacker_ship_id,
-            defender_ship_id,
-            !is_player,
+            defender_game_object_id,
             end_x,
             end_y,
             laser_spec,
         );
     }
 
-    fn instant_laser_hit_result(
+    fn instant_laser_hit_result_for_ship(
         &self,
         ray: &LaserRay,
-        is_player: bool,
-        defender_body_id: usize,
-        defender_dead: bool,
-    ) -> (f64, f64, bool) {
+        attacker_game_object_id: u64,
+    ) -> (f64, f64, Option<u64>) {
         let ship_candidate =
-            self.instant_laser_ship_candidate(ray, is_player, defender_body_id, defender_dead);
+            self.instant_laser_ship_candidate_for_ship(ray, attacker_game_object_id);
         let meteor_candidate = self.instant_laser_meteor_candidate(ray);
 
         match (ship_candidate, meteor_candidate) {
-            (Some(ship), Some(meteor)) if ship.2 <= meteor.2 => (ship.0, ship.1, true),
-            (Some(_), Some(meteor)) => (meteor.0, meteor.1, false),
-            (Some(ship), None) => (ship.0, ship.1, true),
-            (None, Some(meteor)) => (meteor.0, meteor.1, false),
-            (None, None) => (ray.end_x, ray.end_y, false),
+            (Some((ship_id, x, y, ship_distance)), Some(meteor))
+                if ship_distance <= meteor.2 =>
+            {
+                (x, y, Some(ship_id))
+            }
+            (Some(_), Some(meteor)) => (meteor.0, meteor.1, None),
+            (Some((ship_id, x, y, _)), None) => (x, y, Some(ship_id)),
+            (None, Some(meteor)) => (meteor.0, meteor.1, None),
+            (None, None) => (ray.end_x, ray.end_y, None),
         }
     }
 
-    fn instant_laser_ship_candidate(
+    fn instant_laser_ship_candidate_for_ship(
         &self,
         ray: &LaserRay,
-        is_player: bool,
-        defender_body_id: usize,
-        defender_dead: bool,
-    ) -> Option<(f64, f64, f64)> {
-        if defender_dead || !self.ship_is_targetable(!is_player) {
-            return None;
-        }
-
-        self.matter_world
-            .body_state(defender_body_id)
-            .and_then(|defender_body| {
-                let defender_state = self.ship_state(!is_player);
-                let defender_logic = &self.ships[defender_state.ship_id];
-                let defender_facing = radians_to_facing_index(defender_logic.facing());
-                let defender_hit_polygon = defender_logic.hit_polygon_for_state(
-                    defender_facing,
-                    defender_body.x,
-                    defender_body.y,
-                    defender_state.special_active,
-                );
-                segment_hits_polygon(
-                    ray.start_x,
-                    ray.start_y,
-                    ray.end_x,
-                    ray.end_y,
-                    &defender_hit_polygon,
-                    0.0,
-                )
-                .then_some((
-                    defender_body.x,
-                    defender_body.y,
-                    segment_distance_squared_to_point(
+        attacker_game_object_id: u64,
+    ) -> Option<(u64, f64, f64, f64)> {
+        self.active_ship_states()
+            .into_iter()
+            .filter(|ship| ship.game_object_id() != attacker_game_object_id)
+            .filter(|ship| self.ship_is_targetable_by_id(ship.game_object_id()))
+            .filter_map(|ship| {
+                self.matter_world.body_state(ship.body_id).and_then(|body| {
+                    let defender_logic = &self.ships[ship.ship_id];
+                    let defender_facing = radians_to_facing_index(defender_logic.facing());
+                    let defender_hit_polygon = defender_logic.hit_polygon_for_state(
+                        defender_facing,
+                        body.x,
+                        body.y,
+                        ship.special_active,
+                    );
+                    segment_hits_polygon(
                         ray.start_x,
                         ray.start_y,
-                        defender_body.x,
-                        defender_body.y,
-                    ),
-                ))
+                        ray.end_x,
+                        ray.end_y,
+                        &defender_hit_polygon,
+                        0.0,
+                    )
+                    .then_some((
+                        ship.game_object_id(),
+                        body.x,
+                        body.y,
+                        segment_distance_squared_to_point(
+                            ray.start_x,
+                            ray.start_y,
+                            body.x,
+                            body.y,
+                        ),
+                    ))
+                })
             })
+            .min_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
     }
 
     fn instant_laser_meteor_candidate(&self, ray: &LaserRay) -> Option<(f64, f64, f64)> {
@@ -2291,15 +3010,20 @@ impl Battle {
             .min_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
     }
 
-    fn apply_instant_laser_ship_hit(
+    fn apply_instant_laser_ship_hit_by_id(
         &mut self,
         attacker_ship_id: usize,
-        defender_ship_id: usize,
-        defender_is_player: bool,
+        defender_game_object_id: u64,
         impact_x: f64,
         impact_y: f64,
         laser_spec: InstantLaserSpec,
     ) {
+        let Some(defender_ship_id) = self
+            .ship_state_by_game_object_id(defender_game_object_id)
+            .map(|ship| ship.ship_id)
+        else {
+            return;
+        };
         let died = self.ships[defender_ship_id].take_damage(laser_spec.damage);
         let explosion_id = self.next_game_object_id();
         self.explosions.push(ExplosionSnapshot {
@@ -2316,19 +3040,19 @@ impl Battle {
             });
         }
         if died {
-            self.mark_ship_dead(defender_is_player);
+            self.mark_ship_dead_by_id(defender_game_object_id);
             if let Some(key) = self.ships[attacker_ship_id].victory_sound_key() {
                 self.audio_events.push(AudioEventSnapshot { key });
             }
         }
     }
 
-    fn instant_laser_end_for_mode(
+    fn instant_laser_end_for_mode_for_ship(
         &self,
         start_x: f64,
         start_y: f64,
         facing: f64,
-        is_player: bool,
+        attacker_game_object_id: u64,
         laser_spec: InstantLaserSpec,
     ) -> (f64, f64) {
         let default_end = (
@@ -2339,12 +3063,8 @@ impl Battle {
         match laser_spec.target_mode {
             ProjectileTargetMode::None => default_end,
             ProjectileTargetMode::EnemyShip => {
-                let target = self.default_enemy_target_for(is_player);
-                projectile_target_position(
-                    target,
-                    self.matter_world.body_state(self.player.body_id),
-                    self.matter_world.body_state(self.target.body_id),
-                )
+                let target = self.default_enemy_target_for_ship(attacker_game_object_id);
+                self.projectile_target_position(target)
                 .and_then(|(x, y)| {
                     point_along_range(
                         start_x,
@@ -2359,15 +3079,11 @@ impl Battle {
                 .unwrap_or(default_end)
             }
             ProjectileTargetMode::PlayerSelectedOrEnemyShip => {
-                let target = self.projectile_target_for_mode(
-                    is_player,
+                let target = self.projectile_target_for_mode_for_ship(
+                    attacker_game_object_id,
                     ProjectileTargetMode::PlayerSelectedOrEnemyShip,
                 );
-                projectile_target_position(
-                    target,
-                    self.matter_world.body_state(self.player.body_id),
-                    self.matter_world.body_state(self.target.body_id),
-                )
+                self.projectile_target_position(target)
                 .and_then(|(x, y)| {
                     point_along_range(
                         start_x,
@@ -2382,50 +3098,28 @@ impl Battle {
                 .unwrap_or(default_end)
             }
             ProjectileTargetMode::PlayerSelectedPointOrForward => {
-                if is_player {
-                    projectile_target_position(
-                        self.player_weapon_target,
-                        self.matter_world.body_state(self.player.body_id),
-                        self.matter_world.body_state(self.target.body_id),
+                self.projectile_target_position(
+                    self.selected_weapon_target_for_ship(attacker_game_object_id),
+                )
+                .and_then(|(x, y)| {
+                    point_along_range(
+                        start_x,
+                        start_y,
+                        x,
+                        y,
+                        laser_spec.range,
+                        self.width,
+                        self.height,
                     )
-                    .and_then(|(x, y)| {
-                        point_along_range(
-                            start_x,
-                            start_y,
-                            x,
-                            y,
-                            laser_spec.range,
-                            self.width,
-                            self.height,
-                        )
-                    })
-                    .unwrap_or(default_end)
-                } else {
-                    projectile_target_position(
-                        self.target_weapon_target,
-                        self.matter_world.body_state(self.player.body_id),
-                        self.matter_world.body_state(self.target.body_id),
-                    )
-                    .and_then(|(x, y)| {
-                        point_along_range(
-                            start_x,
-                            start_y,
-                            x,
-                            y,
-                            laser_spec.range,
-                            self.width,
-                            self.height,
-                        )
-                    })
-                    .unwrap_or(default_end)
-                }
+                })
+                .unwrap_or(default_end)
             }
         }
     }
 
-    fn activate_teleport_special(
+    fn activate_teleport_special_for_ship(
         &mut self,
-        is_player: bool,
+        ship_game_object_id: u64,
         body_id: usize,
         spec: TeleportSpecialSpec,
     ) {
@@ -2434,19 +3128,10 @@ impl Battle {
         };
         let old_x = body.x;
         let old_y = body.y;
-        let (new_x, new_y) = match self.special_target_for(is_player) {
+        let (new_x, new_y) = match self.special_target_for_ship(ship_game_object_id) {
             SpecialTarget::Point { x, y } => (wrap_axis(x, self.width), wrap_axis(y, self.height)),
-            SpecialTarget::PlayerShip => self
-                .matter_world
-                .body_state(self.player.body_id)
-                .map(|body| (body.x, body.y))
-                .unwrap_or((
-                    wrap_axis(body.x + (self.width * 0.33), self.width),
-                    wrap_axis(body.y + (self.height * 0.27), self.height),
-                )),
-            SpecialTarget::TargetShip => self
-                .matter_world
-                .body_state(self.target.body_id)
+            SpecialTarget::Ship { id } => self
+                .ship_body_state_by_game_object_id(id)
                 .map(|body| (body.x, body.y))
                 .unwrap_or((
                     wrap_axis(body.x + (self.width * 0.33), self.width),
@@ -2491,6 +3176,22 @@ impl Battle {
         }
     }
 
+    fn special_target_for_ship(&self, ship_game_object_id: u64) -> SpecialTarget {
+        if self.player.game_object_id() == ship_game_object_id {
+            self.player_special_target
+        } else if self.target.game_object_id() == ship_game_object_id {
+            self.target_special_target
+        } else if let Some(index) = self
+            .additional_active_ships
+            .iter()
+            .position(|ship| ship.game_object_id() == ship_game_object_id)
+        {
+            self.additional_special_targets[index]
+        } else {
+            SpecialTarget::None
+        }
+    }
+
     fn activate_sound_only_special(&mut self, spec: SoundOnlySpec) {
         if !spec.sound_key.is_empty() {
             self.audio_events.push(AudioEventSnapshot {
@@ -2523,22 +3224,30 @@ impl Battle {
         ship_state.special_active = !ship_state.special_active;
     }
 
-    fn activate_crew_drain_special(&mut self, is_player: bool, spec: CrewDrainTransferSpec) {
-        let defender_is_player = !is_player;
-        if self.ship_state(defender_is_player).dead {
+    fn activate_crew_drain_special_for_ship(
+        &mut self,
+        attacker_game_object_id: u64,
+        spec: CrewDrainTransferSpec,
+    ) {
+        let Some(attacker_ship) = self.ship_state_by_game_object_id(attacker_game_object_id) else {
+            return;
+        };
+        let attacker_game_object_id = attacker_ship.game_object_id();
+        let defender_game_object_id = match self.opposing_active_ship_id(attacker_game_object_id) {
+            Some(id) => id,
+            None => return,
+        };
+        let Some(defender_state) = self.ship_state_by_game_object_id(defender_game_object_id) else {
+            return;
+        };
+        if defender_state.dead {
             return;
         }
-        let attacker_body = match self
-            .matter_world
-            .body_state(self.ship_state(is_player).body_id)
-        {
+        let attacker_body = match self.matter_world.body_state(attacker_ship.body_id) {
             Some(body) => body,
             None => return,
         };
-        let defender_body = match self
-            .matter_world
-            .body_state(self.ship_state(defender_is_player).body_id)
-        {
+        let defender_body = match self.matter_world.body_state(defender_state.body_id) {
             Some(body) => body,
             None => return,
         };
@@ -2549,8 +3258,8 @@ impl Battle {
             return;
         }
 
-        let attacker_ship_id = self.ship_state(is_player).ship_id;
-        let defender_ship_id = self.ship_state(defender_is_player).ship_id;
+        let attacker_ship_id = attacker_ship.ship_id;
+        let defender_ship_id = defender_state.ship_id;
         let available = (self.ships[defender_ship_id].crew() - 1).max(0);
         let capacity =
             self.ships[attacker_ship_id].max_crew() - self.ships[attacker_ship_id].crew();
@@ -2651,9 +3360,15 @@ impl Battle {
             texture_prefix: spec.texture_prefix,
         });
 
-        let defender_is_player = !is_player;
-        if !self.ship_blocks_damage(defender_is_player) {
-            let defender_state = self.ship_state(defender_is_player);
+        let attacker_game_object_id = self.ship_state(is_player).game_object_id();
+        let Some(defender_game_object_id) = self.opposing_active_ship_id(attacker_game_object_id) else {
+            self.remove_ship_without_death_effect(is_player);
+            return;
+        };
+        if !self.ship_blocks_damage_by_ship_id(defender_game_object_id) {
+            let defender_state = self
+                .ship_state_by_game_object_id(defender_game_object_id)
+                .expect("checked active defender ship");
             if !defender_state.dead
                 && let Some(defender_body) = self.matter_world.body_state(defender_state.body_id)
             {
@@ -2661,9 +3376,18 @@ impl Battle {
                 let dy = shortest_wrapped_delta(defender_body.y, current.y, self.height);
                 let distance = ((dx * dx) + (dy * dy)).sqrt();
                 if distance <= spec.radius {
-                    let defender_ship_id = defender_state.ship_id;
-                    if self.ships[defender_ship_id].take_damage(spec.damage) {
-                        self.mark_ship_dead(defender_is_player);
+                    let mut outcome = BattleOutcome::default();
+                    if self.apply_damage_to_ship_by_id(
+                        defender_game_object_id,
+                        attacker_game_object_id,
+                        spec.damage,
+                        &mut outcome,
+                    ) {
+                        if self.is_player_ship_id(defender_game_object_id) {
+                            self.mark_ship_dead(true);
+                        } else {
+                            self.mark_ship_dead(false);
+                        }
                     }
                 }
             }
@@ -2696,46 +3420,36 @@ impl Battle {
         )
     }
 
-    fn projectile_hit_target(&self, projectile: &ProjectileSnapshot) -> Option<bool> {
-        let (is_player, ship_state) = if projectile.owner_is_player {
-            (false, &self.target)
-        } else {
-            (true, &self.player)
-        };
-        let body = self.matter_world.body_state(ship_state.body_id)?;
-        let logic = &self.ships[ship_state.ship_id];
-        if !logic.is_targetable(ship_state.special_active) {
-            return None;
+    fn projectile_hit_target(&self, projectile: &ProjectileSnapshot) -> Option<u64> {
+        let mut candidate_ship_ids = Vec::new();
+        if let ProjectileTarget::Ship { id } = projectile.target
+            && id != projectile.owner_ship_id
+        {
+            candidate_ship_ids.push(id);
         }
-        let facing = radians_to_facing_index(logic.facing());
-        let hit_polygon =
-            logic.hit_polygon_for_state(facing, body.x, body.y, ship_state.special_active);
-        if !hit_polygon.is_empty() {
-            let projectile_polygon = projectile_hit_polygon(
-                projectile.collision,
-                projectile.facing_index,
-                projectile.x,
-                projectile.y,
-            );
-            if !projectile_polygon.is_empty() {
-                if polygons_intersect(&projectile_polygon, &hit_polygon) {
-                    return Some(is_player);
-                }
-                return None;
+        for ship_id in self
+            .active_ship_states()
+            .into_iter()
+            .map(|ship| ship.game_object_id())
+        {
+            if ship_id != projectile.owner_ship_id && !candidate_ship_ids.contains(&ship_id) {
+                candidate_ship_ids.push(ship_id);
             }
-            let start_x = body.x + shortest_wrapped_delta(body.x, projectile.previous_x, self.width);
-            let start_y = body.y + shortest_wrapped_delta(body.y, projectile.previous_y, self.height);
-            let end_x = body.x + shortest_wrapped_delta(body.x, projectile.x, self.width);
-            let end_y = body.y + shortest_wrapped_delta(body.y, projectile.y, self.height);
-            return segment_hits_polygon(start_x, start_y, end_x, end_y, &hit_polygon, 0.0)
-                .then_some(is_player);
+        }
+
+        for ship_id in candidate_ship_ids {
+            if self.projectile_hits_ship_by_id(projectile, ship_id) {
+                return Some(ship_id);
+            }
         }
 
         None
     }
 
-    fn projectile_hits_ship(&self, projectile: &ProjectileSnapshot, is_player: bool) -> bool {
-        let ship_state = self.ship_state(is_player);
+    fn projectile_hits_ship_by_id(&self, projectile: &ProjectileSnapshot, ship_id: u64) -> bool {
+        let Some(ship_state) = self.ship_state_by_game_object_id(ship_id) else {
+            return false;
+        };
         if ship_state.dead {
             return false;
         }
@@ -2743,6 +3457,9 @@ impl Battle {
             return false;
         };
         let logic = &self.ships[ship_state.ship_id];
+        if !logic.is_targetable(ship_state.special_active) {
+            return false;
+        }
         let facing = radians_to_facing_index(logic.facing());
         let hit_polygon =
             logic.hit_polygon_for_state(facing, body.x, body.y, ship_state.special_active);
@@ -2763,6 +3480,17 @@ impl Battle {
         let end_x = body.x + shortest_wrapped_delta(body.x, projectile.x, self.width);
         let end_y = body.y + shortest_wrapped_delta(body.y, projectile.y, self.height);
         segment_hits_polygon(start_x, start_y, end_x, end_y, &hit_polygon, 0.0)
+    }
+
+    fn projectile_hits_ship(&self, projectile: &ProjectileSnapshot, is_player: bool) -> bool {
+        self.projectile_hits_ship_by_id(
+            projectile,
+            if is_player {
+                self.player.game_object_id()
+            } else {
+                self.target.game_object_id()
+            },
+        )
     }
 
     fn snapshot_for(&self, ship: &BattleShipState) -> BattleShipSnapshot {
@@ -2801,8 +3529,28 @@ impl Battle {
         !ship.dead && self.ships[ship.ship_id].is_targetable(ship.special_active)
     }
 
+    fn ship_is_targetable_by_id(&self, ship_id: u64) -> bool {
+        let Some(ship) = self.ship_state_by_game_object_id(ship_id) else {
+            return false;
+        };
+        !ship.dead && self.ships[ship.ship_id].is_targetable(ship.special_active)
+    }
+
     fn meteor_hits_ship(&self, meteor: &MeteorSnapshot, is_player: bool) -> bool {
-        let ship = self.ship_state(is_player);
+        self.meteor_hits_ship_by_id(
+            meteor,
+            if is_player {
+                self.player.game_object_id()
+            } else {
+                self.target.game_object_id()
+            },
+        )
+    }
+
+    fn meteor_hits_ship_by_id(&self, meteor: &MeteorSnapshot, ship_id: u64) -> bool {
+        let Some(ship) = self.ship_state_by_game_object_id(ship_id) else {
+            return false;
+        };
         if ship.dead {
             return false;
         }
@@ -2911,6 +3659,29 @@ impl Battle {
         }
     }
 
+    fn ship_body_state_by_game_object_id(&self, ship_id: u64) -> Option<MatterBodyState> {
+        if self.player.game_object_id() == ship_id {
+            self.matter_world.body_state(self.player.body_id)
+        } else if self.target.game_object_id() == ship_id {
+            self.matter_world.body_state(self.target.body_id)
+        } else {
+            self.additional_active_ships
+                .iter()
+                .find(|ship| ship.game_object_id() == ship_id)
+                .and_then(|ship| self.matter_world.body_state(ship.body_id))
+        }
+    }
+
+    fn projectile_target_position(&self, target: ProjectileTarget) -> Option<(f64, f64)> {
+        match target {
+            ProjectileTarget::None => None,
+            ProjectileTarget::Point { x, y } => Some((x, y)),
+            ProjectileTarget::Ship { id } => self
+                .ship_body_state_by_game_object_id(id)
+                .map(|body| (body.x, body.y)),
+        }
+    }
+
     fn apply_blazer_collision_velocity(&mut self, input: &BlazerCollisionInput) {
         let dx = input.victim_before.x - input.blazer_before.x;
         let dy = input.victim_before.y - input.blazer_before.y;
@@ -3000,11 +3771,16 @@ impl Battle {
             key: AUDIO_SHIP_DEATH,
         });
 
+        let dead_ship_id = if is_player {
+            self.player.game_object_id()
+        } else {
+            self.target.game_object_id()
+        };
         let mut remaining_boarders = Vec::with_capacity(self.marine_boarders.len());
         let mut active_boarders = std::mem::take(&mut self.marine_boarders);
         for boarder in active_boarders.drain(..) {
-            if boarder.defender_is_player == is_player {
-                self.launch_returning_marine(boarder.defender_is_player, boarder.owner_is_player);
+            if boarder.defender_ship_id == dead_ship_id {
+                self.launch_returning_marine(boarder.defender_ship_id, boarder.owner_ship_id);
             } else {
                 remaining_boarders.push(boarder);
             }
@@ -3020,34 +3796,68 @@ impl Battle {
         ship.thrusting = false;
         self.matter_world.disable_body(body_id);
     }
+
+    fn mark_additional_ship_dead(&mut self, index: usize) {
+        let Some(ship) = self.additional_active_ships.get(index) else {
+            return;
+        };
+        if ship.dead {
+            return;
+        }
+        let body_id = ship.body_id;
+        let dead_ship_id = ship.game_object_id();
+
+        if let Some(body) = self.matter_world.body_state(body_id) {
+            let explosion_id = self.next_game_object_id();
+            self.explosions.push(ExplosionSnapshot {
+                id: explosion_id,
+                x: body.x,
+                y: body.y,
+                frame_index: SHIP_DEATH_EXPLOSION_START_FRAME,
+                end_frame: SHIP_DEATH_EXPLOSION_END_FRAME,
+                texture_prefix: EXPLOSION_TEXTURE_BATTLE_BOOM,
+            });
+        }
+        self.audio_events.push(AudioEventSnapshot {
+            key: AUDIO_SHIP_DEATH,
+        });
+
+        let mut remaining_boarders = Vec::with_capacity(self.marine_boarders.len());
+        let mut active_boarders = std::mem::take(&mut self.marine_boarders);
+        for boarder in active_boarders.drain(..) {
+            if boarder.defender_ship_id == dead_ship_id {
+                self.launch_returning_marine(boarder.defender_ship_id, boarder.owner_ship_id);
+            } else {
+                remaining_boarders.push(boarder);
+            }
+        }
+        self.marine_boarders = remaining_boarders;
+
+        if let Some(ship) = self.additional_active_ships.get_mut(index) {
+            ship.dead = true;
+            ship.thrusting = false;
+        }
+        self.matter_world.disable_body(body_id);
+    }
 }
 
-fn track_projectile(
-    projectile: &mut ProjectileSnapshot,
-    player_body: Option<MatterBodyState>,
-    target_body: Option<MatterBodyState>,
-) {
-    let target_pos = match projectile.target {
-        ProjectileTarget::None => return,
-        ProjectileTarget::Point { x, y } => Some((x, y)),
-        ProjectileTarget::PlayerShip => player_body.map(|b| (b.x, b.y)),
-        ProjectileTarget::TargetShip => target_body.map(|b| (b.x, b.y)),
+fn track_projectile(projectile: &mut ProjectileSnapshot, target_pos: Option<(f64, f64)>) {
+    let Some((tx, ty)) = target_pos else {
+        return;
     };
     if projectile.turn_wait > 0 {
         projectile.turn_wait -= 1;
         return;
     }
-    if let Some((tx, ty)) = target_pos {
-        projectile.facing_index = turn_projectile_toward_target(
-            projectile.facing_index,
-            projectile.x,
-            projectile.y,
-            tx,
-            ty,
-        );
-        projectile.facing = facing_index_to_radians(projectile.facing_index);
-        projectile.turn_wait = projectile.track_wait;
-    }
+    projectile.facing_index = turn_projectile_toward_target(
+        projectile.facing_index,
+        projectile.x,
+        projectile.y,
+        tx,
+        ty,
+    );
+    projectile.facing = facing_index_to_radians(projectile.facing_index);
+    projectile.turn_wait = projectile.track_wait;
 }
 
 fn projectile_hit_polygon(
@@ -3332,8 +4142,7 @@ fn next_sc2_velocity_step(vector: i32, fract: i32, error: &mut i32, sign: i32) -
 
 fn step_wobble_tracking_projectile(
     projectile: &mut ProjectileSnapshot,
-    player_target_body: Option<MatterBodyState>,
-    target_target_body: Option<MatterBodyState>,
+    target_position: Option<(f64, f64)>,
 ) {
     let ProjectileBehaviorSpec::WobbleTracking {
         direct_track_range, ..
@@ -3352,9 +4161,7 @@ fn step_wobble_tracking_projectile(
 
     if turn_wait > 0 {
         turn_wait -= 1;
-    } else if let Some((target_x, target_y)) =
-        projectile_target_position(projectile.target, player_target_body, target_target_body)
-    {
+    } else if let Some((target_x, target_y)) = target_position {
         let target_dx = target_x - projectile.x;
         let target_dy = target_y - projectile.y;
         let target_distance = ((target_dx * target_dx) + (target_dy * target_dy)).sqrt();
@@ -3382,16 +4189,17 @@ fn step_wobble_tracking_projectile(
     projectile.life -= 1;
 }
 
-fn projectile_target_position(
+fn projectile_target_position_from_states(
     target: ProjectileTarget,
-    player_target_body: Option<MatterBodyState>,
-    target_target_body: Option<MatterBodyState>,
+    active_ship_target_bodies: &[(u64, Option<MatterBodyState>)],
 ) -> Option<(f64, f64)> {
     match target {
         ProjectileTarget::None => None,
         ProjectileTarget::Point { x, y } => Some((x, y)),
-        ProjectileTarget::PlayerShip => player_target_body.map(|body| (body.x, body.y)),
-        ProjectileTarget::TargetShip => target_target_body.map(|body| (body.x, body.y)),
+        ProjectileTarget::Ship { id } => active_ship_target_bodies
+            .iter()
+            .find(|(ship_id, _)| *ship_id == id)
+            .and_then(|(_, body)| body.map(|body| (body.x, body.y))),
     }
 }
 
@@ -3722,11 +4530,610 @@ fn on_segment(ax: f64, ay: f64, bx: f64, by: f64, px: f64, py: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Battle, BattleOutcome, ProjectileSnapshot};
+    use super::{
+        Battle, BattleOutcome, ProjectileSnapshot, ProjectileTarget, INITIAL_PLAYER_ID,
+        INITIAL_TARGET_ID,
+    };
     use crate::reference_data;
     use crate::ship_input::ShipInput;
     use crate::ships::{AnyShip, HumanCruiser};
     use crate::traits::ship_trait::Ship;
+
+    #[test]
+    fn added_active_ship_can_fire_primary_weapon() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let ship_id = battle
+            .add_active_ship("human-cruiser", 700.0, 500.0)
+            .unwrap();
+
+        battle
+            .set_input_for_ship(
+                ship_id,
+                ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: false,
+                    weapon: true,
+                    special: false,
+                },
+            )
+            .unwrap();
+        battle.tick(1000.0 / 60.0);
+
+        assert_eq!(battle.snapshot().projectiles.len(), 1);
+    }
+
+    #[test]
+    fn meteor_collision_damages_added_active_ship_once() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            4000.0,
+            4000.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+        let ship_id = battle
+            .add_active_ship("human-cruiser", 6200.0, 5600.0)
+            .unwrap();
+        battle.meteors[0].x = 6200.0;
+        battle.meteors[0].y = 5600.0;
+        battle.meteors[0].vx = 0.0;
+        battle.meteors[0].vy = 0.0;
+
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(
+            battle
+                .snapshot()
+                .ships
+                .into_iter()
+                .find(|ship| ship.id == ship_id)
+                .unwrap()
+                .crew,
+            17
+        );
+    }
+
+    #[test]
+    fn normal_ship_collision_with_added_active_ship_sets_collision_cooldowns() {
+        let mut battle = Battle::new(
+            "androsynth-guardian",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+        let ship_id = battle
+            .add_active_ship("human-cruiser", 5060.0, 5000.0)
+            .unwrap();
+        let added_ship_index = battle
+            .additional_active_ships
+            .iter()
+            .find(|ship| ship.id == ship_id)
+            .unwrap()
+            .ship_id;
+        let added_body_id = battle
+            .additional_active_ships
+            .iter()
+            .find(|ship| ship.id == ship_id)
+            .unwrap()
+            .body_id;
+        battle
+            .matter_world
+            .set_body_velocity(battle.player.body_id, 2.0, 0.0);
+        battle
+            .matter_world
+            .set_body_velocity(added_body_id, -2.0, 0.0);
+
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(
+            (
+                battle.ships[battle.player.ship_id].turn_counter(),
+                battle.ships[battle.player.ship_id].thrust_counter(),
+                battle.ships[added_ship_index].turn_counter(),
+                battle.ships[added_ship_index].thrust_counter(),
+            ),
+            (1, 3, 1, 3),
+        );
+    }
+
+    #[test]
+    fn added_active_ship_can_be_targeted_by_player_selected_laser() {
+        let mut battle = Battle::new(
+            "arilou-skiff",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .unwrap();
+        let player_id = battle.snapshot().player.id;
+        let target_ship_id = battle.add_active_ship("human-cruiser", 6200.0, 5600.0).unwrap();
+
+        battle
+            .set_weapon_target_ship_for(player_id, target_ship_id)
+            .unwrap();
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 24.0);
+
+        assert!(battle.snapshot().lasers[0].end_y > battle.snapshot().lasers[0].start_y);
+    }
+
+    #[test]
+    fn added_active_ship_instant_laser_damages_default_enemy_in_range() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            4928.0,
+            7000.0,
+            7000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+        let ship_id = battle
+            .add_active_ship("slylandro-probe", 5000.0, 5000.0)
+            .unwrap();
+        battle
+            .set_input_for_ship(
+                ship_id,
+                ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: false,
+                    weapon: true,
+                    special: false,
+                },
+            )
+            .unwrap();
+        battle.tick(1000.0 / 24.0);
+
+        assert_eq!(battle.snapshot().player.crew, 16);
+    }
+
+    #[test]
+    fn added_active_ship_teleports_to_selected_point() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5000.0,
+            5000.0,
+            6500.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+        let ship_id = battle.add_active_ship("arilou-skiff", 6000.0, 6000.0).unwrap();
+
+        battle
+            .set_special_target_point_for(ship_id, 1234.0, 2345.0)
+            .unwrap();
+        battle
+            .set_input_for_ship(
+                ship_id,
+                ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: false,
+                    weapon: false,
+                    special: true,
+                },
+            )
+            .unwrap();
+        battle.tick(1000.0 / 24.0);
+
+        let ship = battle
+            .snapshot()
+            .ships
+            .into_iter()
+            .find(|ship| ship.id == ship_id)
+            .unwrap();
+        assert_eq!((ship.x.round() as i32, ship.y.round() as i32), (1234, 2345));
+    }
+
+    #[test]
+    fn added_active_ship_syreen_special_transfers_enemy_crew() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            5150.0,
+            5000.0,
+            7000.0,
+            5000.0,
+            0.0,
+            0.0,
+            8000.0,
+            8000.0,
+        )
+        .expect("battle should build");
+        let ship_id = battle
+            .add_active_ship("syreen-penetrator", 5000.0, 5000.0)
+            .unwrap();
+        let added_ship_index = battle
+            .additional_active_ships
+            .iter()
+            .find(|ship| ship.id == ship_id)
+            .unwrap()
+            .ship_id;
+        battle.ships[added_ship_index].set_crew(4);
+
+        battle
+            .set_input_for_ship(
+                ship_id,
+                ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: false,
+                    weapon: false,
+                    special: true,
+                },
+            )
+            .unwrap();
+        battle.tick(1000.0 / 24.0);
+
+        let ship = battle
+            .snapshot()
+            .ships
+            .into_iter()
+            .find(|ship| ship.id == ship_id)
+            .unwrap();
+        assert_eq!((ship.crew, battle.snapshot().player.crew), (12, 10));
+    }
+
+    #[test]
+    fn target_slot_can_explicitly_target_added_active_ship() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            4200.0,
+            4200.0,
+            5200.0,
+            4200.0,
+            5000.0,
+            5000.0,
+            10000.0,
+            10000.0,
+        )
+        .unwrap();
+        let additional_ship_id = battle.add_active_ship("human-cruiser", 5200.0, 5200.0).unwrap();
+        let target_ship_id = battle.snapshot().target.id;
+        battle
+            .set_weapon_target_ship_for(target_ship_id, additional_ship_id)
+            .unwrap();
+        battle.set_target_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+
+        battle.tick(1000.0 / 24.0);
+
+        assert!(matches!(
+            battle.snapshot().projectiles[0].target,
+            ProjectileTarget::Ship { id } if id == additional_ship_id
+        ));
+    }
+
+    #[test]
+    fn added_active_ship_can_be_marked_dead_from_outcome() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let ship_id = battle
+            .add_active_ship("human-cruiser", 700.0, 500.0)
+            .unwrap();
+        let mut outcome = BattleOutcome::default();
+        outcome.died_ship_ids.push(ship_id);
+
+        battle.resolve_death_and_victory(&outcome);
+
+        assert!(
+            battle
+                .snapshot()
+                .ships
+                .into_iter()
+                .find(|ship| ship.id == ship_id)
+                .unwrap()
+                .dead
+        );
+    }
+
+    #[test]
+    fn added_active_ship_appears_in_snapshot() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+
+        battle
+            .add_active_ship("human-cruiser", 700.0, 500.0)
+            .unwrap();
+
+        assert_eq!(battle.snapshot().ships.len(), 3);
+    }
+
+    #[test]
+    fn added_active_ship_moves_when_input_is_set() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let ship_id = battle
+            .add_active_ship("human-cruiser", 700.0, 500.0)
+            .unwrap();
+        let before = battle
+            .snapshot()
+            .ships
+            .into_iter()
+            .find(|ship| ship.id == ship_id)
+            .unwrap()
+            .x;
+
+        battle
+            .set_input_for_ship(
+                ship_id,
+                ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: true,
+                    weapon: false,
+                    special: false,
+                },
+            )
+            .unwrap();
+        battle.tick(1000.0 / 60.0);
+
+        assert_ne!(
+            battle
+                .snapshot()
+                .ships
+                .into_iter()
+                .find(|ship| ship.id == ship_id)
+                .unwrap()
+                .x,
+            before
+        );
+    }
+
+    #[test]
+    fn player_projectile_uses_player_ship_id_as_owner() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let player_id = battle.snapshot().player.id;
+
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 60.0);
+
+        assert_eq!(battle.projectiles[0].owner_ship_id, player_id);
+    }
+
+    #[test]
+    fn active_ship_ids_expose_both_active_slots() {
+        let battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+
+        assert_eq!(battle.active_ship_ids(), vec![INITIAL_PLAYER_ID, INITIAL_TARGET_ID]);
+    }
+
+    #[test]
+    fn player_weapon_target_ship_uses_target_ship_id() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let target_id = battle.snapshot().target.id;
+
+        battle.set_player_weapon_target_ship();
+        battle.set_player_input(ShipInput {
+            left: false,
+            right: false,
+            thrust: false,
+            weapon: true,
+            special: false,
+        });
+        battle.tick(1000.0 / 60.0);
+
+        assert!(matches!(
+            battle.projectiles[0].target,
+            ProjectileTarget::Ship { id } if id == target_id
+        ));
+    }
+
+    #[test]
+    fn switch_ship_for_replaces_the_matching_ship() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let target_id = battle.snapshot().target.id;
+        let original_texture = battle.snapshot().target.texture_prefix;
+
+        battle.switch_ship_for(target_id, "yehat-terminator").unwrap();
+
+        assert_ne!(battle.snapshot().target.texture_prefix, original_texture);
+    }
+
+    #[test]
+    fn set_input_for_ship_controls_the_matching_ship() {
+        let mut battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+        let target_id = battle.snapshot().target.id;
+
+        battle
+            .set_input_for_ship(
+                target_id,
+                ShipInput {
+                    left: false,
+                    right: false,
+                    thrust: true,
+                    weapon: false,
+                    special: false,
+                },
+            )
+            .unwrap();
+        battle.tick(1000.0 / 60.0);
+
+        assert_ne!(
+            (battle.snapshot().target.x, battle.snapshot().target.y),
+            (300.0, 400.0)
+        );
+    }
+
+    #[test]
+    fn snapshot_exposes_all_ships_in_world_coordinates() {
+        let battle = Battle::new(
+            "human-cruiser",
+            "human-cruiser",
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            500.0,
+            600.0,
+            1000.0,
+            800.0,
+        )
+        .unwrap();
+
+        assert_eq!(
+            battle
+                .snapshot()
+                .ships
+                .iter()
+                .map(|ship| (ship.x, ship.y))
+                .collect::<Vec<_>>(),
+            vec![(100.0, 200.0), (300.0, 400.0)]
+        );
+    }
 
     #[test]
     fn orz_special_launch_costs_one_crew() {

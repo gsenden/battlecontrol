@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -30,10 +30,7 @@ struct BattleSession {
 struct BattleRuntime {
     battle: CoreBattle,
     participant_names: HashSet<String>,
-    selected_races: HashMap<String, String>,
-    waiting_players: VecDeque<String>,
-    player_name: String,
-    target_name: String,
+    active_players: Vec<String>,
     ready_players: HashSet<String>,
     total_players: usize,
     battle_started: bool,
@@ -47,9 +44,9 @@ pub enum BattleClientMessage {
     PlayerReady,
     SetInput { input: ShipInputDto },
     SetWeaponTargetPoint { x: f64, y: f64 },
-    SetWeaponTargetShip,
+    SetWeaponTargetShip { ship_id: Option<u64> },
     SetSpecialTargetPoint { x: f64, y: f64 },
-    SetSpecialTargetShip,
+    SetSpecialTargetShip { ship_id: Option<u64> },
     ClearWeaponTarget,
     ClearSpecialTarget,
 }
@@ -72,6 +69,7 @@ pub struct BattleServerMessage {
     pub battle_started: bool,
     pub ready_players: usize,
     pub total_players: usize,
+    pub player_active: bool,
     pub battle_completed: bool,
     pub winner_name: Option<String>,
 }
@@ -87,6 +85,7 @@ pub struct BattleShipSnapshotDto {
     pub crew: i32,
     pub energy: i32,
     pub facing: f64,
+    pub turret_facing: f64,
     pub thrusting: bool,
     pub dead: bool,
     pub cloaked: bool,
@@ -148,6 +147,7 @@ pub struct AudioEventSnapshotDto {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BattleSnapshotDto {
+    pub ships: Vec<BattleShipSnapshotDto>,
     pub player: BattleShipSnapshotDto,
     pub target: BattleShipSnapshotDto,
     pub meteors: Vec<MeteorSnapshotDto>,
@@ -171,31 +171,12 @@ impl BattleSessionHub {
 
         let player = &game.players[0];
         let target = &game.players[1];
-        let selected_races = game
-            .players
-            .iter()
-            .map(|player| {
-                (
-                    player.user.name.clone(),
-                    player
-                        .selected_race
-                        .clone()
-                        .unwrap_or_else(|| "human-cruiser".to_string()),
-                )
-            })
-            .collect::<HashMap<_, _>>();
-        let waiting_players = game
-            .players
-            .iter()
-            .skip(2)
-            .map(|player| player.user.name.clone())
-            .collect::<VecDeque<_>>();
         let participant_names = game
             .players
             .iter()
             .map(|player| player.user.name.clone())
             .collect::<HashSet<_>>();
-        let battle = CoreBattle::new(
+        let mut battle = CoreBattle::new(
             player.selected_race.as_deref().unwrap_or("human-cruiser"),
             target.selected_race.as_deref().unwrap_or("human-cruiser"),
             (BATTLE_WIDTH / 2.0) + 800.0,
@@ -207,16 +188,34 @@ impl BattleSessionHub {
             BATTLE_WIDTH,
             BATTLE_HEIGHT,
         )?;
+        let active_players = game
+            .players
+            .iter()
+            .map(|participant| participant.user.name.clone())
+            .collect::<Vec<_>>();
+
+        for (index, participant) in game.players.iter().enumerate().skip(2) {
+            let extra_ship_count = game.players.len().saturating_sub(2).max(1);
+            let angle = ((index - 2) as f64 / extra_ship_count as f64) * std::f64::consts::TAU;
+            let radius = 1800.0;
+            let x = (BATTLE_WIDTH / 2.0) + (radius * angle.cos());
+            let y = (BATTLE_HEIGHT / 2.0) + (radius * angle.sin());
+            battle.add_active_ship(
+                participant
+                    .selected_race
+                    .as_deref()
+                    .unwrap_or("human-cruiser"),
+                x,
+                y,
+            )?;
+        }
 
         let session = Arc::new(BattleSession {
             stopped: AtomicBool::new(false),
             runtime: Mutex::new(BattleRuntime {
                 battle,
                 participant_names,
-                selected_races,
-                waiting_players,
-                player_name: player.user.name.clone(),
-                target_name: target.user.name.clone(),
+                active_players,
                 ready_players: HashSet::new(),
                 total_players: game.players.len(),
                 battle_started: false,
@@ -232,11 +231,11 @@ impl BattleSessionHub {
 
         tokio::spawn(async move {
             while !session.stopped.load(Ordering::Relaxed) {
-                if let Ok(mut runtime) = session.runtime.lock() {
-                    if runtime.battle_started {
-                        runtime.battle.tick(PHYSICS_DELTA);
-                        runtime.advance_round_if_needed();
-                    }
+                if let Ok(mut runtime) = session.runtime.lock()
+                    && runtime.battle_started
+                {
+                    runtime.battle.tick(PHYSICS_DELTA);
+                    runtime.resolve_battle_if_needed();
                 }
                 sleep(Duration::from_millis(PHYSICS_DELTA as u64)).await;
             }
@@ -271,16 +270,7 @@ impl BattleSessionHub {
             .get(game_id)
             .cloned()?;
         let runtime = session.runtime.lock().ok()?;
-        let snapshot = runtime.battle.snapshot();
-        if !runtime.participant_names.contains(user_name) {
-            None
-        } else if runtime.player_name == user_name {
-            Some(to_snapshot_dto(snapshot))
-        } else if runtime.target_name == user_name {
-            Some(to_snapshot_dto(swapped_snapshot(snapshot)))
-        } else {
-            Some(to_snapshot_dto(snapshot))
-        }
+        runtime.snapshot_for(user_name).map(to_snapshot_dto)
     }
 
     pub fn apply_message(
@@ -303,8 +293,6 @@ impl BattleSessionHub {
         if !runtime.participant_names.contains(user_name) {
             return Err("player not in battle".to_string());
         }
-        let is_player = runtime.player_name == user_name;
-        let is_target = runtime.target_name == user_name;
 
         match message {
             BattleClientMessage::PlayerReady => {
@@ -321,52 +309,48 @@ impl BattleSessionHub {
                     weapon: input.weapon,
                     special: input.special,
                 };
-                if is_player {
-                    runtime.battle.set_player_input(input);
-                } else if is_target {
-                    runtime.battle.set_target_input(input);
+                if let Some(ship_id) = runtime.controlled_ship_id_for(user_name) {
+                    runtime.battle.set_input_for_ship(ship_id, input)?;
                 }
             }
             BattleClientMessage::SetWeaponTargetPoint { x, y } => {
-                if is_player {
-                    runtime.battle.set_player_weapon_target_point(x, y);
-                } else if is_target {
-                    runtime.battle.set_target_weapon_target_point(x, y);
+                if let Some(ship_id) = runtime.controlled_ship_id_for(user_name) {
+                    runtime.battle.set_weapon_target_point_for(ship_id, x, y)?;
                 }
             }
-            BattleClientMessage::SetWeaponTargetShip => {
-                if is_player {
-                    runtime.battle.set_player_weapon_target_ship();
-                } else if is_target {
-                    runtime.battle.set_target_weapon_target_ship();
+            BattleClientMessage::SetWeaponTargetShip { ship_id } => {
+                if let (Some(ship_id), Some(target_ship_id)) = (
+                    runtime.controlled_ship_id_for(user_name),
+                    runtime.target_ship_id_for(user_name, ship_id),
+                ) {
+                    runtime
+                        .battle
+                        .set_weapon_target_ship_for(ship_id, target_ship_id)?;
                 }
             }
             BattleClientMessage::SetSpecialTargetPoint { x, y } => {
-                if is_player {
-                    runtime.battle.set_player_special_target_point(x, y);
-                } else if is_target {
-                    runtime.battle.set_target_special_target_point(x, y);
+                if let Some(ship_id) = runtime.controlled_ship_id_for(user_name) {
+                    runtime.battle.set_special_target_point_for(ship_id, x, y)?;
                 }
             }
-            BattleClientMessage::SetSpecialTargetShip => {
-                if is_player {
-                    runtime.battle.set_player_special_target_ship();
-                } else if is_target {
-                    runtime.battle.set_target_special_target_ship();
+            BattleClientMessage::SetSpecialTargetShip { ship_id } => {
+                if let (Some(ship_id), Some(target_ship_id)) = (
+                    runtime.controlled_ship_id_for(user_name),
+                    runtime.target_ship_id_for(user_name, ship_id),
+                ) {
+                    runtime
+                        .battle
+                        .set_special_target_ship_for(ship_id, target_ship_id)?;
                 }
             }
             BattleClientMessage::ClearWeaponTarget => {
-                if is_player {
-                    runtime.battle.clear_player_weapon_target();
-                } else if is_target {
-                    runtime.battle.clear_target_weapon_target();
+                if let Some(ship_id) = runtime.controlled_ship_id_for(user_name) {
+                    runtime.battle.clear_weapon_target_for(ship_id)?;
                 }
             }
             BattleClientMessage::ClearSpecialTarget => {
-                if is_player {
-                    runtime.battle.clear_player_special_target();
-                } else if is_target {
-                    runtime.battle.clear_target_special_target();
+                if let Some(ship_id) = runtime.controlled_ship_id_for(user_name) {
+                    runtime.battle.clear_special_target_for(ship_id)?;
                 }
             }
         }
@@ -389,6 +373,7 @@ impl BattleSessionHub {
             battle_started: runtime.battle_started,
             ready_players: runtime.ready_players.len(),
             total_players: runtime.total_players,
+            player_active: runtime.player_active_for(user_name),
             battle_completed: runtime.battle_completed,
             winner_name: runtime.winner_name.clone(),
         })
@@ -396,108 +381,85 @@ impl BattleSessionHub {
 }
 
 impl BattleRuntime {
-    fn advance_round_if_needed(&mut self) {
+    fn snapshot_for(&self, user_name: &str) -> Option<BattleSnapshot> {
+        if !self.participant_names.contains(user_name) {
+            return None;
+        }
+        let snapshot = self.battle.snapshot();
+        let controlled_ship_id = self.controlled_ship_id_for(user_name)?;
+        perspective_snapshot(snapshot, controlled_ship_id)
+    }
+
+    fn player_active_for(&self, user_name: &str) -> bool {
+        let Some(ship_id) = self.controlled_ship_id_for(user_name) else {
+            return false;
+        };
+        self.battle
+            .snapshot()
+            .ships
+            .into_iter()
+            .find(|ship| ship.id == ship_id)
+            .map(|ship| !ship.dead)
+            .unwrap_or(false)
+    }
+
+    fn controlled_ship_id_for(&self, user_name: &str) -> Option<u64> {
+        let snapshot = self.battle.snapshot();
+        let player_index = self.active_players.iter().position(|name| name == user_name)?;
+        snapshot.ships.get(player_index).map(|ship| ship.id)
+    }
+
+    fn opponent_ship_id_for(&self, user_name: &str) -> Option<u64> {
+        let snapshot = self.battle.snapshot();
+        let player_index = self.active_players.iter().position(|name| name == user_name)?;
+        snapshot
+            .ships
+            .iter()
+            .enumerate()
+            .find(|(index, ship)| *index != player_index && !ship.dead)
+            .or_else(|| {
+                snapshot
+                    .ships
+                    .iter()
+                    .enumerate()
+                    .find(|(index, _)| *index != player_index)
+            })
+            .map(|(_, ship)| ship.id)
+    }
+
+    fn target_ship_id_for(&self, user_name: &str, requested_ship_id: Option<u64>) -> Option<u64> {
+        let controlled_ship_id = self.controlled_ship_id_for(user_name)?;
+        if let Some(ship_id) = requested_ship_id {
+            let ship_exists = self
+                .battle
+                .snapshot()
+                .ships
+                .iter()
+                .any(|ship| ship.id == ship_id && ship.id != controlled_ship_id);
+            if ship_exists {
+                return Some(ship_id);
+            }
+        }
+        self.opponent_ship_id_for(user_name)
+    }
+
+    fn resolve_battle_if_needed(&mut self) {
         if self.battle_completed {
             return;
         }
         let snapshot = self.battle.snapshot();
-        let player_dead = snapshot.player.dead;
-        let target_dead = snapshot.target.dead;
-        if !player_dead && !target_dead {
+        let alive_players = self
+            .active_players
+            .iter()
+            .zip(snapshot.ships.iter())
+            .filter(|(_, ship)| !ship.dead)
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        if alive_players.len() > 1 {
             return;
         }
-
-        match (player_dead, target_dead) {
-            (true, true) => self.replace_both_slots_or_finish(None),
-            (true, false) => self.replace_dead_slot_or_finish(false),
-            (false, true) => self.replace_dead_slot_or_finish(true),
-            (false, false) => {}
-        }
-    }
-
-    fn replace_both_slots_or_finish(&mut self, fallback_winner: Option<String>) {
-        let Some(new_player) = self.waiting_players.pop_front() else {
-            self.battle_completed = true;
-            self.winner_name = fallback_winner;
-            return;
-        };
-        let Some(new_target) = self.waiting_players.pop_front() else {
-            self.battle_completed = true;
-            self.winner_name = Some(new_player);
-            return;
-        };
-
-        let Some(player_ship_type) = self.selected_races.get(&new_player).cloned() else {
-            return;
-        };
-        let Some(target_ship_type) = self.selected_races.get(&new_target).cloned() else {
-            return;
-        };
-
-        if self.battle.switch_player_ship(&player_ship_type).is_err() {
-            return;
-        }
-        if self.battle.switch_target_ship(&target_ship_type).is_err() {
-            return;
-        }
-        self.player_name = new_player;
-        self.target_name = new_target;
-        self.battle.set_player_input(ShipInput {
-            left: false,
-            right: false,
-            thrust: false,
-            weapon: false,
-            special: false,
-        });
-        self.battle.set_target_input(ShipInput {
-            left: false,
-            right: false,
-            thrust: false,
-            weapon: false,
-            special: false,
-        });
-    }
-
-    fn replace_dead_slot_or_finish(&mut self, player_alive: bool) {
-        let winner = if player_alive {
-            self.player_name.clone()
-        } else {
-            self.target_name.clone()
-        };
-        let Some(next_player) = self.waiting_players.pop_front() else {
-            self.battle_completed = true;
-            self.winner_name = Some(winner);
-            return;
-        };
-        let Some(next_ship_type) = self.selected_races.get(&next_player).cloned() else {
-            return;
-        };
-
-        if player_alive {
-            if self.battle.switch_target_ship(&next_ship_type).is_err() {
-                return;
-            }
-            self.target_name = next_player;
-        } else {
-            if self.battle.switch_player_ship(&next_ship_type).is_err() {
-                return;
-            }
-            self.player_name = next_player;
-        }
-        self.battle.set_player_input(ShipInput {
-            left: false,
-            right: false,
-            thrust: false,
-            weapon: false,
-            special: false,
-        });
-        self.battle.set_target_input(ShipInput {
-            left: false,
-            right: false,
-            thrust: false,
-            weapon: false,
-            special: false,
-        });
+        self.battle_completed = true;
+        self.winner_name = alive_players.into_iter().next();
     }
 }
 
@@ -506,6 +468,7 @@ pub struct BattleReadyStateDto {
     pub battle_started: bool,
     pub ready_players: usize,
     pub total_players: usize,
+    pub player_active: bool,
     pub battle_completed: bool,
     pub winner_name: Option<String>,
 }
@@ -541,20 +504,34 @@ impl BattleSessionDrivenPort for BattleSessionHub {
     }
 }
 
-fn swapped_snapshot(snapshot: BattleSnapshot) -> BattleSnapshot {
-    BattleSnapshot {
-        player: snapshot.target,
-        target: snapshot.player,
+fn perspective_snapshot(snapshot: BattleSnapshot, player_ship_id: u64) -> Option<BattleSnapshot> {
+    let player = snapshot
+        .ships
+        .iter()
+        .find(|ship| ship.id == player_ship_id)
+        .copied()?;
+    let target = snapshot
+        .ships
+        .iter()
+        .find(|ship| ship.id != player_ship_id && !ship.dead)
+        .or_else(|| snapshot.ships.iter().find(|ship| ship.id != player_ship_id))
+        .copied()
+        .unwrap_or(player);
+    Some(BattleSnapshot {
+        ships: snapshot.ships,
+        player,
+        target,
         meteors: snapshot.meteors,
         projectiles: snapshot.projectiles,
         explosions: snapshot.explosions,
         lasers: snapshot.lasers,
         audio_events: snapshot.audio_events,
-    }
+    })
 }
 
 fn to_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
     BattleSnapshotDto {
+        ships: snapshot.ships.into_iter().map(to_ship_dto).collect(),
         player: to_ship_dto(snapshot.player),
         target: to_ship_dto(snapshot.target),
         meteors: snapshot
@@ -625,6 +602,7 @@ fn to_ship_dto(ship: game_logic::battle::BattleShipSnapshot) -> BattleShipSnapsh
         crew: ship.crew,
         energy: ship.energy,
         facing: ship.facing,
+        turret_facing: ship.turret_facing,
         thrusting: ship.thrusting,
         dead: ship.dead,
         cloaked: ship.cloaked,
@@ -641,6 +619,89 @@ mod tests {
     use common::dto::{GameDto, GamePlayerDto, UserDto};
 
     use super::*;
+
+    #[tokio::test]
+    async fn additional_player_snapshot_uses_their_own_ship_as_player() {
+        let (hub, game) = BattleSessionTestBuilder::new()
+            .with_waiting_player("PilotThree", "androsynth-guardian")
+            .build();
+        hub.start_battle(&game).expect("start battle");
+
+        let snapshot = hub
+            .snapshot_for(&game.id, "PilotThree")
+            .expect("player snapshot");
+        hub.remove_battle(&game.id);
+
+        assert_eq!(snapshot.player.texture_prefix, "androsynth-guardian");
+    }
+
+    #[tokio::test]
+    async fn ready_state_marks_additional_player_active() {
+        let (hub, game) = BattleSessionTestBuilder::new()
+            .with_waiting_player("PilotThree", "androsynth-guardian")
+            .build();
+        hub.start_battle(&game).expect("start battle");
+
+        let ready_state = hub
+            .ready_state_for(&game.id, "PilotThree")
+            .expect("ready state");
+        hub.remove_battle(&game.id);
+
+        assert!(ready_state.player_active);
+    }
+
+    #[tokio::test]
+    async fn start_battle_adds_all_players_as_active_ships() {
+        let (hub, game) = BattleSessionTestBuilder::new()
+            .with_waiting_player("PilotThree", "androsynth-guardian")
+            .build();
+        hub.start_battle(&game).expect("start battle");
+
+        let snapshot = hub.snapshot_for(&game.id, "PilotOne").expect("snapshot");
+        hub.remove_battle(&game.id);
+
+        assert_eq!(snapshot.ships.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn snapshot_dto_contains_ship_turret_facing() {
+        let hub = BattleSessionHub::new();
+        let game = two_player_game();
+        hub.start_battle(&game).expect("start battle");
+
+        let snapshot = hub.snapshot_for(&game.id, "PilotOne").expect("snapshot");
+        let json = serde_json::to_string(&snapshot).expect("serialize snapshot");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        hub.remove_battle(&game.id);
+
+        assert!(value["player"]["turretFacing"].is_number());
+    }
+
+    struct BattleSessionTestBuilder {
+        hub: BattleSessionHub,
+        game: GameDto,
+    }
+
+    impl BattleSessionTestBuilder {
+        fn new() -> Self {
+            Self {
+                hub: BattleSessionHub::new(),
+                game: two_player_game(),
+            }
+        }
+
+        fn with_waiting_player(mut self, name: &str, race: &str) -> Self {
+            self.game.players.push(GamePlayerDto {
+                user: user(3, name),
+                selected_race: Some(race.to_string()),
+            });
+            self
+        }
+
+        fn build(self) -> (BattleSessionHub, GameDto) {
+            (self.hub, self.game)
+        }
+    }
 
     fn user(id: i64, name: &str) -> UserDto {
         UserDto {
@@ -714,7 +775,10 @@ mod tests {
             .expect("ready state");
         hub.remove_battle(&game.id);
 
-        assert_eq!((ready_state.ready_players, ready_state.total_players), (2, 3));
+        assert_eq!(
+            (ready_state.ready_players, ready_state.total_players),
+            (2, 3)
+        );
     }
 
     #[tokio::test]

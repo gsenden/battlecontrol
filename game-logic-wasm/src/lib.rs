@@ -169,6 +169,7 @@ struct AudioEventSnapshotDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BattleSnapshotDto {
+    ships: Vec<BattleShipSnapshotDto>,
     player: BattleShipSnapshotDto,
     target: BattleShipSnapshotDto,
     meteors: Vec<MeteorSnapshotDto>,
@@ -587,6 +588,25 @@ fn to_matter_step_dto(result: MatterStepResult) -> MatterStepDto {
 
 fn to_battle_snapshot_dto(snapshot: BattleSnapshot) -> BattleSnapshotDto {
     BattleSnapshotDto {
+        ships: snapshot
+            .ships
+            .iter()
+            .map(|ship| BattleShipSnapshotDto {
+                id: ship.id,
+                x: ship.x,
+                y: ship.y,
+                vx: ship.vx,
+                vy: ship.vy,
+                crew: ship.crew,
+                energy: ship.energy,
+                facing: ship.facing,
+                turret_facing: ship.turret_facing,
+                thrusting: ship.thrusting,
+                dead: ship.dead,
+                cloaked: ship.cloaked,
+                texture_prefix: ship.texture_prefix.to_string(),
+            })
+            .collect(),
         player: BattleShipSnapshotDto {
             id: snapshot.player.id,
             x: snapshot.player.x,

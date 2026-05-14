@@ -16,6 +16,8 @@ use crate::ports::{
     SessionRepositoryDrivenPort,
 };
 
+const BATTLE_SOCKET_SNAPSHOT_INTERVAL_MS: u64 = 1000 / 24;
+
 pub struct GameApiAdapter<
     GamePort: GameDrivingPort,
     BattlePort: BattleSessionDrivenPort,
@@ -542,6 +544,7 @@ async fn battle_socket<BattlePort: BattleSessionDrivenPort + Send + Sync + 'stat
             battle_started: ready_state.battle_started,
             ready_players: ready_state.ready_players,
             total_players: ready_state.total_players,
+            player_active: ready_state.player_active,
             battle_completed: ready_state.battle_completed,
             winner_name: ready_state.winner_name,
         };
@@ -573,7 +576,7 @@ async fn battle_socket<BattlePort: BattleSessionDrivenPort + Send + Sync + 'stat
                     _ => {}
                 }
             }
-            _ = tokio::time::sleep(std::time::Duration::from_millis(1000 / 24)) => {}
+            _ = tokio::time::sleep(std::time::Duration::from_millis(BATTLE_SOCKET_SNAPSHOT_INTERVAL_MS)) => {}
         }
     }
 }
